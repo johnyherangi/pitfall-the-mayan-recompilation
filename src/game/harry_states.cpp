@@ -1330,7 +1330,7 @@ void PlayLogic::h42a46d() {
     h_.b(0x465b00) = 0xff;
     if (h_.b(0x465b46) == 0) { h42a1a1(); return; }
     // Into another area of the level: the objects start again (FUN_00432713).
-    fadeCmd_ = 0xffffff01;                                 // DAT_0046b1b0
+    fadeCmd() = 0xffffff01;                                 // DAT_0046b1b0
     sound1Now(0x89);
     ch1Id_ = 0;
     h4311bf();

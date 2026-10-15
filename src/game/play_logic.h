@@ -93,7 +93,7 @@ public:
     // before the pass really returns (see runStrayReturns).
     void strayReturn(uint32_t addr) { strayReturns_.push_back(addr); }
     void hudAdd(const Obj& o) { hud_.push_back(objects_.indexOf(o)); }   // 0x4150a2: FUN_0043348e places it next tick
-    uint32_t& fadeCmd() { return fadeCmd_; }      // DAT_0046b1b0 (0xc0: the big stone's white flash)
+    uint32_t& fadeCmd() { return game_->brightness(); }   // DAT_0046b1b0 (0xc0: the big stone's white flash)
     // [DAT_004504e4] + off: the Genesis variables the PC keeps in the .als buffer past the level's
     // data (+0x384: the Balankanche ride's last obstacle, the map screen's flags).  The buffer is
     // the working copy (0x800 bytes) and the level's own copy after it, the 4 KB a vortex warp
@@ -221,6 +221,7 @@ private:
     void a26ClearButtons();
     void a26Frame(Game& g, int entry);          // level 20 in FUN_0043628c (0) / FUN_004360e9 (1) / FUN_00435fc0 (2)
     void epilogue(Game& g);                     // 0x4363bd: the end every path of FUN_0043628c shares
+    void meterLive(Game& g);                    // FUN_00435c4e's reads of the logic at the HUD's draw
 
     // ---- map_screen.cpp: level 19 (0x431c99, FUN_00432038) ----
     void mapSetup();                            // 0x431c99, the end of the restart on level 19
@@ -249,7 +250,6 @@ private:
     uint8_t ch0Pri_ = 0, ch0Id_ = 0, ch0Hold_ = 0;   // DAT_004627be / DAT_004627bf / DAT_004627c2
     uint8_t ch1Pri_ = 0, ch1Id_ = 0;                 // DAT_004627c0 / DAT_004627c1
     int altIdle_ = 0;                // DAT_0046d04c: F10 was pressed (the special idle animation)
-    uint32_t fadeCmd_ = 0;           // DAT_0046b1b0
     uint8_t trgRam_[0x200] = {};     // [DAT_00450510] + 0x1f4 ..
     std::vector<uint32_t> strayReturns_;   // return addresses left on the stack during the object pass
     // The 2600 level's own globals outside Harry's memory.

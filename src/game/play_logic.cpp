@@ -316,6 +316,7 @@ void PlayLogic::tick(Game& g) {
     level_ = g.levelNumber();
     FrameState& fs = g.state();
     h_.w(0x4667a8) = int16_t(fs.hudSlide);                 // 0x4362ad: the slide as the engine has it (the pre-ticks put it back)
+    if (fs.joypad == 0xff) { g.command("*2"); return; }    // 0x4362cd: a demo ended (a key, or its script)
     if (level_ == kAtari2600Level) { a26Frame(g, 0); return; }   // 0x436224: FUN_004263f3, 0x4020d1
     if (level_ == kMapScreen) {                            // 0x436215: FUN_004263f3, FUN_00432038
         fs.displayList.clear();
@@ -349,6 +350,7 @@ void PlayLogic::tick(Game& g) {
     fs.vaultCeiling = int16_t(tw(0x1f4));
     // An exit (engineExit) leaves FUN_0043628c without its end; the port runs the tick out.
     if (!g.exitPending()) epilogue(g);
+    meterLive(g);
 }
 
 void PlayLogic::epilogue(Game& g) {
@@ -371,22 +373,30 @@ void PlayLogic::epilogue(Game& g) {
         sound1Now(0x22);
     }
     if (uint32_t(st.lives - 1) >= 0xa) st.lives = 0xa;
+    fs.hudScore = std::min(uint32_t(st.score), 999999u);  // DAT_00451914
+    fs.hudTreasures = st.treasures & 0xff;                 // DAT_00451a28
+    fs.hudLives = st.lives - 1;                            // DAT_00451804
+    fs.hudWeapon = st.weapon;                              // DAT_00451938
+    fs.hudAmmo = std::min(st.ammo() & 0xff, 0x63);         // DAT_00451908
     for (int& a : st.ammoCount) if ((a & 0xff) >= 0x64) a = 0x63;
     fs.hudSlide = h_.uw(0x4667a8);                         // 0x4364f9: DAT_00451940
-    // FUN_00435c4e, which the HUD runs as it draws the crocodile (levels 0 .. 10 and 16 .. 18):
-    // a full meter kills Harry.
+}
+
+void PlayLogic::meterLive(Game& g) {
+    // What the HUD reads of the logic's memory as it draws (after the tick, its end or not):
+    // FUN_00435c4e kills Harry on a full meter (on the levels that show it: 0 .. 10, 16 .. 18).
     if (level_ <= kWarriorSpirit || (level_ >= kPalenqueRuins && level_ <= kJainaIslandFalls)) {
         if (h_.damage() >= (g.hardMode() ? 0x64 : 0x96) && h_.cont() != 0x428dce && h_.cont() != 0x428cdb) h_.b(0x465b72) = 0xff;
     }
-    st.damage = h_.damage();
-    st.harryDead = h_.b(0x465b72) == 0xff;
+    g.stats().damage = h_.damage();
+    g.stats().harryDead = h_.b(0x465b72) == 0xff;
 }
 
 void PlayLogic::timers() {
     // FUN_00433a09
-    if (fadeCmd_ != 0) {
-        if (int32_t(fadeCmd_) > 0) fadeCmd_ = fadeCmd_ >= 0x10 ? fadeCmd_ - 0x10 : 0;
-        else fadeCmd_ = fadeCmd_ + 0x10 < fadeCmd_ ? 0 : fadeCmd_ + 0x10;
+    if (fadeCmd() != 0) {
+        if (int32_t(fadeCmd()) > 0) fadeCmd() = fadeCmd() >= 0x10 ? fadeCmd() - 0x10 : 0;
+        else fadeCmd() = fadeCmd() + 0x10 < fadeCmd() ? 0 : fadeCmd() + 0x10;
     }
     h_.b(0x465d4b) -= 1;
     if (int8_t(h_.b(0x465d4b)) < 0) h_.b(0x465d4b) = uint8_t((random() & 0xf) + 0xc);
@@ -507,7 +517,7 @@ void PlayLogic::h430e3a() {
     h_.uw(0x465b92) = 0x8000;
     h43112b();
     h4310ca();
-    if (!h_.onGround() && h_.ul(0x465b47) >= 0x4615b7) fadeCmd_ -= 0x13;
+    if (!h_.onGround() && h_.ul(0x465b47) >= 0x4615b7) fadeCmd() -= 0x13;
     if (hAnim2(0x465b47, 4)) { h430eb6(); return; }
     // (0x430ea1 loads a sound id and pitch but plays nothing)
 }

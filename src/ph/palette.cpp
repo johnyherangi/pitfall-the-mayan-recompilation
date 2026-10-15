@@ -9,12 +9,12 @@ void Palette::setFreeRange(int first, int end) {
     // FUN_004457d0: everything outside the free range is marked as system (0x80).
     for (int i = 0; i < 256; ++i) flags_[i] = (i < first_ || i >= end_) ? kSystem : 0;
     // FUN_0043e1c0: free entries start out black.
-    for (int i = first_; i < end_; ++i) rgb_[i] = Rgb{0, 0, 0};
+    for (int i = first_; i < end_; ++i) shown_[i] = rgb_[i] = Rgb{0, 0, 0};
     dirty_ = true;
 }
 
 void Palette::setColour(int i, Rgb c) {
-    rgb_[i & 0xff] = c;
+    shown_[i & 0xff] = rgb_[i & 0xff] = c;
     dirty_ = true;
 }
 

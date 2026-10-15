@@ -42,6 +42,11 @@ public:
 
     // Mix `frames` stereo frames into `out` (interleaved L/R).
     void render(int16_t* out, int frames);
+    // Without an audio device (tests, tools) the voices move on with the game's clock instead:
+    // the front ends set the device clock once their output runs.
+    void advance(int frames);
+    void setDeviceClock(bool on) { deviceClock_ = on; }
+    bool deviceClock() const { return deviceClock_; }
 
     const DecodedSample* sample(int id) const;
 
@@ -59,6 +64,7 @@ private:
     mutable std::mutex mutex_;
     int master_ = 0x50;
     bool enabled_ = true;
+    bool deviceClock_ = false;
 };
 
 // Minimal RIFF/WAVE PCM decoder (8/16-bit, mono/stereo) used by the mixer.

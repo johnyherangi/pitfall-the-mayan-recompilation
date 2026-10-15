@@ -50,7 +50,12 @@ function boundaries are unreliable there; the full decompilation is kept in
 | `0x444940`   | joypad from keyboard / joystick / demo script          | `engine::Input`, `Game::tick`         |
 | `0x4400f0` / `0x4404a0` | registry options load / save                | `engine::Options`                     |
 | `0x43ee50`   | string resources (titles, errors)                      | `ph::levelName`, literals             |
-| `0x441c50`   | palette fade                                           | not ported (TODO)                     |
+| `0x43e470`   | fade out: the free colours 13 darker every 30 ms, 19 times (`AnimatePalette`) | `Game::runStages`, `Game::showFade` |
+| `0x43e810`   | fade in at the end of a level load (not on levels 21 .. 23): 30 ms of black, then half the colour plus 4 .. 60 every 30 ms | `Game::runStages`, `Game::showFade` |
+| `0x43de70`   | at each present: the logic's brightness (`DAT_0046b1b0` as the frame took it) added to the free colours, kept aside while it lasts | `Game::applyBrightness` |
+| `0x43ed00`   | every palette entry set again from `DAT_0046d824` (shown again after a fade out) | `ph::Palette::showAll` |
+| `0x43cb50`   | a sample of the logic's two channels still plays (the waits of `*3`, `*5x` .. `*7`) | `Mixer::channelBusy` |
+| `0x441c50`   | the CD audio's volume (`auxSetVolume`; the stop-watch turns it down to a quarter, `DAT_00450500`) | not ported (CD audio) |
 | `0x441b80`   | MCI CD audio track play                                | `levelMusicTrack()` table only        |
 | `0x43a140` / `0x43a320` | window sizing / full-screen (DISPDIB)       | `applyWindowSize()`                   |
 
@@ -74,7 +79,11 @@ function boundaries are unreliable there; the full decompilation is kept in
 | `0x46fb74`   | global tick counter                      | `FrameState::globalFrame`    |
 | `0x46fbbc` / `0x46fb8c` | demo index / demo position     | `Game::demoIndex_/demoPos_`  |
 | `0x46d050`   | paused                                   | `Mode::Paused`               |
-| `0x46b1a8`   | pending "*n" level-transition command string | `Game::requestLevel`     |
+| `0x46b1a8`   | pending "*n" level-transition command string | `Game::exitCmd_` (`Game::command`) |
+| `0x46b1b0`   | the logic's palette brightness (0xc0 the big stone's flash; 0x10 back to 0 a tick) | `Game::brightness_` |
+| `0x452770` / `0x452768` / `0x45276c` / `0x46dc2c` | the brightness as the frame took it / as applied / the colours kept / their copy | `Game::shownBrightness_ / appliedBrightness_ / effectSaved_ / effectBackup_` |
+| `0x46d41c` / `0x452c58` | the LOGPALETTE / DIB colour table: what the screen shows (the fades write them alone) | `ph::Palette::shown` |
+| `0x46fb88`   | a key went down (`WM_KEYDOWN`, any but F1, Esc, Pause): the title's start | `Game::startKey_` |
 | `0x453080`   | palette entry flags                      | `ph::Palette::flags_`        |
 | `0x4503c0`   | local→global colour remap table          | `ph::Palette::remap_`        |
 | `0x46d3e8`   | 448×256 DIB bits                         | `engine::Framebuffer`        |
@@ -88,7 +97,16 @@ The game logic requests a transition by setting a string `"*<digit>..."` and jum
 room 22 else map 19, `*50` the 2600 level 20 (level 24 with the `DAT_0046d05c` cheat) with `DAT_00450fc8` = 0xb,
 `*51`..`*53` the vaults 11..13 with `DAT_00450fc8` = the level left, `*6` out of the 2600 level (back to level 3 with
 `DAT_004601c4` when `DAT_00450fc8` is 0xb), `*7` out of a vault (back to `DAT_00450fc8` with `DAT_004504cc`), `*8`
-title, `*9` credits.  The engine adds the shake (`DAT_004517ec`) to the main scroll on nearly every level; the vaults
+title, `*9` credits.  The exit empties the display list, so the frame after it shows no sprites; then the switch
+blocks the engine (the timer's ticks do nothing while a command is set or a level loads): `*3`, `*5x`, `*6` and `*7`
+first wait for the logic's two sample channels to play out, every command but `*8` / `*9` fades out (19 steps of
+30 ms), `*1` (but from the map), `*3` and `*4` wait 750 ms, `*2` shows "[GAME OVER]" for 3000 ms with the colours
+back (not in a demo), and the level load (`FUN_004460e0`: the sounds stop, the brightness is forgotten, the screen is
+cleared, the logic starts, the engine ticks, the first frame) or `*3` (`FUN_004360e9`, the thirteen ticks, the frame)
+ends with the fade in (480 ms, not on levels 21 .. 23).  The title takes any key after its first 0x3d ticks: fade
+out, 500 ms, a new game, level 0; after 0x5a0 ticks the next demo or the intro is loaded at once.  A demo ends when
+a key is pressed or its script reaches (0xff, 0xff): either makes the joypad 0xff, which `FUN_0043628c` turns into
+`*2`; the scripts run 2911, 4063 and 1199 ticks.  The engine adds the shake (`DAT_004517ec`) to the main scroll on nearly every level; the vaults
 draw their room as the parallax layer at the main scroll (rounded to 8 px, `FUN_0043731c`, its priority tiles after the
 sprites) and their ceiling as the main layer over everything at the parallax scroll (`0x4371a5`).  A level load runs one logic tick in `FUN_00435fc0` and one engine tick (thirteen more on levels
 0, 2, 5, 8 and 16, the table `0x46ffa0`) before its first frame; `*3` runs the one logic tick and the thirteen.

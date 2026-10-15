@@ -22,7 +22,7 @@
 #include <memory>
 #include <string>
 #include <utility>
-#include <vector>
+#include <deque>
 #include <vector>
 
 namespace game {
@@ -52,6 +52,10 @@ struct FrameState {
     uint32_t joypad = 0, joypadPrev = 0; // DAT_004517f8 / edge detection
     int atariScreen = 0;                 // DAT_00465ba8: the 2600 level's screen (FUN_00436fb4 reads it as it draws)
     int hudSlide = 0;                    // DAT_00451940: DAT_004667a8 as the logic left it (0x4364f9), the HUD's slide-in
+    // The numbers the HUD shows as the logic's end left them (0x43641f; an exit skips it):
+    // DAT_00451914 (the score, at most 999999), DAT_00451804 (the lives less one), DAT_00451a28
+    // (the treasures), DAT_00451938 (the weapon), DAT_00451908 (its ammunition, at most 99).
+    int hudScore = 0, hudLives = 0, hudTreasures = 0, hudWeapon = 0, hudAmmo = 0;
     int frame = 0;                       // DAT_0045190c (ticks since level start)
     int globalFrame = 0;                 // DAT_0046fb74
 };
@@ -124,17 +128,17 @@ public:
     void stopSound(int id) { mixer_.stop(id); }
     void playChannel(int ch, int id) { mixer_.playChannel(ch, id, options_.wavVolume); }   // FUN_0043cc10(id, ch)
     bool channelBusy(int ch) const { return mixer_.channelBusy(ch); }                       // FUN_0043cbc0(ch)
-    void requestLevel(int level) { pendingLevel_ = level; }           // "*" command strings
     void completeLevel();                                             // 0x430912: the level is kept (DAT_0046b1ac), "*4"
     int tourLevel() const { return tourLevel_; }                      // DAT_0046b1ac: the level last completed
     void setNextLevel(int l) { nextLevel_ = l; }                      // DAT_0045050c: the level "*1" loads
     uint8_t bigGlyph(uint8_t ch, int& width);                         // FUN_00431b73: ltr_lg's frame for a character
     void loseLife();                                                  // FUN_00430eb6's tail: "*3", or a continue / game over
-    void restartLevel() { pendingRestart_ = true; }                   // "*3" (FUN_004360e9): the logic starts again in place
-    bool exitPending() const { return pendingLevel_ >= 0 || pendingRestart_ || mode_ == Mode::GameOver; }   // a command is set (DAT_0046b1a8)
-    // The transitions of the vortex warps, "*50" .. "*53", "*6" and "*7" (the WinMain command
-    // switch at 0x4445ef / 0x444661 / 0x4446bd).
+    bool exitPending() const { return !exitCmd_.empty(); }           // a command is set (DAT_0046b1a8)
+    // The logic's engine exit with a command ("*0" .. "*9"); FUN_00443c90's switch takes it
+    // after the tick, with its fades and waits (transitionActive meanwhile).
     void command(const char* cmd);
+    bool transitionActive() const { return !stages_.empty(); }
+    uint32_t& brightness() { return brightness_; }                   // DAT_0046b1b0: the logic's palette brightness (FUN_0043de70)
     void newGame();                                                   // FUN_004324c6 (and the title's set-up)
     void drawTextWorld(int x, int y, const char* text);               // FUN_00442600
     // What a vortex warp carries from one level to another (FUN_004288ec / 0x4288a2), and the
@@ -160,7 +164,7 @@ public:
     // FUN_0043387e: the game logic's random generator (state DAT_00466772..7d, kept across
     // levels).  While a demo plays (DAT_00466500) it advances but always returns 1.
     uint32_t random();
-    void seedRandom();                 // FUN_00434815 (new game): the fixed seeds
+    // (FUN_00434815, the Genesis seeding, is unreachable on the PC: the state starts at zero.)
     void setRandomSeed(uint32_t s0, uint32_t s1);   // DAT_00466772 / DAT_00466776 (0x415c48: a boss dies)
     bool demoPlaying() const { return demoPos_ != 0x800; }   // DAT_00466500 (DAT_0046fb8c != 0x800)
     // DAT_00462694 as FUN_0043628c sets it every tick: the difficulty option (DAT_0046fb78),
@@ -177,13 +181,14 @@ public:
 private:
     void computeParallax();            // FUN_00443370 per-level switch
     void tickAttract();                // title / demo sequencing (FUN_00443c90 tail)
+    void composeFrame();               // FUN_00443c90's drawing
     void renderHud();                  // FUN_00442fa0
     void hudMeter(engine::SpriteInstance& croc, engine::SpriteInstance& life, int top);   // FUN_00435d45
     void renderTitle();                // FUN_004426e0 title animation
     void renderVault();                // FUN_00443c90's layer order on the Loltun vaults
     void renderAtari2600();            // FUN_00436fb4 at 0x437078: the 2600 level's screen
     void renderGameOver();             // "*2": 0x44426b
-    bool pollJoypad(const engine::HostInput& host);   // FUN_00444940
+    void pollJoypad(const engine::HostInput& host);   // FUN_00444940
     void engineTick();                 // FUN_00443370 after the joypad
     void preTicks(int n);              // the engine ticks a level load / "*3" runs before the first frame
     static int preTickCount(int level);   // 0x46ffa0: 13 on levels 0, 2, 5, 8, 16
@@ -207,16 +212,13 @@ private:
     Warp warp_;
     Mode mode_ = Mode::Title;
     int levelNo_ = kTitleScreen;
-    int pendingLevel_ = -1;
-    bool pendingRestart_ = false;
     int demoIndex_ = -1;               // DAT_0046fbbc (-1 in the data section: the first demo is demo 0)
-    int gameOverTicks_ = 0;            // "*2": the 3 s the engine waits on the game-over screen
     engine::HostInput lastHost_;       // the host input of the last tick (the pre-ticks poll it again)
     uint8_t bigSpace_ = 0;             // DAT_0046a878: which of ltr_lg's two spaces is next
     int tourLevel_ = 0;                // DAT_0046b1ac: the level last completed (the map screen's path)
     int nextLevel_ = 0;                // DAT_0045050c: the level "*1" loads (the map's next one, the one a continue goes back to)
     int demoPos_ = 0;                  // DAT_0046fb8c (0x800 == not in demo)
-    int demoCountdown_ = 1;            // DAT_0046fb98
+    uint8_t demoCountdown_ = 1;        // DAT_0046fb98
     uint32_t demoButtons_ = 0;         // DAT_0046fb94
     int cloudDrift_ = 0;               // DAT_00450f94 accumulator for drifting layers
     int ruinsCounter_ = 0;             // DAT_004517e0
@@ -234,6 +236,39 @@ private:
         bool oneUpGlow = false;        // DAT_0046b184: ... then 0xc .. 0x14
         uint32_t oneUpStart = 0;       // DAT_00451a24
     } hudAnim_;
+    // The command switch's blocking parts, run a timer callback (17 ms) at a time while the engine
+    // stands still: waiting for the sounds, the fade out (FUN_0043e470), the waits, the game-over
+    // screen, the level load or "*3", and the load's fade in (FUN_0043e810).
+    static constexpr int kTickMs = 17;           // timeSetEvent(17, ...)
+    static constexpr int kFadeStepMs = 30;       // the fades' busy waits
+    static constexpr int kFadeOutMs = 19 * 30;
+    static constexpr int kFadeInMs = 30 + 15 * 30;
+    struct Stage {
+        enum Kind { WaitSounds, FadeOut, Wait, GameOver, NewGame, Load, Restart, FadeIn } kind;
+        int ms = 0;                    // the stage's length (fades, waits)
+        int level = 0;                 // Load
+    };
+    void beginCommand();               // the switch on DAT_0046b1a8[1]
+    void enterStage(const Stage& st);
+    void beginStage();
+    void runStages(int ms);
+    void showFade();                   // the shown colours of the fade in progress
+    void endEffect();                  // the brightness effect's colours back
+    void applyBrightness();            // FUN_0043de70
+    std::deque<Stage> stages_;
+    int stageMs_ = 0;                  // the time spent in stages_.front()
+    std::string exitCmd_;              // DAT_0046b1a8
+    bool drawPending_ = false;         // a frame to compose while the stages run (the load's first)
+    uint8_t startKey_ = 0;             // DAT_0046fb88: a key went down (WM_KEYDOWN)
+    int audioRem_ = 0;                 // (the game-time audio clock's remainder)
+    // FUN_0043de70's effect: the logic's brightness (DAT_0046b1b0), as the last frame took it
+    // (DAT_00452770), as last applied (DAT_00452768), the colours kept meanwhile (DAT_0046dc2c,
+    // DAT_0045276c).
+    uint32_t brightness_ = 0;
+    int32_t shownBrightness_ = 0;
+    int32_t appliedBrightness_ = 0;
+    bool effectSaved_ = false;
+    std::array<ph::Rgb, 256> effectBackup_{};
     std::vector<engine::DeferredTile> deferred_;
     bool quit_ = false;
 };

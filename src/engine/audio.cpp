@@ -123,6 +123,17 @@ void Mixer::render(int16_t* out, int frames) {
     }
 }
 
+void Mixer::advance(int frames) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (auto& v : voices_) {
+        if (!v.active) continue;
+        v.pos += v.step * frames;
+        if (size_t(v.pos) >= v.s->mono.size()) {
+            if (v.loop) v.pos = 0; else v.active = false;
+        }
+    }
+}
+
 int levelMusicTrack(int level) {
     static const int t[25] = {5, 7, 8, 9, 11, 12, 13, 16, 14, 15, 19, 21, 21, 21, 21, 3, 14, 15, 17, 4, 0, 2, 22, 5, 23};
     return (level >= 0 && level < 25) ? t[level] : 0;

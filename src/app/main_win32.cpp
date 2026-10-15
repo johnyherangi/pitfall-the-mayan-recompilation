@@ -112,6 +112,7 @@ void startAudio() {
     }
     g_app.audioRun = true;
     g_app.audioThread = std::thread(audioLoop);
+    g_app.game->mixer().setDeviceClock(true);
 }
 
 void stopAudio() {
@@ -159,7 +160,7 @@ void present() {
     const game::Game& g = *g_app.game;
     const ph::Palette& pal = g.palette();
     for (int i = 0; i < 256; ++i) {
-        const ph::Rgb c = pal.colour(i);
+        const ph::Rgb c = pal.shown(i);                  // the LOGPALETTE / DIB colour table
         g_app.paletteCache[i] = (uint32_t(c.r) << 16) | (uint32_t(c.g) << 8) | c.b;
     }
     const uint8_t* src = g.framebuffer().viewBase(g.viewScrollX());

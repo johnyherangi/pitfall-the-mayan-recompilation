@@ -41,7 +41,12 @@ public:
 
     const std::array<Rgb, 256>& colours() const { return rgb_; }
     const Rgb& colour(int i) const { return rgb_[i & 0xff]; }
-    void setColour(int i, Rgb c);                 // FUN_0043ebc0
+    void setColour(int i, Rgb c);                 // FUN_0043ebc0 (the colour and what is shown)
+    // What the screen shows: the LOGPALETTE / DIB colour table (DAT_0046d41c / DAT_00452c58).
+    // setColour writes it with the colour (DAT_0046d824); the fades write it alone.
+    const Rgb& shown(int i) const { return shown_[i & 0xff]; }
+    void show(int i, Rgb c) { shown_[i & 0xff] = c; dirty_ = true; }
+    void showAll() { shown_ = rgb_; dirty_ = true; }   // FUN_0043ed00: every entry set again
     uint8_t flags(int i) const { return flags_[i & 0xff]; }
 
     // Remap table built by the last allocate() call (original DAT_004503c0).
@@ -66,6 +71,7 @@ public:
 
 private:
     std::array<Rgb, 256> rgb_{};
+    std::array<Rgb, 256> shown_{};
     std::array<uint8_t, 256> flags_{};
     std::array<uint8_t, 256> remap_{};
     int first_ = 10, end_ = 246;

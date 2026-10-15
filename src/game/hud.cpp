@@ -75,7 +75,7 @@ void Game::renderHud() {
         const ph::RawImage& digits = assets_->scoline;              // DAT_004504d8
         // The score: "%06d" of DAT_00451914 (at most 999999), cells 0..9 of scoline at x 0x10 .. 0x38.
         char buf[16];
-        std::snprintf(buf, sizeof buf, "%06d", std::min(std::max(stats_.score, 0), 999999));
+        std::snprintf(buf, sizeof buf, "%06d", snap_.hudScore);
         for (int i = 0; i < 6; ++i) renderer_.drawCell(digits, buf[i] - '0', 0x10 + i * 8, top - 4, sx);
         if (levelNo_ < kLoltunVault3 || levelNo_ > kTitleScreen) {
             engine::SpriteInstance croc, life;                      // DAT_004518f0 / DAT_00451920
@@ -84,7 +84,7 @@ void Game::renderHud() {
             renderer_.drawSprite(life, view);
             // Lives in reserve: "x N" (DAT_00451804 = DAT_00466527 - 1).
             renderer_.drawCell(digits, 10, 0x11b, top - 4, sx);
-            renderer_.drawCell(digits, std::clamp(stats_.lives - 1, 0, 9), 0x127, top - 4, sx);
+            renderer_.drawCell(digits, snap_.hudLives, 0x127, top - 4, sx);
             // Treasures: the coin and "x NN" (DAT_00451a28).
             engine::SpriteInstance coin;                            // DAT_00451970
             coin.sprite = findSprite("mi_coin");
@@ -92,19 +92,19 @@ void Game::renderHud() {
             coin.flags = engine::kSprVisible;
             renderer_.drawSprite(coin, view);
             renderer_.drawCell(digits, 10, 0x112, bottom + 0xb6, sx);
-            renderer_.drawCell(digits, stats_.treasures / 10, 0x11d, bottom + 0xb6, sx);
-            renderer_.drawCell(digits, stats_.treasures % 10, 0x125, bottom + 0xb6, sx);
+            renderer_.drawCell(digits, snap_.hudTreasures / 10, 0x11d, bottom + 0xb6, sx);
+            renderer_.drawCell(digits, snap_.hudTreasures % 10, 0x125, bottom + 0xb6, sx);
             if (levelNo_ != kBalankancheMine) {
                 // The weapon (DAT_00451938) and its ammunition (DAT_00451908).
-                const char* icon = stats_.weapon == 1 ? "mirbmrng" : stats_.weapon == 2 ? "mi_stonb" : "ob_pouch";
+                const char* icon = snap_.hudWeapon == 1 ? "mirbmrng" : snap_.hudWeapon == 2 ? "mi_stonb" : "ob_pouch";
                 engine::SpriteInstance w;                           // DAT_00451950
                 w.sprite = findSprite(icon);
                 w.x = sx + 0x1e; w.y = snap_.scrollY + bottom + 0xbe;
                 w.flags = engine::kSprVisible;
                 renderer_.drawSprite(w, view);
                 renderer_.drawCell(digits, 10, 0x28, bottom + 0xb6, sx);
-                renderer_.drawCell(digits, stats_.ammo() / 10, 0x32, bottom + 0xb6, sx);
-                renderer_.drawCell(digits, stats_.ammo() % 10, 0x3a, bottom + 0xb6, sx);
+                renderer_.drawCell(digits, snap_.hudAmmo / 10, 0x32, bottom + 0xb6, sx);
+                renderer_.drawCell(digits, snap_.hudAmmo % 10, 0x3a, bottom + 0xb6, sx);
             }
         }
     }

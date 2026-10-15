@@ -91,12 +91,18 @@ const ph::Sprite* Game::findSprite(const std::string& name) const {
 
 void Game::startLevel(int level) {
     // FUN_004460e0
+    stages_.clear();
+    exitCmd_.clear();                                    // DAT_0046b1a8 = 0
     levelNo_ = level;
-    mixer_.stopAll();
+    if (level == kTitleScreen) newGame();                // FUN_004324c6
+    mixer_.stopAll();                                    // FUN_0043d910: the two channels end
+    brightness_ = 0;                                     // DAT_0046b1b0, DAT_00452770
+    shownBrightness_ = 0;
+    appliedBrightness_ = 0;                              // FUN_004451a0 forgets the effect (without its colours)
+    effectSaved_ = false;
     level_ = std::make_unique<ph::LevelData>(ph::loadLevel(level, dataDir_, palette_));
     fs_ = FrameState{};
     deferred_.clear();
-    pendingRestart_ = false;
     if (level_->hasBg) {
         // DAT_00450fb8 = (w/2 - 20) * 16, DAT_00450fbc = (h/2 - 14) * 16
         fs_.maxScrollX = std::max(0, (level_->bg.wTiles / 2 - 0x14) * 16);
@@ -124,8 +130,12 @@ void Game::startLevel(int level) {
         if (!level_->collision.empty() || level == kAtari2600Level || level == kMapScreen) logic_ = std::make_unique<PlayLogic>();
         else logic_ = std::make_unique<ExplorerLogic>();
     }
+    startKey_ = 0;                                       // FUN_00442410: DAT_0046fb88 = 0
     if (logic_) logic_->enter(*this);
     preTicks(1 + preTickCount(level));                   // FUN_004460e0's end (on the title: no logic, the counters and the pan)
+    // Then the first frame (FUN_00443c90) and, but on levels 21 .. 23, the fade in (FUN_0043e810).
+    drawPending_ = true;
+    if (level < kIntro || level > kCredits) enterStage(Stage{Stage::FadeIn, kFadeInMs});
 }
 
 void Game::togglePause() {
@@ -133,38 +143,37 @@ void Game::togglePause() {
     else if (mode_ == Mode::Paused) mode_ = Mode::Playing;
 }
 
-bool Game::pollJoypad(const engine::HostInput& host) {
-    // FUN_00444940: the joypad from the keyboard / joystick, or from the demo script.  False when
-    // a key ended the demo (DAT_004517f8 = 0xff, which FUN_0043628c turns into "*2": the title).
+void Game::pollJoypad(const engine::HostInput& host) {
+    // FUN_00444940: the joypad from the keyboard / joystick, or from the demo script.  During a
+    // demo any key makes it 0xff, and so does the script's end (0xff, 0xff): FUN_0043628c turns
+    // 0xff into "*2", which goes back to the title.
     fs_.joypadPrev = fs_.joypad;
     uint32_t pad;
     if (levelNo_ >= kLoltunVault2 && levelNo_ <= kLoltunVault1) pad = engine::Input::pollVaultKeys(host);
     else pad = input_.poll(host, options_.joystick, options_.allowCheat);
     input_.bindings = options_.keys;
 
-    if (demoPos_ != kDemoNotActive && mode_ == Mode::Attract) {
-        if (pad != 0) { mode_ = Mode::Title; demoPos_ = kDemoNotActive; startLevel(kTitleScreen); return false; }
-        if (--demoCountdown_ <= 0) {
+    if (demoPlaying()) {
+        if (pad != 0) { fs_.joypad = 0xff; return; }
+        if (--demoCountdown_ == 0) {                     // DAT_0046fb98, a byte
             const DemoScript& d = demoScript(demoIndex_);
-            const uint8_t frames = d.pairs[demoPos_], buttons = d.pairs[demoPos_ + 1];
-            if (frames == 0xff && buttons == 0xff) {            // script exhausted
-                fs_.frame = kTitleAttractFrames;                // force the sequencer on
-            } else {
-                demoCountdown_ = frames; demoButtons_ = buttons; demoPos_ += 2;
-            }
+            demoCountdown_ = d.pairs[demoPos_];
+            demoButtons_ = d.pairs[demoPos_ + 1];
+            demoPos_ += 2;
         }
         pad = demoButtons_;
     }
     fs_.joypad = pad;
-    return true;
 }
 
 void Game::engineTick() {
     // FUN_00443370 after its joypad: the frame counters, the logic (FUN_0043628c) and the
-    // per-level parallax camera.
+    // per-level parallax camera.  (The original polls the joypad between the counters and the
+    // logic; nothing in between reads it.)
     ++fs_.globalFrame;
     ++fs_.frame;
     if (levelNo_ != kTitleScreen && logic_) logic_->tick(*this);
+    if (exitPending()) fs_.displayList.clear();          // engineExit empties the list (0x43650d)
     computeParallax();
 }
 
@@ -174,10 +183,8 @@ void Game::preTicks(int n) {
     // thirteen alone.  FUN_00443370 does nothing once a command is set.  DAT_00451940 is put
     // back after them, so the HUD slides in from where the logic's start left it.
     const int slide = fs_.hudSlide;
-    for (int i = 0; i < n; ++i) {
-        if (exitPending()) break;
-        if (!pollJoypad(lastHost_)) return;              // (a key ended the demo: the title is loaded)
-        if (mode_ == Mode::Paused) break;
+    for (int i = 0; i < n && !exitPending(); ++i) {
+        pollJoypad(lastHost_);
         engineTick();
     }
     fs_.hudSlide = slide;
@@ -189,83 +196,236 @@ int Game::preTickCount(int level) {
 }
 
 void Game::tick(const engine::HostInput& host) {
-    // One callback of the 17 ms timer (FUN_004448c0).
+    // One callback of the 17 ms timer (FUN_004448c0), and what the main loop does with the frame
+    // it makes ready (FUN_00443c90's tail: the command switch, the title and the attract).
     ++timerTicks_;                                                   // DAT_00450fa8
+    if (!mixer_.deviceClock()) {                                     // (no audio device: the samples play on game time)
+        audioRem_ += engine::Mixer::kOutputRate * kTickMs;
+        mixer_.advance(audioRem_ / 1000);
+        audioRem_ %= 1000;
+    }
+    // WM_KEYDOWN: any key but F1, Esc and Pause is the engine's start key (DAT_0046fb88).
+    for (int k = 0; k < 256; ++k)
+        if (host.keyDown[size_t(k)] && k != 0x70 && k != 0x1b && k != 0x13 && mode_ != Mode::Paused) startKey_ = 1;
     lastHost_ = host;
-    if (!pollJoypad(host)) return;
+    if (!stages_.empty()) { runStages(kTickMs); return; }           // the main thread is busy: no ticks, no frames
 
     if (mode_ == Mode::Paused) return;
-    if (mode_ == Mode::GameOver) {
-        // "*2": the engine stands still on the game-over screen, then the title
-        if (--gameOverTicks_ > 0) return;
-        demoPos_ = kDemoNotActive;
-        mode_ = Mode::Title;
-        startLevel(kTitleScreen);
-        return;
-    }
-
+    if (exitPending()) { beginCommand(); return; }                   // (a command set outside a tick)
+    pollJoypad(host);
     engineTick();                                                    // FUN_00443370
-    tickAttract();
+    if (exitPending()) beginCommand();                               // the switch on DAT_0046b1a8
+    else tickAttract();
+}
 
-    if (pendingLevel_ >= 0) { const int l = pendingLevel_; pendingLevel_ = -1; startLevel(l); }
-    else if (pendingRestart_) {
-        // "*3": FUN_0043e470 stops the sounds, then FUN_004360e9 starts the level logic again.
-        pendingRestart_ = false;
-        mixer_.stopAll();
-        if (logic_) logic_->restart(*this);
-        preTicks(preTickCount(levelNo_));
+void Game::enterStage(const Stage& st) {
+    // A stage of the command switch begins.
+    stages_.push_back(st);
+    if (stages_.size() == 1) { stageMs_ = 0; beginStage(); }
+}
+
+void Game::beginStage() {
+    Stage& st = stages_.front();
+    switch (st.kind) {
+    case Stage::FadeOut:
+        // FUN_0043e470: the brightness effect gives its colours back first; when it has the screen
+        // black already (-0x100) there is nothing to fade.
+        if (shownBrightness_ == -0x100 && effectSaved_) st.ms = 0;
+        else if (shownBrightness_ != 0 && effectSaved_) endEffect();
+        break;
+    case Stage::GameOver:
+        // 0x44426b: the sound, "[GAME OVER]" on a cleared screen, every colour set again (FUN_0043ed00).
+        playChannel(0, 0x20);
+        mode_ = Mode::GameOver;
+        drawPending_ = true;
+        palette_.showAll();
+        break;
+    case Stage::FadeIn:
+        // FUN_0043e810: the free colours black, the frame shown.
+        for (int i = palette_.firstFree(); i < palette_.endFree(); ++i) palette_.show(i, ph::Rgb{});
+        break;
+    default:
+        break;
     }
 }
 
-void Game::command(const char* cmd) {
-    // The WinMain switch on DAT_0046b1a8[1], the cases of the vortex warps.
-    switch (cmd[1]) {
-    case '0':                                            // 0x444200: the continue screen; the level is kept for "*1"
-        mixer_.stopAll();
-        nextLevel_ = levelNo_;
-        requestLevel(kContinueScreen);
-        break;
-    case '2':                                            // 0x44423d: game over
-        mixer_.stopAll();
-        if (demoPos_ == kDemoNotActive) {
-            // the sound 0x20 and "[GAME OVER]" on a black screen for 3 s (the engine waits for
-            // them), then the title
-            playSound(0x20);
-            mode_ = Mode::GameOver;
-            gameOverTicks_ = 177;                        // 3000 ms of timeGetTime: 177 ticks of 17 ms
+void Game::runStages(int ms) {
+    // The blocking parts of the switch, run against the timer's clock.
+    stageMs_ += ms;
+    while (!stages_.empty()) {
+        const Stage st = stages_.front();
+        switch (st.kind) {
+        case Stage::WaitSounds:
+            // FUN_0043cb50: the logic's two channels play out (when the sound is on).
+            if (options_.soundEnabled && (mixer_.channelBusy(0) || mixer_.channelBusy(1))) { stageMs_ = 0; return; }
+            stageMs_ = 0;
+            break;
+        case Stage::FadeOut:
+        case Stage::FadeIn:
+            if (stageMs_ < st.ms) { showFade(); return; }
+            stageMs_ -= st.ms;
+            if (st.kind == Stage::FadeOut) { if (shownBrightness_ != 0) endEffect(); }
+            else palette_.showAll();                     // FUN_0043ebc0 for every entry
+            break;
+        case Stage::Wait:
+        case Stage::GameOver:
+            if (stageMs_ < st.ms) return;
+            stageMs_ -= st.ms;
+            break;
+        case Stage::NewGame:
+            newGame();                                   // FUN_004324c6
+            break;
+        case Stage::Load:
+            stages_.pop_front();
+            startLevel(st.level);                        // (its own fade in follows)
+            return;
+        case Stage::Restart:
+            // "*3": DAT_0046b1a8 = 0, FUN_004360e9, the thirteen engine ticks, the frame, the fade in.
+            stages_.pop_front();
+            exitCmd_.clear();
+            if (logic_) logic_->restart(*this);
+            preTicks(preTickCount(levelNo_));
+            drawPending_ = true;
+            if (levelNo_ < kIntro || levelNo_ > kCredits) enterStage(Stage{Stage::FadeIn, kFadeInMs});
             return;
         }
-        demoPos_ = kDemoNotActive;
-        mode_ = Mode::Title;
-        requestLevel(kTitleScreen);
+        stages_.pop_front();
+        if (!stages_.empty()) beginStage();
+    }
+}
+
+void Game::showFade() {
+    // The colours the screen shows during a fade (AnimatePalette on the free range).
+    const Stage& st = stages_.front();
+    const int a = palette_.firstFree(), b = palette_.endFree();
+    if (st.kind == Stage::FadeOut) {
+        // FUN_0043e470: 13 darker every 30 ms, 19 times (the brightest colours keep 8 at the end).
+        const int d = 13 * std::min(stageMs_ / kFadeStepMs + 1, 19);
+        auto f = [d](uint8_t c) { return uint8_t(c >= d ? c - d : 0); };
+        for (int i = a; i < b; ++i) { const ph::Rgb c = palette_.colour(i); palette_.show(i, ph::Rgb{f(c.r), f(c.g), f(c.b)}); }
+    } else if (stageMs_ >= kFadeStepMs) {
+        // FUN_0043e810: after 30 ms of black, half the colour plus 4, 8 .. 60, every 30 ms.
+        const int add = 4 * std::min((stageMs_ - kFadeStepMs) / kFadeStepMs + 1, 15);
+        auto f = [add](uint8_t c) { return uint8_t(std::min<int>(c, (c >> 1) + add)); };
+        for (int i = a; i < b; ++i) { const ph::Rgb c = palette_.colour(i); palette_.show(i, ph::Rgb{f(c.r), f(c.g), f(c.b)}); }
+    }
+}
+
+void Game::endEffect() {
+    // The brightness effect's colours back (DAT_0046dc2c -> DAT_0046d824) and the effect forgotten.
+    if (effectSaved_)
+        for (int i = palette_.firstFree(); i < palette_.endFree(); ++i) palette_.setColour(i, effectBackup_[size_t(i)]);
+    effectSaved_ = false;
+    shownBrightness_ = 0;
+    appliedBrightness_ = 0;
+    brightness_ = 0;
+}
+
+void Game::applyBrightness() {
+    // FUN_0043de70, at every present: DAT_00452770 (the logic's DAT_0046b1b0 as the frame took
+    // it) added to the free colours, clamped, the colours kept aside while it lasts.
+    const int v = shownBrightness_;
+    if (appliedBrightness_ == v) return;
+    const int a = palette_.firstFree(), b = palette_.endFree();
+    if (v != 0 && appliedBrightness_ == 0 && !effectSaved_ && a != b) {
+        effectSaved_ = true;
+        for (int i = a; i < b; ++i) effectBackup_[size_t(i)] = palette_.colour(i);
+    }
+    if (v == 0 && appliedBrightness_ != 0 && effectSaved_) {
+        if (a != b) {
+            effectSaved_ = false;
+            for (int i = a; i < b; ++i) palette_.setColour(i, effectBackup_[size_t(i)]);
+        }
+        appliedBrightness_ = 0;
+        palette_.showAll();
+        return;
+    }
+    auto f = [v](uint8_t c) {
+        const int x = int(c) + v;
+        return uint8_t(v < 0 ? (x < 1 ? 0 : x) : (x >= 0x100 ? 0xff : x));
+    };
+    for (int i = a; i < b; ++i) {
+        const ph::Rgb c = effectBackup_[size_t(i)];
+        palette_.setColour(i, ph::Rgb{f(c.r), f(c.g), f(c.b)});
+    }
+    appliedBrightness_ = v;
+    palette_.showAll();
+}
+
+void Game::command(const char* cmd) {
+    // The logic's engine exit with a command string (DAT_0046b1a8); the switch runs after the tick.
+    if (exitCmd_.empty()) exitCmd_ = cmd;
+}
+
+void Game::beginCommand() {
+    // FUN_00443c90's tail: the switch on DAT_0046b1a8[1].  The fades (FUN_0043e470 out,
+    // FUN_0043e810 in at the end of the level load) and the waits block the engine meanwhile.
+    const std::string cmd = exitCmd_;
+    drawPending_ = true;                                 // the exit tick's frame is still drawn (without sprites)
+    auto fadeOut = [&] { enterStage(Stage{Stage::FadeOut, kFadeOutMs}); };
+    auto waitSounds = [&] { enterStage(Stage{Stage::WaitSounds}); };
+    auto wait = [&](int ms) { enterStage(Stage{Stage::Wait, ms}); };
+    auto load = [&](int level) { Stage st{Stage::Load}; st.level = level; enterStage(st); };
+    switch (cmd.size() > 1 ? cmd[1] : 0) {
+    case '0':                                            // 0x444200: the continue screen; the level is kept for "*1"
+        fadeOut();
+        nextLevel_ = levelNo_;
+        load(kContinueScreen);
         break;
     case '1':                                            // 0x444216: the level kept (after the map screen, a continue)
-        mixer_.stopAll();                                // FUN_0043e470 (then 750 ms unless on the map)
-        requestLevel(nextLevel_);
+        fadeOut();
+        if (levelNo_ != kMapScreen) wait(750);
+        load(nextLevel_);
+        break;
+    case '2':                                            // 0x44423d: game over (3000 ms), or a demo's end
+        fadeOut();
+        if (!demoPlaying()) enterStage(Stage{Stage::GameOver, 3000});
+        demoPos_ = kDemoNotActive;
+        load(kTitleScreen);
+        break;
+    case '3':                                            // 0x4442fe: the logic again at the checkpoint
+        waitSounds();
+        fadeOut();
+        wait(750);
+        enterStage(Stage{Stage::Restart});
         break;
     case '4':                                            // 0x4445b9: the map screen, or the reunion after the Warrior Spirit
-        mixer_.stopAll();
-        requestLevel(levelNo_ == kWarriorSpirit ? kSimonRoom : kMapScreen);
+        fadeOut();
+        wait(750);
+        load(levelNo_ == kWarriorSpirit ? kSimonRoom : kMapScreen);
         break;
     case '5':                                            // 0x4445ef: into a vault, or the 2600 level
-        if (cmd[2] == '0') {
+        waitSounds();
+        fadeOut();
+        if (cmd.size() > 2 && cmd[2] == '0') {
             warp_.returnLevel = kLoltunVault2;           // (0xb marks "back from the 2600 level" for "*6")
-            requestLevel(warp_.cheat ? kEnding : kAtari2600Level);
+            load(warp_.cheat ? kEnding : kAtari2600Level);
         } else {
             warp_.returnLevel = levelNo_;
-            requestLevel(cmd[2] - 0x26);                 // "*51" .. "*53": levels 11 .. 13
+            load(cmd[2] - 0x26);                         // "*51" .. "*53": levels 11 .. 13
         }
         break;
     case '6':                                            // 0x444661: out of the 2600 level
-        if (warp_.returnLevel == kLoltunVault2) { warp_.fromAtari = true; requestLevel(kLostCityOfCopan); }
-        else requestLevel(warp_.cheat ? kEnding : kAtari2600Level);
+        waitSounds();
+        fadeOut();
+        if (warp_.returnLevel == kLoltunVault2) { warp_.fromAtari = true; load(kLostCityOfCopan); }
+        else load(warp_.cheat ? kEnding : kAtari2600Level);
         break;
     case '7':                                            // 0x4446bd: out of a vault
-        if (warp_.returnLevel != 1) { warp_.fromVault = true; requestLevel(warp_.returnLevel); }
-        else requestLevel(levelNo_);
+        waitSounds();
+        fadeOut();
+        if (warp_.returnLevel != 1) { warp_.fromVault = true; load(warp_.returnLevel); }
+        else load(levelNo_);
+        break;
+    case '8':
+        load(kTitleScreen);
+        break;
+    case '9':
+        load(kCredits);
         break;
     default:
-        std::fprintf(stderr, "game: unhandled command %s\n", cmd);
+        std::fprintf(stderr, "game: unhandled command %s\n", cmd.c_str());   // (a MessageBox in the original)
+        exitCmd_.clear();
         break;
     }
 }
@@ -279,33 +439,39 @@ void Game::newGame() {
     const bool cheat = warp_.cheat;
     warp_ = Warp{};                                      // DAT_0046a884 / 86 / 88 = 0, DAT_00450fc8 = 1
     warp_.cheat = cheat;
-    seedRandom();                                        // FUN_00434815
 }
 
 void Game::tickAttract() {
-    // Title screen sequencing from the tail of FUN_00443c90.
+    // FUN_00443c90's tail after the switch: the title's start key and the attract sequence.
     if (levelNo_ == kTitleScreen) {
-        const bool start = fs_.frame >= kTitleAcceptInputAfter && (fs_.joypad & ~fs_.joypadPrev) != 0;
-        if (start) {
-            mode_ = Mode::Playing;
-            newGame();
-            playSound(0x25);
-            requestLevel(kCeibaJungle);                      // FUN_004324c6 + FUN_004460e0(0)
-            return;
+        if (fs_.frame < kTitleAcceptInputAfter) {
+            fs_.joypad = 0;
+            startKey_ = 0;
+        } else {
+            if (options_.joystick) { pollJoypad(lastHost_); startKey_ = fs_.joypad != 0; }
+            if (startKey_) {
+                // 0x444797: fade out, 500 ms, a new game (FUN_004324c6), level 0
+                enterStage(Stage{Stage::FadeOut, kFadeOutMs});
+                enterStage(Stage{Stage::Wait, 500});
+                enterStage(Stage{Stage::NewGame});
+                Stage st{Stage::Load};
+                st.level = kCeibaJungle;
+                enterStage(st);
+                return;
+            }
         }
         if (fs_.frame > kTitleAttractFrames) {
             // 0x4447f1: the next demo (0: level 0, 1: level 1, 2: the 2600 level), each a new
-            // game (FUN_004324c6); after the third the intro again
+            // game (FUN_004324c6); after the third the intro again.  No fade out.
             ++demoIndex_;
-            if (demoIndex_ == 3) { demoIndex_ = -1; requestLevel(kIntro); return; }
+            if (demoIndex_ == 3) { demoIndex_ = -1; startLevel(kIntro); return; }
             mode_ = Mode::Attract;
             newGame();
-            requestLevel(demoScript(demoIndex_).level);
+            startLevel(demoScript(demoIndex_).level);
         }
-    } else if (mode_ == Mode::Attract && fs_.frame > kTitleAttractFrames) {
-        requestLevel(kTitleScreen);
     } else if (levelNo_ == kIntro && fs_.frame > kTitleAttractFrames) {
-        requestLevel(kTitleScreen);
+        command("*8");                                   // (a stand-in for the intro's own logic, FUN_00401071)
+        beginCommand();
     }
 }
 
@@ -360,9 +526,19 @@ void Game::renderGameOver() {
 }
 
 void Game::render() {
-    // ---- FUN_00443c90: snapshot the logic state --------------------------
+    // While the command switch blocks, the screen keeps its last frame (the fades change only the
+    // colours), but for the frame a level load or "*3" composes and the game-over screen.
+    if (!stages_.empty() && !drawPending_) return;
+    drawPending_ = false;
     if (mode_ == Mode::GameOver) { renderGameOver(); return; }
+    composeFrame();
+    applyBrightness();                                             // FUN_00443b90 -> FUN_0043de70
+}
+
+void Game::composeFrame() {
+    // ---- FUN_00443c90: snapshot the logic state --------------------------
     snap_ = fs_;
+    shownBrightness_ = int32_t(brightness_);                       // DAT_00452770 = DAT_0046b1b0
     engine::View view{snap_.scrollX, snap_.scrollY};
     deferred_.clear();
 
@@ -452,14 +628,6 @@ uint32_t Game::random() {
     return demoPlaying() ? 1u : d0;
 }
 
-void Game::seedRandom() {
-    // FUN_00434815: DAT_00466772 = 0xbbe307, DAT_00466776 = 0x89abcdef (DAT_0046677e = 0xbb40e64d
-    // is outside the generator's state); DAT_0046677a keeps counting.
-    const uint32_t s0 = 0xbbe307, s1 = 0x89abcdef;
-    std::memcpy(rng_ + 0, &s0, 4);
-    std::memcpy(rng_ + 4, &s1, 4);
-}
-
 void Game::setRandomSeed(uint32_t s0, uint32_t s1) {
     std::memcpy(rng_ + 0, &s0, 4);
     std::memcpy(rng_ + 4, &s1, 4);
@@ -470,7 +638,7 @@ void Game::loseLife() {
     // with none left "*0" goes to the continue screen while there are continues, else "*2" ends
     // the game.
     stats_.lives = (stats_.lives - 1) & 0xff;
-    if (stats_.lives != 0) { restartLevel(); return; }
+    if (stats_.lives != 0) { command("*3"); return; }
     command(stats_.continues != 0 ? "*0" : "*2");
 }
 

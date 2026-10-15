@@ -21,6 +21,9 @@ decompiled code by a test or a rendered image.
 | HUD (`FUN_00442fa0`, `FUN_00435d45`): the "%06d" score, the crocodile's place, jaws and dead pose, `mi_life`'s animations (the meter going down, a 1-up arriving, the blink and flash near the end), lives, treasures, weapon, ammo, the levels it is drawn on, shown in the demos with "DEMONSTRATION"; the slide in from the edges after a start or restart (`DAT_00451940` / `DAT_004667a8`, put back after the pre-ticks) | rendered frames of level 0 and demo 0; `tests/ph_tests.cpp` checks the slide (0x2d at the start, 0 after 15 ticks) and the tick count |
 | The logic's end `0x4363bd` on every path (twice at a start or restart), the logic ticks a level load and `*3` run before the first frame (`0x46ffa0`), the hard flag set each tick (normal in a demo), the tick counts that are never reset (`DAT_004601d9`, `DAT_004601d5`) | `PlayLogic::epilogue`, `Game::preTicks`, `Game::hardMode` |
 | Tick pacing: the 17 ms timer (58.8 Hz), the game-over wait of 3000 ms, the blink of "PAUSED" on the timer's count | `FUN_004448c0`, `0x44423d` |
+| The command switch's blocking parts: the exit frame without sprites, the waits for the sound channels, the fade out (`FUN_0043e470`), the 750 / 500 / 3000 ms waits, the level load's and `*3`'s fade in (`FUN_0043e810`), the engine standing still meanwhile; the screen's shown colours kept apart from the palette's (`DAT_0046d41c` / `DAT_0046d824`) | rendered frames of a death on level 0; `tests/ph_tests.cpp` (transition: the title's start at 1070 ms, the fade in 29 ticks, `*3` after 1320 ms) |
+| The logic's brightness `DAT_0046b1b0` applied at each present (`FUN_0043de70`): the big stone's white flash, the darkening of a fall's death | rendered frames of the blast |
+| Demos: the full scripts (2911, 4063, 1199 ticks), ended by their (0xff, 0xff) or a key through the joypad's 0xff and `*2`; the title's start key (any key down after 61 ticks) | `FUN_00444940`, `0x4362cd`, `0x444797` |
 | Joypad bit layout, default key bindings, joystick thresholds | `FUN_00444940`, data at `0x46d08c` |
 | Option names and defaults | `FUN_004400f0` |
 | Sound bank (138 ids), CD track tables | `FUN_0043ce10`, `0x46e130`, `0x470470` |
@@ -40,7 +43,6 @@ decompiled code by a test or a rendered image.
 | Tile-based parallax for non-forest levels | generic wrapping tile draw at `(parX, parY)`; the original has per-level special cases (waterfall line animation `DAT_00450028..`, level 6/18 water reflection `FUN_00437ba0`, title-screen double layer) |
 | Forest leaf line-scroll band | 32-entry wave table reproduced by shape, not copied from `DAT_00455010` |
 | Title screen animation | final composition + blink only; the seven logo pieces drop in on frames 0xd2–0x163 (`FUN_004426e0`) |
-| Palette fades (`FUN_00441c50`) and `AnimatePalette` effects | not ported |
 | Engine exits inside the logic tick | `engineExit` unwinds the tick at once; the port runs the tick out and skips only its end (`0x4363bd`) |
 | "PAUSED" | drawn with `TextOutA` in the original, in the 8×8 font here |
 | Audio | software mixer instead of Miles; CD music/ambience tracks are listed but not played. The game logic's two sample channels and their priorities (`FUN_004262d9` / `FUN_004261e2`) are modelled |
@@ -63,7 +65,7 @@ decompiled code by a test or a rendered image.
 | Objects not ported yet | only the types whose templates no level places (58, 77, 94): drawn in their template frame, they do nothing (`h_default`) |
 | Loltun vaults | levels 11..13 as the original: the vault set-up at the end of the restart, Harry's state `0x42756d`, the levers' Simon game, the letters, doors, rewards, the falling ceiling and its messages (`FUN_00434a30`), the exits (`*7`), and the vault render order (room in the parallax layer, ceiling in the main layer).  The levers' palette flash (`0x40b960` into the Genesis colours) is not shown |
 | Mine carts and the ride | the ridden cart (15: track of both planes, slope frames, brake lever and sparks, wall crash, thrown out of a fast drop), the pushed cart (19), the runaway carts (98 / 0x63); level 7's scripted intro (`FUN_0043426d`) and the Balankanche ride (115 with its lights, runaway carts, coins, vapours and the 0x600-px loop) |
-| Weapons | the whip (box table `0x4612e0`), sling stones (type 5) with the power shot's sparkle trail, the big stone (type 4) and its screen-clearing blast (types 0x89 / 0x8a), and the boomerang (types 6 / 0x87: flight path, homing, bounce cells, the return, riding it), each from its handler. The blast's white flash (`DAT_0046b1b0`) is kept but not drawn, as the palette fades are not ported |
+| Weapons | the whip (box table `0x4612e0`), sling stones (type 5) with the power shot's sparkle trail, the big stone (type 4) and its screen-clearing blast (types 0x89 / 0x8a), and the boomerang (types 6 / 0x87: flight path, homing, bounce cells, the return, riding it), each from its handler, the blast's white flash (`DAT_0046b1b0`) included |
 | Triggers | start, exit, plane switch, water, priority 0x30/0x31, invisible walls, lever / door / chute / one-way door scripts, piston phases, pot contents; vaults and swing anchors ignored. The object template's byte 8 is a Genesis sound-channel class (`FUN_004263a6`, a stub in the PC build), not a spawn sound. Trigger id 2 is a wall for objects only (class 3 during each handler, cleared by thrown things) and id 3 a wall for Harry only while he is on the ground, as the original sets them per tick |
 | Death | falling out of the level, water, or the damage meter (enemy contact).  `FUN_00430eb6` as the original: every object goes, the `.als` working copy takes the level's entries back but for the treasures and letters (ids 0x58..0x5c, 0xf0..0xf6), the lever flags 0x466510..21 are cleared, and `*3` starts the logic again in place at the checkpoint (`FUN_00432615`, the level is not loaded again); with the lives out `*0` the continue screen (level 14: the sign, "continues N", the letters found, Harry's match, yes / no) and a continue loads the level again from its start (`*1`), or `*2` the game-over screen for 3 s and the title |
 | Level flow | exit (`0x430912`: the level kept in `DAT_0046b1ac`, `*4`) → the map screen (level 19) → the next level (`*1`), in the original's order 0, 1, 2, 3, 4, 5, 6, 16, 17, 7, 18, 8, 9, 10, and after level 10 the reunion room (22); the vortices lead to the vaults and back (`*51`..`*53`, `*7`) with the level saved and restored as `FUN_004288ec` / `FUN_0043256f` do, and on level 3 to the 2600 level (`*50`, `*6`) |
@@ -74,16 +76,19 @@ decompiled code by a test or a rendered image.
 
 The machine-translated 68000 half of the binary (`0x401000–0x437fff`) is ported routine by routine: Harry's
 states, the object system and 140 of its behaviour types, the camera and spawner, the triggers and level
-scripts, the map screen, the 2600 level and the continue screen.  What is left: the palette fades
-(`FUN_00441c50`, `DAT_0046b1b0`, the fade out / in around `*1` .. `*4` with their 750 ms waits), CD music, the
-intro, title, credits, ending and reunion room logic (levels 15, 21 .. 24), the typed cheat codes (`0x439868`,
-e.g. the invincibility of `DAT_0046d054`), the per-level water effects of `FUN_00443370` / `FUN_00437ba0`, and
-the MSVC build.
+scripts, the map screen, the 2600 level, the continue screen and the engine's transitions.  What is left: CD
+music (with its volume, `FUN_00441c50`, and its fade at a level load, `FUN_00442190`), the intro, title, credits,
+ending and reunion room logic (levels 15, 21 .. 24; the title's own sounds 0x25 / 0x29 and its jungle sounds), the
+typed cheat codes (`0x439868`, e.g. the invincibility of `DAT_0046d054`), the per-level water effects of
+`FUN_00443370` / `FUN_00437ba0`, the window's status bar with the level's name (`FUN_00440bc0`) and the "loading"
+dialog of a windowed level load, any key ending the pause (`WM_KEYDOWN`), and the MSVC build.
 
-For the fades: the 1-up's arrival (`0x41ff34` / `0x41ff56`) writes the word 1 at `a0 + 0x5a` and `a0 + 0x6a`,
-a0 being left in the sparkle table by the same tick's sparkle (the arrival always falls on one): two words of
-the death fade's target palette at `0x46212e` (0x462142 + 4r and 0x462152 + 4r, r the sparkle's corner, 4 bytes
-lower when the sparkle found no free record), which the PC keeps in writable data.
+The Genesis half's own palette fades (`DAT_0046655e` .. `DAT_00466568`: the death colours, the continue screen's
+match, a boss's) are written but never read on the PC (`FUN_004263e3`, the Genesis routine that ran them, is a
+`ret`), so they have no effect, nor do the 1-up's stray writes into their tables (`0x41ff34` / `0x41ff56` write
+the word 1 at `a0 + 0x5a` / `+ 0x6a`, a0 left in the sparkle table by the same tick's sparkle).  `FUN_00434815`,
+the Genesis seeding of the random generator, is unreachable too: its state starts at zero and runs on across
+games (the demos advance it too).
 
 ## Known gaps in the asset layer
 

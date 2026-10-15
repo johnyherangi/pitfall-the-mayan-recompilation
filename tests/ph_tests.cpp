@@ -93,8 +93,15 @@ namespace { int jaguarTest(const std::string& dir); int bungeeTest(const std::st
             int vortexTest(const std::string& dir); int deathTest(const std::string& dir); int vaultTest(const std::string& dir);
             int stoneJaguarTest(const std::string& dir); int jaguarManTest(const std::string& dir);
             int warriorSpiritTest(const std::string& dir); int atari2600Test(const std::string& dir);
-            int mapScreenTest(const std::string& dir); int continueTest(const std::string& dir); }
+            int mapScreenTest(const std::string& dir); int continueTest(const std::string& dir);
+            int transitionTest(const std::string& dir); }
 namespace {
+// The engine's blocking parts run out: a command's fades and waits, a level load's fade in.
+int settle(game::Game& g, int cap = 1000) {
+    int n = 0;
+    for (engine::HostInput idle; (g.transitionActive() || g.exitPending()) && n < cap; ++n) g.tick(idle);
+    return n;
+}
 int gameplayTests(const std::string& dir) {
     int fails = 0;
     engine::Options opts;
@@ -105,6 +112,8 @@ int gameplayTests(const std::string& dir) {
 
     // Ceiba Jungle: the pouch left of the start is collected by walking left.
     g.setMode(game::Mode::Playing); g.startLevel(0);
+    const int fadeIn = settle(g);
+    if (fadeIn != 29) { std::printf("FAIL: level 0's fade in took %d ticks\n", fadeIn); ++fails; }
     const int lives0 = g.stats().lives;
     // The HUD slides in: DAT_00451940 is 0x30 less the start's tick, put back after the 14
     // pre-ticks, then 3 less a tick; the logic's tick count went up by 2 + 14.
@@ -118,11 +127,13 @@ int gameplayTests(const std::string& dir) {
     if (g.stats().score <= 0) { std::printf("FAIL: no treasure collected on level 0 (score %d)\n", g.stats().score); ++fails; }
     // Xibalba Falls: running off the start ledge into the gorge costs a life and restarts the level.
     g.startLevel(1);
+    settle(g);
     for (int i = 0; i < 230; ++i) g.tick(i < 2 ? idle : right);
     if (g.stats().lives != lives0 - 1) { std::printf("FAIL: expected a lost life on level 1, lives=%d\n", g.stats().lives); ++fails; }
     if (g.levelNumber() != 1) { std::printf("FAIL: level should restart after death, now %d\n", g.levelNumber()); ++fails; }
     // Jumping right from the start must land on the ledge above (y decreases, still on ground).
     g.startLevel(1);
+    settle(g);
     for (int i = 0; i < 60; ++i) g.tick(i < 2 ? idle : jumpRight);
     const auto& dl = g.state().displayList;
     if (dl.empty()) { std::printf("FAIL: Harry not in the display list\n"); ++fails; }
@@ -140,6 +151,7 @@ int gameplayTests(const std::string& dir) {
     fails += atari2600Test(dir);
     fails += mapScreenTest(dir);
     fails += continueTest(dir);
+    fails += transitionTest(dir);
     return fails;
 }
 }
@@ -152,7 +164,9 @@ namespace {
 // A level's exit ("*4") goes through the map screen (level 19): let it run to the next level.
 int throughMap(game::Game& g) {
     int t = 0;
-    for (engine::HostInput idle; g.levelNumber() == 19 && t < 1000; ++t) g.tick(idle);
+    for (engine::HostInput idle; (g.levelNumber() != 19 || g.transitionActive()) && t < 1000; ++t) g.tick(idle);   // the fade out
+    for (engine::HostInput idle; g.levelNumber() == 19 && t < 2000; ++t) g.tick(idle);
+    settle(g);
     return t;
 }
 
@@ -160,7 +174,7 @@ int jaguarTest(const std::string& dir) {
     int fails = 0;
     engine::Options opts; opts.allowCheat = true;
     game::Game g(dir, opts);
-    g.startLevel(0); g.setMode(game::Mode::Playing);
+    g.startLevel(0); g.setMode(game::Mode::Playing); settle(g);
     game::PlayLogic* pl = game::g_debugLogic;
     if (!pl) { std::printf("FAIL: no play logic for level 0\n"); return 1; }
     // Fly over the arena to its right edge, then down along it: the jaguar's .als entry is met
@@ -211,7 +225,7 @@ int bungeeTest(const std::string& dir) {
     int fails = 0;
     engine::Options opts; opts.allowCheat = true;
     game::Game g(dir, opts);
-    g.startLevel(0); g.setMode(game::Mode::Playing);
+    g.startLevel(0); g.setMode(game::Mode::Playing); settle(g);
     game::PlayLogic* pl = game::g_debugLogic;
     if (!pl) return 1;
     for (int i = 0; i < 3000; ++i) {                      // fly to the branch
@@ -251,7 +265,7 @@ int stoneTest(const std::string& dir) {
     int fails = 0;
     engine::Options opts;
     game::Game g(dir, opts);
-    g.startLevel(0); g.setMode(game::Mode::Playing);
+    g.startLevel(0); g.setMode(game::Mode::Playing); settle(g);
     game::PlayLogic* pl = game::g_debugLogic;
     if (!pl) return 1;
     for (int i = 0; i < 60; ++i) g.tick(engine::HostInput{});
@@ -292,7 +306,7 @@ int stoneTest(const std::string& dir) {
     // The boomerang (type 6) flies its loop, turns into type 0x87 at the end of the path and
     // comes back to Harry, who stands still and gets it back (a new game: nothing about to
     // home in on).
-    g.startLevel(0); g.setMode(game::Mode::Playing);
+    g.startLevel(0); g.setMode(game::Mode::Playing); settle(g);
     pl = game::g_debugLogic;
     for (int i = 0; i < 60; ++i) g.tick(engine::HostInput{});
     g.stats().weapon = 1; g.stats().ammoCount[1] = 3;
@@ -348,7 +362,7 @@ int vortexTest(const std::string& dir) {
     engine::Options opts; opts.allowCheat = true;
     game::Game g(dir, opts);
     g.newGame();
-    g.startLevel(8); g.setMode(game::Mode::Playing);
+    g.startLevel(8); g.setMode(game::Mode::Playing); settle(g);
     game::PlayLogic* pl = game::g_debugLogic;
     if (!pl) return 1;
     flyTo(g, pl, 5970, 400);
@@ -363,7 +377,7 @@ int vortexTest(const std::string& dir) {
     if (caught < 0) { std::printf("FAIL: the vortex did not catch Harry\n"); return fails + 1; }
     if (g.levelNumber() != 12) { std::printf("FAIL: the vortex led to level %d, not 12\n", g.levelNumber()); return fails + 1; }
     g.command("*7");
-    g.tick(engine::HostInput{});
+    settle(g);
     pl = game::g_debugLogic;
     const game::Harry& h = pl->harry();
     const int bx = h.x(), by = h.y();
@@ -391,7 +405,7 @@ int deathTest(const std::string& dir) {
     engine::Options opts; opts.allowCheat = true;
     game::Game g(dir, opts);
     g.newGame();
-    g.startLevel(0); g.setMode(game::Mode::Playing);
+    g.startLevel(0); g.setMode(game::Mode::Playing); settle(g);
     game::PlayLogic* pl = game::g_debugLogic;
     if (!pl) return 1;
     const size_t silver = alsEntry(g.level().als, 11, 17);
@@ -402,6 +416,7 @@ int deathTest(const std::string& dir) {
     if (id(silver) != 0) { std::printf("FAIL: the silver was not collected (score %d)\n", score); ++fails; }
     pl->harry().b(0x465b72) = 0xfa;                       // fell out of the level
     g.tick(engine::HostInput{});
+    settle(g);                                            // the sounds, the fade out, 750 ms, "*3", the fade in
     const game::Harry& h = pl->harry();
     if (game::g_debugLogic != pl) { std::printf("FAIL: the level was loaded again\n"); ++fails; }
     if (g.stats().lives != lives - 1) { std::printf("FAIL: lives %d -> %d\n", lives, g.stats().lives); ++fails; }
@@ -421,7 +436,7 @@ int vaultTest(const std::string& dir) {
     engine::Options opts;
     game::Game g(dir, opts);
     g.newGame();
-    g.startLevel(12); g.setMode(game::Mode::Playing);
+    g.startLevel(12); g.setMode(game::Mode::Playing); settle(g);
     game::PlayLogic* pl = game::g_debugLogic;
     if (!pl) return 1;
     const int score0 = g.stats().score, lives0 = g.stats().lives;
@@ -461,7 +476,7 @@ int stoneJaguarTest(const std::string& dir) {
     int fails = 0;
     engine::Options opts; opts.allowCheat = true;
     game::Game g(dir, opts);
-    g.startLevel(3); g.setMode(game::Mode::Playing);
+    g.startLevel(3); g.setMode(game::Mode::Playing); settle(g);
     game::PlayLogic* pl = game::g_debugLogic;
     if (!pl) { std::printf("FAIL: no play logic for level 3\n"); return 1; }
     const int legs[3][2] = {{2400, 700}, {2400, 140}, {2250, 140}};
@@ -545,7 +560,7 @@ int jaguarManTest(const std::string& dir) {
     int fails = 0;
     engine::Options opts; opts.allowCheat = true;
     game::Game g(dir, opts);
-    g.startLevel(8); g.setMode(game::Mode::Playing);
+    g.startLevel(8); g.setMode(game::Mode::Playing); settle(g);
     game::PlayLogic* pl = game::g_debugLogic;
     if (!pl) { std::printf("FAIL: no play logic for level 8\n"); return 1; }
     const int legs[2][2] = {{5800, 280}, {5800, 150}};
@@ -608,7 +623,7 @@ int warriorSpiritTest(const std::string& dir) {
     int fails = 0;
     engine::Options opts;
     game::Game g(dir, opts);
-    g.startLevel(10); g.setMode(game::Mode::Playing);
+    g.startLevel(10); g.setMode(game::Mode::Playing); settle(g);
     game::PlayLogic* pl = game::g_debugLogic;
     if (!pl) { std::printf("FAIL: no play logic for level 10\n"); return 1; }
     std::set<uint32_t> states;
@@ -707,7 +722,7 @@ int atari2600Test(const std::string& dir) {
         game::Game g(dir, opts);
         engine::HostInput idle;
         int t = 0;
-        while (!(g.levelNumber() == 20 && g.mode() == game::Mode::Attract) && t < 9000) { g.tick(idle); ++t; }
+        while (!(g.levelNumber() == 20 && g.mode() == game::Mode::Attract && !g.transitionActive()) && t < 16000) { g.tick(idle); ++t; }
         if (g.levelNumber() != 20) { fail("the attract mode never reached the 2600 demo"); return fails; }
         while (g.levelNumber() == 20 && demoTicks < 3000) {
             const game::Harry& h = game::g_debugLogic->harry();
@@ -728,6 +743,7 @@ int atari2600Test(const std::string& dir) {
     game::Game g(dir, opts);
     g.setMode(game::Mode::Playing);
     g.startLevel(20);
+    settle(g);
     game::PlayLogic* pl = game::g_debugLogic;
     game::Harry& h = pl->harry();
     auto objects = [&](uint8_t type) { int n = 0; for (const game::Obj* o : pl->objectSystem().list()) n += o->type == type; return n; };
@@ -756,8 +772,8 @@ int atari2600Test(const std::string& dir) {
     const int sinkX = h.x();
     const int backAt = run(400, 0, [&] { return h.b(0x465ea2) != 0; });
     const int backY = h.y();
-    const int landAt = run(100, 0, [&] { return h.b(0x465ea2) == 0; });
-    if (sinkAt < 0 || h.uw(0x465ba8) != 6 || backAt < 0 || backY != 0x168 + 1 || landAt < 0 || h.y() != 0x18a || h.x() != 0x116 || h.b(0x465e85) != 1) {
+    const int landAt = run(400, 0, [&] { return h.b(0x465ea2) == 0; });   // ("*3": the fades and the wait first)
+    if (sinkAt < 0 || h.uw(0x465ba8) != 6 || backAt < 0 || backY != 0x168 || landAt < 0 || h.y() != 0x18a || h.x() != 0x116 || h.b(0x465e85) != 1) {
         std::printf("FAIL: 2600: the tar pit (sank %d at x %d, back %d at y %d, landed %d, lives %d)\n", sinkAt, sinkX, backAt, backY, landAt, int(h.b(0x465e85)));
         ++fails;
     }
@@ -797,6 +813,7 @@ int atari2600Test(const std::string& dir) {
         std::printf("FAIL: 2600: the scorpion (stung %d, lives %d, screen %d), out at %d\n", stungAt, livesStung, screenStung, exitAt);
         ++fails;
     }
+    settle(g);
     pl = game::g_debugLogic;
     if (g.levelNumber() != 20 || !pl || pl->harry().b(0x465e85) != 2 || pl->harry().l(0x466172) != 2000) fail("\"*6\" did not start the level again");
     // the clock: from 0:01 it runs out in a second; the game is over
@@ -831,7 +848,7 @@ int mapScreenTest(const std::string& dir) {
         g.setMode(game::Mode::Playing);
         g.startLevel(kTour[i][0]);
         g.completeLevel();
-        g.tick(idle);
+        settle(g);
         if (g.levelNumber() != 19) { std::printf("FAIL: map: level %d did not lead to the map (%d)\n", kTour[i][0], g.levelNumber()); ++fails; continue; }
         game::PlayLogic* pl = game::g_debugLogic;
         int t = 0, pegs = 0, letters = 0;
@@ -854,10 +871,11 @@ int mapScreenTest(const std::string& dir) {
     // a button skips it, but not in its first 30 ticks
     g.startLevel(0);
     g.completeLevel();
-    g.tick(idle);
+    settle(g);
     engine::HostInput jump; jump.keyDown['W'] = true;
     int skipAt = -1;
-    for (int t = 0; t < 100 && skipAt < 0; ++t) { g.tick(t % 2 ? jump : idle); if (g.levelNumber() != 19) skipAt = t; }
+    for (int t = 0; t < 100 && skipAt < 0; ++t) { g.tick(t % 2 ? jump : idle); if (g.transitionActive()) skipAt = t; }
+    settle(g);
     if (skipAt < 29 || skipAt > 32 || g.levelNumber() != 1) { std::printf("FAIL: map: a button went on at %d (level %d)\n", skipAt, g.levelNumber()); ++fails; }
     std::printf("map: 13 paths in %d ticks; a button goes on at %d\n", total, skipAt);
     return fails;
@@ -885,7 +903,8 @@ int continueTest(const std::string& dir) {
         g.stats().score = 1234;
         g.stats().lives = 1;
         g.loseLife();
-        g.tick(idle);
+        for (int i = 0; i < 500 && g.levelNumber() == level && g.mode() != game::Mode::GameOver; ++i) g.tick(idle);
+        if (g.levelNumber() == 14) settle(g);
     };
     // yes
     loseAll(2, 3);
@@ -918,6 +937,51 @@ int continueTest(const std::string& dir) {
     loseAll(5, 0);
     if (g.mode() != game::Mode::GameOver) { std::printf("FAIL: continue: without continues the game is not over (level %d)\n", g.levelNumber()); ++fails; }
     std::printf("continue: yes out at %d; no: game over at %d, title at %d\n", out, over, title);
+    return fails;
+}
+}
+
+// The engine's transitions: a key on the title (after its first 61 ticks) fades out (19 steps of
+// 30 ms), waits 500 ms and loads level 0, which fades in (30 ms of black, 15 steps); "*3" waits
+// for the sounds, fades out, waits 750 ms and starts the logic again; the free colours come back
+// exactly.  The big stone's flash (DAT_0046b1b0) brightens them and gives them back.
+namespace {
+int transitionTest(const std::string& dir) {
+    int fails = 0;
+    engine::Options opts;
+    game::Game g(dir, opts);
+    engine::HostInput idle, key;
+    key.keyDown['A'] = true;
+    int t = 0;
+    while (g.levelNumber() != 15 && t < 3000) { g.tick(idle); ++t; }
+    settle(g);
+    for (int i = 0; i < 70; ++i) g.tick(idle);
+    const ph::Rgb before = g.palette().colour(100);
+    g.tick(key);
+    int faded = 0, black = -1, loaded = -1;
+    for (int i = 0; i < 200 && loaded < 0; ++i) {
+        const ph::Rgb c = g.palette().shown(100);
+        if (c.r < before.r) ++faded;
+        if (black < 0 && c.r == 0 && c.g == 0 && c.b == 0) black = i;
+        g.tick(idle);
+        if (g.levelNumber() == 0) loaded = i;
+    }
+    const int fadeIn = settle(g);
+    const ph::Rgb after = g.palette().shown(100), truth = g.palette().colour(100);
+    if (loaded < 60 || loaded > 66 || fadeIn != 29 || black < 0 || after.r != truth.r || after.g != truth.g || after.b != truth.b || g.mode() != game::Mode::Playing) {
+        std::printf("FAIL: transition: the title's start (faded %d, black at %d, level 0 at %d, fade in %d)\n", faded, black, loaded, fadeIn);
+        ++fails;
+    }
+    // "*3"
+    game::PlayLogic* pl = game::g_debugLogic;
+    for (int i = 0; i < 20; ++i) g.tick(idle);
+    pl->harry().b(0x465b72) = 0xfa;
+    g.tick(idle);
+    int restarted = -1;
+    const uint32_t ticks0 = g.logicTicks();
+    for (int i = 0; i < 300 && restarted < 0; ++i) { g.tick(idle); if (g.logicTicks() != ticks0) restarted = i; }
+    if (restarted < 76 || restarted > 80 || game::g_debugLogic != pl) { std::printf("FAIL: transition: \"*3\" restarted at %d\n", restarted); ++fails; }
+    std::printf("transition: title -> level 0 at %d (fade in %d), \"*3\" after %d\n", loaded, fadeIn, restarted);
     return fails;
 }
 }

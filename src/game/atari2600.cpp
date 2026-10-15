@@ -54,8 +54,7 @@ void PlayLogic::a26Exit(const char* cmd) {
     // logic; the engine then takes the command ("*3": FUN_004360e9, "*6": out of the level).
     game_->state().displayList.clear();
     specialExited_ = true;
-    if (cmd[1] == '3') game_->restartLevel();
-    else game_->command(cmd);
+    game_->command(cmd);
 }
 
 void PlayLogic::a26Frame(Game& g, int entry) {

@@ -68,7 +68,7 @@ int main(int argc, char** argv) {
     want.freq = engine::Mixer::kOutputRate; want.format = AUDIO_S16SYS; want.channels = 2; want.samples = 1024;
     want.callback = audioCallback; want.userdata = g.get();
     SDL_AudioDeviceID dev = SDL_OpenAudioDevice(nullptr, 0, &want, &have, 0);
-    if (dev) SDL_PauseAudioDevice(dev, 0);
+    if (dev) { SDL_PauseAudioDevice(dev, 0); g->mixer().setDeviceClock(true); }
     SDL_Joystick* joy = SDL_NumJoysticks() > 0 ? SDL_JoystickOpen(0) : nullptr;
 
     engine::HostInput host;
@@ -122,7 +122,7 @@ int main(int argc, char** argv) {
             SDL_LockTexture(tex, nullptr, &pixels, &pitch);
             const ph::Palette& pal = g->palette();
             uint32_t lut[256];
-            for (int i = 0; i < 256; ++i) { const ph::Rgb c = pal.colour(i); lut[i] = 0xff000000u | (uint32_t(c.r) << 16) | (uint32_t(c.g) << 8) | c.b; }
+            for (int i = 0; i < 256; ++i) { const ph::Rgb c = pal.shown(i); lut[i] = 0xff000000u | (uint32_t(c.r) << 16) | (uint32_t(c.g) << 8) | c.b; }
             const uint8_t* src = g->framebuffer().viewBase(g->viewScrollX());
             for (int y = 0; y < engine::kViewH; ++y) {
                 auto* d = reinterpret_cast<uint32_t*>(static_cast<uint8_t*>(pixels) + size_t(y) * pitch);
