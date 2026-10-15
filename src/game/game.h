@@ -118,6 +118,8 @@ public:
     void playSound(int id) { mixer_.play(id, options_.wavVolume); }   // FUN_0043cc10
     bool soundPlaying(int id) const { return mixer_.playing(id); }
     void stopSound(int id) { mixer_.stop(id); }
+    void playChannel(int ch, int id) { mixer_.playChannel(ch, id, options_.wavVolume); }   // FUN_0043cc10(id, ch)
+    bool channelBusy(int ch) const { return mixer_.channelBusy(ch); }                       // FUN_0043cbc0(ch)
     void requestLevel(int level) { pendingLevel_ = level; }           // "*" command strings
     void completeLevel();                                             // "*4": next level in the tour
     void loseLife();                                                  // death: restart or game over
@@ -131,6 +133,11 @@ public:
     // Level-script flags DAT_00466510..2f (levers pulled, crates blown): kept across deaths,
     // cleared with the level (FUN_00430eb6).  Index = address - 0x466510.
     uint8_t* levelFlags() { return levelFlags_; }
+    // FUN_0043387e: the game logic's random generator (state DAT_00466772..7d, kept across
+    // levels).  While a demo plays (DAT_00466500) it advances but always returns 1.
+    uint32_t random();
+    void seedRandom();                 // FUN_00434815 (new game): the fixed seeds
+    bool demoPlaying() const { return demoPos_ != 0x800; }   // DAT_00466500 (DAT_0046fb8c != 0x800)
 
 private:
     void computeParallax();            // FUN_00443370 per-level switch
@@ -139,6 +146,7 @@ private:
     void renderTitle();                // FUN_004426e0 title animation
 
     uint8_t levelFlags_[32] = {};
+    uint8_t rng_[12] = {};             // DAT_00466772: three longs at +0 / +4 / +8 (+6 overlaps them)
     std::string dataDir_;
     engine::Options& options_;
     ph::Palette palette_;

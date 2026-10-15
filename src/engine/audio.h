@@ -31,6 +31,11 @@ public:
     void stopAll();
     bool playing(int soundId) const;       // FUN_0043cbc0-style channel test, by sample id
     void stop(int soundId);
+    // The game logic's sample channels (FUN_0043cc10(id, channel) / FUN_0043cbc0(channel)):
+    // a channel plays one sample at a time and a new one cuts the old; 0x8000 / 0x89 stop it.
+    static constexpr int kChannels = 2;
+    void playChannel(int channel, int soundId, int volume = 0x7f);
+    bool channelBusy(int channel) const;
     void setMasterVolume(int v0to127) { master_ = v0to127; }
     bool enabled() const { return enabled_; }
     void setEnabled(bool e) { enabled_ = e; if (!e) stopAll(); }

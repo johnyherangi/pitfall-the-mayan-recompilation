@@ -30,23 +30,48 @@ ColumnTable::ColumnTable(std::span<const uint8_t> blob, int headerBytes, int col
     }
 }
 
+namespace {
+// The column-table walk of the three probes: entries are (row, id) pairs in row order.
+// The original indexes the column with (x >> 3) & 0xfffe as an unsigned word, so a negative
+// x reads past the table; here it simply finds nothing.
+int surfaceAt(uint8_t id, int x, int row) {
+    return row * 16 + kCollisionHeights[id * 16 + (x & 15)] - 1;
+}
+}
+
 FloorHit probeCell(const ColumnTable& t, int x, int y) {
     FloorHit r;
-    if (x < 0 || y < 0) return r;
-    const int col = x >> 4, row = y >> 4;
-    const ColumnEntry* e = t.find(col, row);
-    if (!e || e->row != row) return r;
-    const uint8_t h = kCollisionHeights[(e->id & 0x7f) * 16 + (x & 15)];
-    if (h == 0) return r;
-    r.hit = true; r.surfaceY = row * 16 + h - 1; r.shape = e->id;
+    if (y < 2 || x < 0) return r;                    // cmp d1.w,2 / js
+    const int row = (y & 0xffff) >> 4;
+    for (const ColumnEntry& e : t.column(x >> 4)) {
+        if (e.row == row) { r.hit = true; r.surfaceY = surfaceAt(e.id, x, row); r.shape = e.id; return r; }
+        if (row < e.row) break;
+    }
+    return r;
+}
+
+FloorHit probeLanding(const ColumnTable& t, int x, int y) {
+    FloorHit r = probeCell(t, x, y);
+    if (!r.hit) return r;
+    const int h1 = kCollisionHeights[r.shape * 16 + (x & 15)] - 1;
+    if ((h1 & 8) && !(y & 8)) r.hit = false;         // bt d4,3 / bt d1,3
     return r;
 }
 
 FloorHit probeNear(const ColumnTable& t, int x, int y) {
-    // FUN_00425d6f: same row first, then the row above, then the row below.
-    FloorHit r = probeCell(t, x, y);
-    if (!r.hit && y >= 16) r = probeCell(t, x, y - 16);
-    if (!r.hit) r = probeCell(t, x, y + 16);
+    FloorHit r;
+    if (y < 0x12 || x < 0) return r;                 // cmp d1.w,0x12 / js
+    const int row = (y & 0xffff) >> 4;
+    for (const ColumnEntry& e : t.column(x >> 4)) {
+        int d;
+        if (e.row == row + 1) d = 16;
+        else if (e.row == row) d = 0;
+        else if (e.row == row - 1) d = -16;
+        else if (row - 1 < e.row) break;
+        else continue;
+        r.hit = true; r.surfaceY = surfaceAt(e.id, x, row) + d; r.shape = e.id;
+        return r;
+    }
     return r;
 }
 

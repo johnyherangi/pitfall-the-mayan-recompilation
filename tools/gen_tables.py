@@ -23,12 +23,13 @@ def rd(va, n):
     for sva, ro, rs in secs:
         if sva <= va - 0x400000 < sva + rs:
             o = ro + (va - 0x400000 - sva); return d[o:o + n]
-heights = rd(0x4668c4, 16 * 128); trgattr = rd(0x461f8e, 0xff); facing = rd(0x433334, 50)
+heights = rd(0x4668c4, 16 * 256); trgattr = rd(0x461f8e, 0xff); facing = rd(0x433334, 50)
 out = ['// GENERATED from PITFALL.EXE data (tools/gen_tables.py) - do not edit by hand.',
        '#include "ph/tables.h"', 'namespace ph {',
-       '// 0x4668c4: surface height per x within a 16x16 collision cell, 16 bytes per shape id.',
-       'const uint8_t kCollisionHeights[128 * 16] = {']
-for i in range(128):
+       '// 0x4668c4: surface height per x within a 16x16 collision cell, 16 bytes per shape id',
+       '// (all 256 ids: the probes index the table with the whole id byte).',
+       'const uint8_t kCollisionHeights[256 * 16] = {']
+for i in range(256):
     out.append('    ' + ', '.join(f'0x{b:02x}' for b in heights[i * 16:(i + 1) * 16]) + ',')
 out += ['};', '// 0x461f8e: trigger class per trigger type (copied to 0x4658c0 at level start).', 'const uint8_t kTriggerClass[255] = {']
 for i in range(0, 255, 16):

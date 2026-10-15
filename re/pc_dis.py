@@ -334,8 +334,9 @@ def main():
                 return s2 + suf
             return m.group(0)
         ins = re.sub(r'(BYTE|WORD|DWORD) PTR ds:0x([0-9a-f]{6})', regsub, ins)
-        ins = re.sub(r'\b(ax|eax|al),ds:0x([0-9a-f]{6})', lambda m: f'{m.group(1)},{sym(int(m.group(2),16)) or "0x"+m.group(2)}', ins)
-        ins = re.sub(r'ds:0x([0-9a-f]{6}),(ax|eax|al)', lambda m: f'{sym(int(m.group(1),16)) or "0x"+m.group(1)},{m.group(2)}', ins)
+        # moffs loads / stores: a named variable, or [0x...] so they cannot be mistaken for immediates
+        ins = re.sub(r'\b(ax|eax|al),ds:0x([0-9a-f]{6})', lambda m: f'{m.group(1)},{sym(int(m.group(2),16)) or "[0x"+m.group(2)+"]"}', ins)
+        ins = re.sub(r'ds:0x([0-9a-f]{6}),(ax|eax|al)', lambda m: f'{sym(int(m.group(1),16)) or "[0x"+m.group(1)+"]"},{m.group(2)}', ins)
         notes = [n for n in notes if not n.split('=')[1].startswith(('d', 'a')) or n.split('=')[1] in names.values()]
         if ins.startswith('mov edi,a6.l'): ins = 'edi = a6 (obj)'
         print(f'{addr}: {ins:<44} {"; " + " ".join(notes) if notes else ""}')

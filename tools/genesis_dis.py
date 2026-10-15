@@ -62,8 +62,24 @@ def handler_range(t):
 md = capstone.Cs(capstone.CS_ARCH_M68K, capstone.CS_MODE_M68K_000)
 
 
+class _Data:
+    """A word capstone cannot decode (inline data between routines)."""
+    def __init__(self, address, word):
+        self.address, self.mnemonic, self.op_str = address, 'dc.w', f'${word:04x}'
+
+
 def rom_disasm(start, end):
-    return list(md.disasm(ROM[start:end], start))
+    # Linear sweep that steps over undecodable words, so inline tables do not end the listing.
+    out, a = [], start
+    while a < end:
+        got = False
+        for i in md.disasm(ROM[a:end], a):
+            out.append(i); a = i.address + i.size; got = True
+        if a < end:
+            out.append(_Data(a, struct.unpack_from('>H', ROM, a)[0])); a += 2
+        elif not got:
+            break
+    return out
 
 
 def pc_disasm(start, end):

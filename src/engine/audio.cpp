@@ -63,10 +63,29 @@ void Mixer::play(int soundId, int volume, bool loop) {
     const DecodedSample* s = sample(soundId);
     if (!s || s->mono.empty()) return;
     Voice* v = nullptr;
-    for (auto& cand : voices_) if (!cand.active) { v = &cand; break; }
-    if (!v) v = &voices_[0];               // steal the oldest-allocated voice
+    for (int i = 0; i < kVoices - kChannels; ++i) if (!voices_[i].active) { v = &voices_[i]; break; }
+    if (!v) v = &voices_[0];               // steal the oldest-allocated voice (the last two are the channels)
     v->s = s; v->pos = 0; v->step = double(s->sampleRate) / kOutputRate;
     v->volume = std::clamp(volume, 0, 0x7f); v->loop = loop; v->active = true;
+}
+
+void Mixer::playChannel(int channel, int soundId, int volume) {
+    if (!enabled_ || channel < 0 || channel >= kChannels) return;
+    std::lock_guard<std::mutex> lock(mutex_);
+    Voice& v = voices_[kVoices - kChannels + channel];
+    v.active = false;                      // AIL_end_sample
+    if (soundId == 0x8000 || soundId == 0x89) return;
+    const DecodedSample* s = sample(soundId);
+    if (!s || s->mono.empty()) return;
+    v.s = s; v.pos = 0; v.step = double(s->sampleRate) / kOutputRate;
+    v.volume = std::clamp(volume, 0, 0x7f); v.loop = false; v.active = true;
+}
+
+bool Mixer::channelBusy(int channel) const {
+    // FUN_0043cbc0: true while the channel's sample plays (and when there is no sound at all).
+    if (!enabled_ || channel < 0 || channel >= kChannels) return true;
+    std::lock_guard<std::mutex> lock(mutex_);
+    return voices_[kVoices - kChannels + channel].active;
 }
 
 void Mixer::stopAll() {

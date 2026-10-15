@@ -174,6 +174,7 @@ void Game::tickAttract() {
             mode_ = Mode::Playing;
             stats_ = PlayerStats{};
             stats_.difficulty = options_.difficulty;
+            seedRandom();                                    // FUN_00434815
             playSound(0x25);
             requestLevel(kCeibaJungle);                      // FUN_004324c6 + FUN_004460e0(0)
             return;
@@ -234,6 +235,33 @@ void Game::completeLevel() {
     for (size_t i = 0; i + 1 < sizeof(kTour) / sizeof(kTour[0]); ++i)
         if (kTour[i] == levelNo_) { requestLevel(kTour[i + 1]); return; }
     requestLevel(kCredits);
+}
+
+uint32_t Game::random() {
+    // FUN_0043387e.  s0 = DAT_00466772, s1 = DAT_00466776, s2 = DAT_0046677a (longs, little-endian).
+    auto L = [&](int o) { uint32_t v; std::memcpy(&v, rng_ + o, 4); return v; };
+    auto setL = [&](int o, uint32_t v) { std::memcpy(rng_ + o, &v, 4); };
+    auto W = [&](int o) { uint16_t v; std::memcpy(&v, rng_ + o, 2); return v; };
+    auto setW = [&](int o, uint16_t v) { std::memcpy(rng_ + o, &v, 2); };
+    setL(8, L(8) + 1);
+    uint32_t d0 = L(0) + L(4);
+    setL(6, L(6) ^ d0);                 // overlaps the high word of s1 and the low word of s2
+    d0 += L(8);
+    setL(0, d0);
+    // rcr / rcl by one with the carry cleared by the "add a0, 2" before each of them
+    setW(0, uint16_t(W(0) >> 1));
+    setW(2, uint16_t(W(2) << 1));
+    setW(4, uint16_t(W(4) >> 1));
+    setW(6, uint16_t(W(6) << 1));
+    return demoPlaying() ? 1u : d0;
+}
+
+void Game::seedRandom() {
+    // FUN_00434815: DAT_00466772 = 0xbbe307, DAT_00466776 = 0x89abcdef (DAT_0046677e = 0xbb40e64d
+    // is outside the generator's state); DAT_0046677a keeps counting.
+    const uint32_t s0 = 0xbbe307, s1 = 0x89abcdef;
+    std::memcpy(rng_ + 0, &s0, 4);
+    std::memcpy(rng_ + 4, &s1, 4);
 }
 
 void Game::loseLife() {

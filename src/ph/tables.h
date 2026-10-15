@@ -20,7 +20,7 @@
 
 namespace ph {
 
-extern const uint8_t kCollisionHeights[128 * 16];   // 0x4668c4
+extern const uint8_t kCollisionHeights[256 * 16];   // 0x4668c4
 extern const uint8_t kTriggerClass[255];             // 0x461f8e
 extern const uint8_t kStartFacing[25];               // 0x433334 (0 right, 1 left)
 
@@ -110,9 +110,13 @@ struct FloorHit {
     uint8_t shape = 0;    // collision shape id
 };
 
-// Surface directly in the 16x16 cell containing (x, y).
+// Surface directly in the 16x16 cell containing (x, y) (FUN_0042571f / FUN_004258a2).
 FloorHit probeCell(const ColumnTable& t, int x, int y);
-// Surface in the cell containing (x, y) or one row above/below (snap, like FUN_00425d6f).
+// The topmost surface among the rows of y - 16, y and y + 16, for y >= 0x12
+// (FUN_00425d6f / FUN_00425f88: the column's entries are walked in row order).
 FloorHit probeNear(const ColumnTable& t, int x, int y);
+// FUN_00425a25 / FUN_00425bca: like probeCell, but a surface in the lower half of the
+// cell only counts while y is in the lower half too (Harry falling onto a floor).
+FloorHit probeLanding(const ColumnTable& t, int x, int y);
 
 } // namespace ph
