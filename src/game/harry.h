@@ -98,9 +98,5 @@ struct Harry {
     const uint8_t* trgClass() const { return at(0x4658c0); }
 };
 
-// FUN_004251f9: the trigger under (x, y).  cls = the class byte (0 when >= 0xf0, d2),
-// id = the trigger id (d3), raw = the class byte itself (d6); found is false when the
-// cell has no trigger (the routine then returns with Z set, as it does for a class >= 0xf0).
-struct Trg { uint8_t cls = 0, id = 0, raw = 0; bool found = false; bool z() const { return !found || raw >= 0xf0; } };
 
 } // namespace game

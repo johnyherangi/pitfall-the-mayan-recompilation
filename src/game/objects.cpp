@@ -1,6 +1,7 @@
 // Object pool, dispatcher and the helpers shared by the behaviour handlers.
 // Each function names the routine of PITFALL.EXE it reproduces.
 #include "game/objects.h"
+#include "game/harry.h"
 
 #include "game/game.h"
 #include "game/play_logic.h"
@@ -22,7 +23,11 @@ void ObjCtx::soundNear(const Obj& o, int id) {
     if (dx >= -0x80 && dx < 0x80 && dy >= -0x60 && dy < 0x80) sound(id);
 }
 
-void ObjCtx::hurtHarry(int amount) { pl.hurt(g, amount); }
+void ObjCtx::hurtHarry(int amount) { pl.hurtHarry(amount); }
+bool ObjCtx::sound0(int id, int pri) { return pl.sound0(id, pri); }
+bool ObjCtx::sound1(int id, int pri) { return pl.sound1(id, pri); }
+void ObjCtx::soundNow(int id) { pl.sound1Now(id); }
+bool ObjCtx::channel0Busy() { return g.channelBusy(0); }
 
 const ph::ColumnTable& ObjCtx::det() const { return lv.collision; }
 const ph::ColumnTable& ObjCtx::dt2() const { return lv.collision2.empty() ? lv.collision : lv.collision2; }
@@ -36,19 +41,23 @@ bool ObjCtx::floorSnap(int x, int& y, bool plane2) const {
 }
 
 uint8_t ObjCtx::triggerClass(int x, int y, uint8_t* id) const {
-    // FUN_004251f9: the lookup column is (x + 0x20) >> 4; class bytes >= 0xf0 read as 0.
-    const int tx = x + 0x20;
-    if (tx < 0 || y < 0) { if (id) *id = 0; return 0; }
-    const ph::ColumnEntry* e = lv.triggers.find(tx >> 4, y >> 4);
-    if (!e) { if (id) *id = 0; return 0; }
-    if (id) *id = e->id;
-    const uint8_t cls = pl.triggerClassOf(e->id);           // DAT_004658c0, the runtime copy
-    return cls >= 0xf0 ? 0 : cls;
+    // FUN_004251f9: d2 = the class (0 for classes >= 0xf0), d3 = the id.
+    const Trg t = pl.trg(x, y);
+    if (id) *id = t.id;
+    return t.cls;
 }
+
+Trg ObjCtx::trigger(int x, int y) const { return pl.trg(x, y); }
 
 const ph::Sprite* ObjCtx::spr(const char* name) { return g.findSprite(name); }
 
-Obj* ObjCtx::spawn() { return pl.objectSystem().alloc(); }
+Obj* ObjCtx::spawn(bool tail) { return tail ? pl.objectSystem().allocTail() : pl.objectSystem().allocHead(); }
+Obj* ObjCtx::spawnFrom(Obj& parent, bool tail) {
+    const int16_t x = parent.x, y = parent.y;          // (the parent may be the record just freed)
+    Obj* o = spawn(tail);
+    if (o) { o->x = x; o->y = y; }
+    return o;
+}
 void ObjCtx::release(Obj& o) { pl.objectSystem().free(o); }
 
 Obj* ObjCtx::spawnEffect(Obj& at, const ph::Sprite* sprite, const uint8_t* script, int ticks) {
@@ -65,81 +74,205 @@ Obj* ObjCtx::spawnEffect(Obj& at, const ph::Sprite* sprite, const uint8_t* scrip
 }
 
 void ObjCtx::sparkleBurst(Obj& at, const int16_t* offsets) {
-    // 0x433747: one fx_sprk1 (type 0x10) per (dx, dy) pair, mirrored at random,
-    // each with a random start delay.
-    for (; offsets[0] != int16_t(0x8000); offsets += 2) {
-        const uint32_t r = rnd();
-        Obj* e = spawn();
+    // 0x433747: one fx_sprk1 (type 0x10) per (dx, dy) pair, all mirrored the same way at
+    // random, each with a random start delay.  Each one is placed from `at` as it is then
+    // (when `at` was just freed, the first sparkle is that very record).
+    const uint32_t r = rnd();
+    const bool mx = (r & 1) != 0, my = (r & 2) != 0;
+    do {
+        Obj* e = spawn();                              // FUN_00435905
         if (!e) return;
-        e->x = int16_t(at.x + ((r & 1) ? -offsets[0] : offsets[0]));
-        e->y = int16_t(at.y + ((r & 2) ? -offsets[1] : offsets[1]));
+        e->x = at.x; e->y = at.y;
+        e->x = int16_t(e->x + (mx ? -offsets[0] : offsets[0]));
+        e->y = int16_t(e->y + (my ? -offsets[1] : offsets[1]));
         e->type = 0x10;
         e->flags = uint16_t((at.flags & 0x8000) + 0x6000);
         e->sprite = spr("fx_sprk1");
         e->w(0x60) = int16_t(rnd() & 0x1f);
-    }
+        offsets += 2;
+    } while (offsets[0] != int16_t(0x8000));
 }
+
+namespace {
+// FUN_00424af1 takes the box from the sprite record (+8: offset into the 0x468824 table,
+// 0xffff = none); three objects point +0xe at a box record of their own instead (Obj::rawBox).
+const ph::SpriteHitbox* boxOf(const Obj& o) {
+    if (o.rawBox) return o.rawBox;
+    return o.sprite ? ph::hitbox(o.sprite->name().c_str()) : nullptr;
+}
+// The overlap test of FUN_00424af1 for a5 at (ax, ay) with box ha and a6 at (bx, by) with box hb
+// (16-bit compares, as the listing does them; no mirroring by facing).
+bool overlap(int ax, int ay, const ph::SpriteHitbox* ha, int bx, int by, const ph::SpriteHitbox* hb) {
+    if (!ha || !hb || ha->w == 0 || hb->w == 0) return false;
+    int16_t d0 = int16_t(ax + ha->dx), d1 = int16_t(bx + hb->dx + hb->w);
+    if (int16_t(d1 - d0) < 0) return false;
+    d1 = int16_t(d1 - hb->w); d0 = int16_t(d0 + ha->w);
+    if (int16_t(d1 - d0) >= 0) return false;
+    d0 = int16_t(ay + ha->dy); d1 = int16_t(by + hb->dy + hb->h);
+    if (int16_t(d1 - d0) < 0) return false;
+    d1 = int16_t(d1 - hb->h); d0 = int16_t(d0 + ha->h);
+    if (int16_t(d1 - d0) >= 0) return false;
+    return true;
+}
+} // namespace
 
 bool ObjCtx::boxesOverlap(const Obj& a, const Obj& b) {
-    // FUN_00424af1: boxes from the 0x468824 table, relative to each object's position.
-    if (!a.sprite || !b.sprite) return false;
-    const ph::SpriteHitbox* ha = ph::hitbox(a.sprite->name().c_str());
-    const ph::SpriteHitbox* hb = ph::hitbox(b.sprite->name().c_str());
-    if (!ha || !hb || ha->w == 0 || hb->w == 0) return false;
-    const int ax0 = a.x + ha->dx, ax1 = ax0 + ha->w, bx0 = b.x + hb->dx, bx1 = bx0 + hb->w;
-    if (bx1 - ax0 < 0 || bx0 - ax1 >= 0) return false;
-    const int ay0 = a.y + ha->dy, ay1 = ay0 + ha->h, by0 = b.y + hb->dy, by1 = by0 + hb->h;
-    if (by1 - ay0 < 0 || by0 - ay1 >= 0) return false;
-    return true;
+    // FUN_00424af1 with a5 = a, a6 = b.
+    return overlap(a.x, a.y, boxOf(a), b.x, b.y, boxOf(b));
 }
 
-bool ObjCtx::touchesHarry(Obj& o, bool evenHidden) {
-    if (harryUntouchable || !o.sprite || (o.frame == 0xff && !evenHidden)) return false;
-    const ph::SpriteHitbox* ho = ph::hitbox(o.sprite->name().c_str());
-    const ph::SpriteHitbox* hh = ph::hitbox(harrySprite);
-    if (!ho || !hh || ho->w == 0 || hh->w == 0) return false;
-    // Harry's box is stored for the right-facing sprite; mirror it when he faces left.
-    int hx0 = harry.x() + hh->dx, hx1 = hx0 + hh->w;
-    if (harry.facingLeft()) { hx1 = harry.x() - hh->dx; hx0 = hx1 - hh->w; }
-    const int ox0 = o.x + ho->dx, ox1 = ox0 + ho->w;
-    if (ox1 - hx0 < 0 || ox0 - hx1 >= 0) return false;
-    const int hy0 = harry.y() + hh->dy, hy1 = hy0 + hh->h, oy0 = o.y + ho->dy, oy1 = oy0 + ho->h;
-    if (oy1 - hy0 < 0 || oy0 - hy1 >= 0) return false;
-    return true;
+bool ObjCtx::touchesHarry(Obj& o) {
+    // FUN_00424af1 with a5 = Harry (DAT_00465b0f), a6 = o: Harry's box from his sprite slot;
+    // never while DAT_00465b72 is set (dying / leaving the level).
+    const char* hs = harry.sprite();
+    if (!*hs || !o.sprite && !o.rawBox) return false;
+    if (!overlap(harry.x(), harry.y(), ph::hitbox(hs), o.x, o.y, boxOf(o))) return false;
+    return harry.b(0x465b72) == 0;
 }
 
 // ---------------------------------------------------------------- ObjectSystem
 
-void ObjectSystem::reset() { pool_.clear(); }
+void ObjectSystem::reset() {
+    // FUN_00435274 (0x4352b4): record i on the stack at 0x464ab4 + 4i, record 0x4f on top.
+    for (int i = 0; i < kPoolSize; ++i) {
+        stack_[i] = i;
+        Obj& o = recs_[size_t(i)];
+        o.next = -1; o.prev = -1;
+        o.type = 0;
+        o.freed = true;
+    }
+    top_ = kPoolSize - 1;
+    head_ = tail_ = -1;
+    behind_.clear(); front_.clear();
+    curList_ = nullptr;
+}
 
-Obj* ObjectSystem::alloc() {
-    // FUN_00435905: take a free record; the pool holds 0x50 objects.
-    for (auto& p : pool_)
-        if (p->freed) { *p = Obj{}; return p.get(); }
-    if (int(pool_.size()) >= kPoolSize) return nullptr;
-    pool_.push_back(std::make_unique<Obj>());
-    return pool_.back().get();
+void ObjectSystem::init(Obj& o) {
+    // 0x43582b: the fields a new record starts with (x, y and their fractions are left as they were)
+    o.type = 0; o.frame = 0xff; o.hits = 0; o.facing = 0; o.flags = 0;
+    o.sprite = nullptr; o.rawBox = nullptr;
+    std::memset(o.s + 0x12, 0, 2);
+    o.col = o.row = -1; o.als = -1;                    // +0x1c = 0x466770, a dummy .als entry
+    o.id = 0x10;
+    o.s[0x21] = 0xff;
+    std::memset(o.s + 0x22, 0, 6);                     // +0x22 .. +0x27
+    o.behind = 0; o.vflip = 0;
+    std::memset(o.s + 0x2a, 0, 3);
+    o.whipCool = 0;
+    o.touchTick = 0xa;
+    o.s[0x2f] = 0xff;
+    std::memset(o.s + 0x30, 0, 0x3e);                  // +0x30 .. +0x6d
+    o.link = o.link2 = o.link3 = nullptr;
+    o.parts.clear();
+    o.script = nullptr;
+    o.freed = false;
+}
+
+void ObjectSystem::unlink(Obj& o) {
+    // FUN_0043598f / 0x435532 (0x435b55): out of the list by its own prev / next.
+    if (o.next == -1) {
+        if (o.prev == -1) { head_ = tail_ = -1; return; }
+        recs_[size_t(o.prev)].next = -1;
+        tail_ = o.prev;
+        return;
+    }
+    if (o.prev == -1) {
+        recs_[size_t(o.next)].prev = -1;
+        head_ = o.next;
+        return;
+    }
+    recs_[size_t(o.prev)].next = o.next;
+    recs_[size_t(o.next)].prev = o.prev;
+}
+
+void ObjectSystem::linkTail(Obj& o) {
+    const int i = indexOf(o);
+    if (tail_ == -1) { head_ = tail_ = i; o.prev = o.next = -1; return; }
+    recs_[size_t(tail_)].next = i;
+    o.prev = tail_;
+    o.next = -1;
+    tail_ = i;
+}
+
+Obj* ObjectSystem::allocHead() {
+    // FUN_00435905: pop a free record and put it at the head of the list.
+    if (top_ < kReserve) return nullptr;
+    Obj& o = recs_[size_t(stack_[top_--])];
+    const int i = indexOf(o);
+    if (head_ == -1) {
+        head_ = tail_ = i; o.prev = o.next = -1;
+    } else {
+        recs_[size_t(head_)].prev = i;
+        o.next = head_;
+        o.prev = -1;
+        head_ = i;
+    }
+    init(o);
+    return &o;
+}
+
+Obj* ObjectSystem::allocTail() {
+    // FUN_00435780: the same at the tail.
+    if (top_ < kReserve) return nullptr;
+    Obj& o = recs_[size_t(stack_[top_--])];
+    linkTail(o);
+    init(o);
+    return &o;
 }
 
 void ObjectSystem::free(Obj& o) {
-    // FUN_0043598f: unlink and return the record.  Objects linking to it are
-    // left alone; handlers test `link->freed` before following a link.
+    // FUN_0043598f.  (The original stops the game with an error for a stone still in its
+    // slot, for Harry's record and for bad pointers.)  The display entry of the object that
+    // is running is cancelled when it frees itself (DAT_00465b8e); the record keeps its fields.
+    if (o.freed) return;   // (a second free would push the record twice; the handlers never do it)
+    if (curList_ && curSlot_ < curList_->size() && (*curList_)[curSlot_] == indexOf(o)) (*curList_)[curSlot_] = -2;
+    stack_[++top_] = indexOf(o);
+    o.type = 0;
     o.freed = true;
-    o.sprite = nullptr;
-    o.frame = 0xff;
+    unlink(o);
+}
+
+bool ObjectSystem::moveToTail(Obj& o) {
+    // 0x435532: pushed onto the free stack and popped straight back, at the tail.
+    stack_[++top_] = indexOf(o);
+    unlink(o);
+    if (top_ < kReserve) {
+        // no record to spare: FUN_0043598f again (its second unlink changes nothing), and the
+        // handler is abandoned
+        if (curList_ && curSlot_ < curList_->size() && (*curList_)[curSlot_] == indexOf(o)) (*curList_)[curSlot_] = -2;
+        stack_[++top_] = indexOf(o);
+        o.type = 0; o.freed = true;
+        return false;
+    }
+    Obj& r = recs_[size_t(stack_[top_--])];
+    linkTail(r);
+    return true;
+}
+
+std::vector<Obj*> ObjectSystem::list() {
+    std::vector<Obj*> v;
+    for (int i = head_; i != -1 && v.size() <= size_t(kPoolSize); i = recs_[size_t(i)].next) v.push_back(&recs_[size_t(i)]);
+    return v;
 }
 
 void ObjectSystem::tick(ObjCtx& ctx) {
-    // 0x405170: walk the list; the handler may release its own object, so the
-    // next pointer is taken before dispatching (DAT_00465888).
-    const size_t n = pool_.size();        // objects spawned this tick run next tick
-    for (size_t i = 0; i < n; ++i) {
-        Obj& o = *pool_[i];
-        if (o.freed) continue;
-        Handler h = handler(o.type);
+    // 0x405170: the display lists start again; the list is walked from the head, the next
+    // record is taken before the handler runs (DAT_00465888).
+    behind_.clear(); front_.clear();
+    curList_ = nullptr;
+    int guard = 0;
+    for (int i = head_; i != -1 && guard < 0x1000; ++guard) {
+        Obj& o = recs_[size_t(i)];
+        const int pending = o.next;
+        std::vector<int>& l = o.behind ? behind_ : front_;   // 0x405236 (+0x28)
+        l.push_back(i);
+        curList_ = &l; curSlot_ = l.size() - 1;
         ctx.pl.setTriggerClass(2, 3);     // 0x40528a: trigger id 2 is a wall for objects (a few handlers clear it again)
-        if (h) h(ctx, o);
-        o.fresh = false;
+        if (o.type != 0) {
+            Handler h = handler(o.type);
+            if (h) h(ctx, o);
+        }
+        i = pending;
     }
 }
 
@@ -257,28 +390,135 @@ bool anim2Step(ObjCtx& ctx, Obj& o, const uint8_t* script, int pcOff, int ticksP
     return false;
 }
 
+namespace {
+// The whip box (DAT_00465aeb x0, 0x465aed x1, 0x465aef y0, 0x465af1 y1; x0 == 0 while the whip
+// is not out) against the object's box (0x424525 / 0x424762: no test of the box's width).
+bool whipTouches(ObjCtx& ctx, const Obj& o) {
+    const Harry& h = ctx.harry;
+    if (h.w(0x465aeb) == 0) return false;
+    const ph::SpriteHitbox* b = boxOf(o);
+    if (!b) return false;
+    int16_t d1 = int16_t(o.x + b->dx + b->w);
+    if (int16_t(d1 - h.w(0x465aeb)) < 0) return false;
+    d1 = int16_t(d1 - b->w);
+    if (int16_t(d1 - h.w(0x465aed)) >= 0) return false;
+    d1 = int16_t(o.y + b->dy + b->h);
+    if (int16_t(d1 - h.w(0x465aef)) < 0) return false;
+    d1 = int16_t(d1 - b->h);
+    if (int16_t(d1 - h.w(0x465af1)) >= 0) return false;
+    return true;
+}
+} // namespace
+
+void debrisPuff(ObjCtx& ctx, Obj& at) {
+    // 0x433725: the sparkles of a breaking thing, one of two patterns at random.
+    ctx.sparkleBurst(at, (ctx.rnd() & 1) ? kSparkleOffsetsB : kSparkleOffsetsA);
+}
+
 bool weaponHits(ObjCtx& ctx, Obj& o, int hitPoints, bool* killed) {
-    // 0x424171: the sling stones / boomerang (0x466808 list, not ported yet) and the
-    // whip box (DAT_00465aeb..).  Each hit adds to o.hits; hits >= hitPoints kills.
-    bool hit = false;
-    if (o.whipCool) {
-        --o.whipCool;
-    } else if (ctx.whipX1 > ctx.whipX0 && o.sprite && o.type != 0x20) {
-        if (const ph::SpriteHitbox* hb = ph::hitbox(o.sprite->name().c_str())) {
-            const int x0 = o.x + hb->dx, x1 = x0 + hb->w, y0 = o.y + hb->dy, y1 = y0 + hb->h;
-            if (hb->w && x1 >= ctx.whipX0 && x0 < ctx.whipX1 && y1 >= ctx.whipY0 && y0 < ctx.whipY1) {
-                o.whipCool = 0x14;
-                ctx.rnd(); ctx.sound(0x19);                                  // FUN_0042633d(0x19, 0x60, 9)
-                o.hits = uint8_t(o.hits + (ctx.hard ? 9 : 10));
-                hit = true;
-            }
+    // 0x424171 (d5 = hitPoints): a stone in flight (DAT_00466808, five slots), else the
+    // boomerang (DAT_0046681c), else the whip box hits the object; each adds to o.hits (+0xa).
+    // Returns d1 (something hit); *killed is d0, what the callers' je tests: hits + 1 > d5.
+    Harry& h = ctx.harry;
+    h.uw(0x466788) = 0;
+    auto done = [&](bool hit, bool k) { if (killed) *killed = k; return hit; };
+    auto killTest = [&] {                                       // 0x424682
+        if (int16_t(hitPoints - (int(o.hits) + 1)) >= 0) {     // 0x4246c7: a hit that does not kill
+            ctx.sound1(o.type == 0x42 ? 0x8c : 0xcd, 9);
+            return done(true, false);
+        }
+        return done(true, true);
+    };
+    for (uint32_t a = 0x466808; a <= 0x466818; a += 4) {
+        Obj* st = ctx.pl.objAt(h.ul(a));
+        if (!st || !ctx.boxesOverlap(*st, o)) continue;
+        if (st->type == 4) {
+            // The big stone goes on through and only marks itself; the routine returns with the
+            // flags of the type compare (je taken) and d1 left by FUN_00424af1 (the top of o's box).
+            st->b(0x37) = 0xff;
+            const ph::SpriteHitbox* b = boxOf(o);
+            return done(b && uint8_t(o.y + b->dy) != 0, false);
+        }
+        h.setUl(a, 0);
+        if (st->b(0x54) != 0) {                                 // a power shot (d3 = 0xff)
+            st->w(0x40) = 1;
+            o.hits = uint8_t(o.hits + 0x15);
+            if (h.b(0x466507) != 0) o.hits = uint8_t(o.hits + 0x15);   // twice against a boss
+        } else {
+            h.l(0x466788) = st->l(0x32);                       // where it came from, for the knock-backs
+            h.w(0x466782) = st->x;
+            h.w(0x466784) = st->y;
+            st->w(0x40) = 1;
+            o.hits = uint8_t(o.hits + ((ctx.hard && h.b(0x466501) == 0) ? 9 : 0xa));
+        }
+        return killTest();
+    }
+    if (Obj* bm = ctx.pl.objAt(h.ul(0x46681c))) {
+        // While the boomerang is out the whip does not count.
+        if (!ctx.boxesOverlap(*bm, o)) return done(false, false);
+        if (h.b(0x466507) != 0 && ctx.levelNo != 5) {
+            // against a boss (but in level 5) it breaks
+            bm->b(0x5b) = 2;
+            h.setUl(0x46681c, 0);
+            ctx.release(*bm);
+            debrisPuff(ctx, *bm);
+            ctx.spawnEffect(*bm, ctx.spr("fx_stone"), kAnim_turn7, 3);   // 0x433914, script 0x4619c7
+            o.hits = uint8_t(o.hits + (ctx.hard ? 0x14 : 0x19));
+        } else {
+            o.hits = uint8_t(o.hits + 0x64);
+        }
+        if (int16_t(hitPoints - (int(o.hits) + 1)) >= 0) {
+            ctx.sound1(o.type == 0x42 ? 0x8c : 0xcd, 9);
+            return done(true, false);
+        }
+        bm->b(0x5b) = 1;
+        return done(true, true);
+    }
+    if (o.whipCool) { o.whipCool -= 1; return done(false, false); }
+    if (!whipTouches(ctx, o) || o.type == 0x20) return done(false, false);
+    o.whipCool = 0x14;
+    ctx.sound0(0x19, 9);                                        // FUN_0042633d(0x19, 0x60)
+    o.hits = uint8_t(o.hits + (ctx.hard ? 9 : 0xa));
+    return killTest();
+}
+
+bool webHit(ObjCtx& ctx, Obj& o, bool* cut) {
+    // 0x424733: the angled webs (obiaweb) and the vertical web (type 0x20) give under the whip
+    // and throw Harry's stones back.  *cut is d3 for the vertical web: cut through.
+    Harry& h = ctx.harry;
+    if (o.whipCool) { o.whipCool -= 1; return false; }
+    auto snd = [&] { ctx.sound1((ctx.rnd() & 0x80) ? 0xcb : 0x47, 9); };
+    const bool angled = o.sprite && o.sprite->name() == "obiaweb";
+    if ((angled || o.type == 0x20) && whipTouches(ctx, o)) {
+        o.w(0x36) = 1;
+        o.whipCool = 0x1c;
+        snd();
+        if (!angled) {
+            o.b(0x53) += 1;
+            if (cut) *cut = int8_t(o.b(0x53) - 6) >= 0;
+        }
+        return true;
+    }
+    if (o.type == 0x20) {
+        if (Obj* bm = ctx.pl.objAt(h.ul(0x46681c)); bm && ctx.boxesOverlap(*bm, o)) {
+            o.whipCool = 5;
+            bm->b(0x6d) = 0xff;
+            snd();
+            if (cut) *cut = true;
+            return true;
         }
     }
-    // The kill test only runs on the tick of a hit (0x424682): hits + 1 > hitPoints.
-    const bool dead = hit && int(o.hits) + 1 > hitPoints;
-    if (hit && !dead) ctx.sound(o.type == 0x42 ? 0x8c : 0xcd);    // 0x4246c7: a hit that did not kill
-    if (killed) *killed = dead;
-    return hit;
+    for (uint32_t a = 0x466808; a <= 0x466818; a += 4) {
+        Obj* st = ctx.pl.objAt(h.ul(a));
+        if (!st || st->type == 4 || !ctx.boxesOverlap(*st, o)) continue;
+        o.whipCool = 5;
+        if (cut) *cut = st->b(0x54) != 0;
+        if (o.type == 0x20) { st->l(0x32) = -st->l(0x32); snd(); return true; }
+        o.w(0x36) = 1;
+        if (o.b(0x47)) { st->l(0x32) = int32_t(0xfffb8000); st->l(0x36) = int32_t(0xfffc0000); snd(); return true; }
+        if (o.b(0x46)) { st->l(0x32) = 0x48000; st->l(0x36) = int32_t(0xfffc0000); snd(); return true; }
+    }
+    return false;
 }
 
 namespace {
@@ -308,67 +548,87 @@ const uint8_t kTypeClass[180] = {
 int scoreForType(uint8_t type) { return type < 180 ? kKillScore[type] : 0; }   // 0x4081ae
 
 void killObject(ObjCtx& ctx, Obj& o) {
-    // 0x4081fc
-    if (o.type < 180 && (kTypeClass[o.type] & 2)) ctx.pl.markKilled(o);     // permanent (0x465a40 list)
+    // 0x4081fc: the 0x465a40 list (class bit 1: it comes back 15 s later; on easy the monkeys
+    // do not), the score, then the record is freed and the death effect (0x40855e: by type,
+    // which also moves y; unlisted types get the debris puff) is made from it.
+    if (o.type != 0 && o.type < 180 && (kTypeClass[o.type] & 2) && (ctx.hard || o.type != 0x23)) ctx.pl.markKilled(o);
     if (o.type < 180) ctx.g.stats().score += kKillScore[o.type];
-    int kind = 0, yOff = 0;
-    for (const DeathFx& d : kDeathFx) if (d.type == o.type) { kind = d.kind; yOff = d.yOff; break; }
-    if (kind) { ctx.rnd(); ctx.sound(6); }                                   // FUN_0042633d(6, 0x60, 0xe)
-    if (kind == 1) {
-        // A puff of debris (0x433725 + fx_stone script 0x4619c7 at 3 ticks).
-        ctx.sparkleBurst(o, (ctx.rnd() & 1) ? kSparkleOffsetsB : kSparkleOffsetsA);
-        ctx.spawnEffect(o, ctx.spr("fx_stone"), kAnim_turn7, 3);
-    } else if (kind == 2 || kind == 3) {
-        // The death cloud (type 0x82) over the dying enemy's picture.
-        if (Obj* e = ctx.spawn()) {
-            e->x = o.x; e->y = int16_t(o.y + yOff);
-            e->type = 0x82;
-            e->behind = 0xff;
-            e->flags = uint16_t((o.flags & 0x8000) + 0x6000);
-            e->sprite = ctx.spr(kind == 2 ? "fx_deat2" : "fxzdeath");
-            e->b(0x3c) = 1;
-            e->link = nullptr;
-            if (kind == 3) {
-                // fxzdeath keeps the enemy's sprite under the cloud.
-                if (Obj* body = ctx.spawn()) {
-                    body->x = o.x; body->y = o.y;
-                    body->type = 0x82;
-                    body->sprite = o.sprite; body->frame = o.frame; body->facing = o.facing;
-                    body->flags = o.flags; body->behind = 0xff;
-                    body->w(0x26) = 0x6663;
-                    body->link = e;
-                    e->link = body;
-                }
-            }
-        }
-    }
+    int kind = 1;
+    for (const DeathFx& d : kDeathFx)
+        if (d.type == o.type) { kind = d.kind; o.y = int16_t(o.y + d.yOff); break; }
     ctx.release(o);
+    if (kind == 0) return;
+    ctx.sound0(6, 0xe);                                         // FUN_0042633d(6, 0x60)
+    auto puff = [&] {                                           // 0x408347
+        debrisPuff(ctx, o);
+        if (Obj* e = ctx.spawnEffect(o, ctx.spr("fx_stone"), kAnim_turn7, 3))   // 0x433914, script 0x4619c7
+            e->flags = uint16_t((o.flags & 0x8000) + 0x6000);
+    };
+    if (kind == 1) { puff(); return; }
+    Obj* e = ctx.spawnFrom(o);                                  // FUN_004356bc (d0 = 3 / 4)
+    if (!e) { puff(); return; }
+    if (kind == 2) {
+        // fx_deat2, then fxzdeath: the pointer script 0x45b323 at +0x64
+        e->script = kAnim2_deathFade; e->l(0x64) = 0; e->b(0x68) = 0;
+    }
+    e->link = &o;
+    e->b(0x3c) = 1;
+    e->type = 0x82;
+    e->behind = 0xff;
+    e->x = o.x; e->y = o.y;
+    e->flags = uint16_t((o.flags & 0x8000) + 0x6000);
+    e->sprite = ctx.spr(kind == 2 ? "fx_deat2" : "fxzdeath");
+    if (kind == 2) return;
+    // 0x4084d0: fxzdeath gets a mirrored second half (type 0) for its frames 1 and 2
+    Obj* a3 = e;
+    Obj* half = ctx.spawnFrom(o, true);                         // FUN_0043546e
+    if (!half) { ctx.release(*a3); return; }
+    a3->link = half;
+    half->link = a3;
+    std::memcpy(half->s + 0x12, a3->s + 0x12, 2);
+    half->w(0x26) = 0x6663;
+    half->sprite = ctx.spr("fxzdeath");
+    half->flags = a3->flags;
+    half->facing = 0xff;
 }
 
 bool harryContact(ObjCtx& ctx, Obj& o, int damage) {
-    // 0x407aff: every 6th tick, if Harry is touchable and the boxes overlap.
-    if (int8_t(o.touchTick) - 1 < 0) {
-        o.touchTick = 5;
-        if (ctx.harryUntouchable) return false;
-        if (ctx.hstate == HarryState::Swinging) return false;       // hyisswng: handled with an offset table
-        if (ctx.touchesHarry(o)) { ctx.hurtHarry(damage); return true; }
-        return false;
-    }
-    --o.touchTick;
-    return false;
+    // 0x407aff: every 6th call (o+0x2e counts down 5..0) the test of 0x407b0f.
+    o.touchTick = uint8_t(o.touchTick - 1);
+    if (int8_t(o.touchTick) >= 0) return false;
+    o.touchTick = 5;
+    return harryContactNow(ctx, o, damage);
+}
+
+bool harryContactNow(ObjCtx& ctx, Obj& o, int damage) {
+    // 0x407b0f: the box test against Harry; a hit hurts him by `damage` (FUN_00428233, d5).
+    Harry& h = ctx.harry;
+    if (h.b(0x465b72) != 0) return false;
+    auto test = [&] {                                   // 0x407b25
+        if (!ctx.touchesHarry(o)) return false;
+        ctx.hurtHarry(damage);
+        return true;
+    };
+    if (!h.spriteIs("hyisswng")) return test();
+    // 0x407b59: swinging on a vine his picture swings away from x; the box is moved with it by
+    // the word for his frame in the table at 0x45ba4e (towards his facing) for the test.
+    const uint8_t* t = harryMem(0x45ba4e + uint32_t(h.frame()) * 2);
+    const int16_t d = t ? int16_t(t[0] | t[1] << 8) : 0;
+    const int16_t saved = h.x();
+    h.x() = int16_t(h.facing() ? saved - d : saved + d);
+    const bool hit = test();
+    if (h.cont() == 0x42f88c) return true;             // knocked off the vine: he keeps the moved x
+    h.x() = saved;
+    return hit;
 }
 
 void priorityTrigger(ObjCtx& ctx, Obj& o, int dx) {
-    // 0x4301ce
-    uint8_t id = 0;
-    const ph::ColumnEntry* e = nullptr;
-    const int tx = o.x + dx + 0x20;
-    if (tx >= 0 && o.y >= 0) e = ctx.lv.triggers.find(tx >> 4, o.y >> 4);
-    if (!e) return;
-    id = e->id;
-    if (ctx.pl.triggerClassOf(id) != 0xf2) return;
-    if (id == 0x30) o.flags = uint16_t((o.flags & 0x7fff) + 0x8000);
-    else if (id == 0x31) o.flags &= 0x7fff;
+    // 0x4301ce: class 0xf2 triggers 0x30 / 0x31 at (x + dx, y) put the object in front of /
+    // behind the high-priority scenery.
+    const Trg t = ctx.trigger(o.x + dx, o.y);
+    if (t.raw != 0xf2) return;
+    if (t.id == 0x30) o.flags = uint16_t((o.flags & 0x7fff) + 0x8000);
+    else if (t.id == 0x31) o.flags &= 0x7fff;
 }
 
 void exitDespawnFar(ObjCtx& ctx, Obj& o) {

@@ -48,18 +48,19 @@ public:
 
     // --- services for the object handlers (game/objects.h) ---
     uint32_t random();                         // FUN_0043387e
-    void hurt(Game& g, int amount) { (void)g; hurtHarry(amount); }
+    bool sound0(int id, int pri);              // FUN_004262d9 / FUN_0042633d: channel 0, by priority
+    bool sound1(int id, int pri);              // FUN_004261e2: channel 1
+    void sound1Now(int id);                    // FUN_004261b0
     void healHarry() { h_.damage() = 0; }      // fx_hrtbt
     void startChili() { h_.w(0x46652b) = 0x380; }   // mi_chili (0x405a5b)
-    void markCollected(const Obj& o);          // the .als entry is gone for good
-    void markKilled(const Obj& o);             // permanent kill (0x465a40 list)
+    void markCollected(const Obj& o);          // the .als entry stays cleared (it comes back after a death unless special)
+    void markKilled(const Obj& o);             // 0x4081fc: the 0x465a40 list brings the entry back after 15 s
     void restoreEntry(const Obj& o);           // put the .als id back: the entry respawns when it scrolls back in
     bool freezeSparkleBlocked() const { return h_.b(0x465d4b) != 0; }   // DAT_00465d4b
     bool harryBusy() const { return h_.ul(0x465b7e) != 0; }             // DAT_00465b7e: on a bungee vine
     bool harryOnPlatform() const { return h_.b(0x465b73) != 0; }        // DAT_00465b73: standing on an object
-    void standOn(int y);                       // a platform object carries Harry (0x40d96a)
+    void standOn(int y, bool flagFirst = false);   // a platform holds Harry up (see play_logic.cpp)
     void carryHarry(int32_t vx16);             // add.l to Harry's x.frac (a moving platform)
-    void bounce(int y, int32_t vx, int32_t vy, bool faceRight);   // web bounce (0x406d17)
     void launch(int32_t vx, int32_t vy);        // thrown into the air (boar toss, 0x415a41)
     void knockBack(bool toLeft, bool strong);   // shoved back (0x427167 / 0x42715b)
     void sink(int y);                           // swallowed by a pit (FUN_0042a325)
@@ -68,13 +69,11 @@ public:
     void somersault(int32_t vy);                // 0x417c93: thrown up tumbling (state 0x42cdb6)
     bool running() const;                       // DAT_00465ba0 == hyirun && DAT_00465b9a >= 0x14
     void pullLever(Obj& lever);                // 0x40c42d: Harry pulls (state 0x42a6e7)
+    Trg trg(int x, int y) const;               // FUN_004251f9: the trigger at (x + 0x20, y)
     uint8_t triggerClassOf(uint8_t id) const { return h_.trgClass()[id]; }
     void clearTriggerClass(uint8_t id) { h_.trgClass()[id] = 0; }
     void setTriggerClass(uint8_t id, uint8_t cls) { h_.trgClass()[id] = cls; }
-    void grabBungee(Obj& vine);                // 0x40c784: Harry hangs from the vine (state 0x429fe2)
-    void releaseBungee() { h_.setUl(0x465b7e, 0); }
-    Obj* harryBungee() { return objAt(h_.ul(0x465b7e)); }
-    bool onBungee(const Obj& vine) const { return h_.ul(0x465b7e) != 0 && h_.ul(0x465b7e) == addrOf(&vine); }
+    Obj* harryBungee() { return objAt(h_.ul(0x465b7e)); }   // DAT_00465b7e: the bungee vine Harry hangs on
     void setShake(int v) { h_.w(0x465b02) = int16_t(v); }   // DAT_00465b02: vertical screen shake
     int shake() const { return h_.w(0x465b02); }
     void lockCameraLeft(int x) { h_.w(0x465b09) = int16_t(x); }    // DAT_00465b09
@@ -94,16 +93,12 @@ private:
     uint32_t ml(uint32_t va) const;
     void addX(int32_t v);                       // 16.16 add to x.frac / x
     void addY(int32_t v);
-    bool sound0(int id, int pri);               // FUN_004262d9 / FUN_0042633d: channel 0, by priority
-    bool sound1(int id, int pri);               // FUN_004261e2: channel 1
-    void sound1Now(int id);                     // FUN_004261b0
     void stopSound0();                          // FUN_0042624a
     bool channel0Busy() const;                  // FUN_004262c8
     bool channel1Busy() const;                  // FUN_004261d1
     void readPad();                             // FUN_004263f3
     void scriptedPad();                         // FUN_004346a7
     void padOverrides();                        // FUN_0043426d
-    Trg trg(int x, int y) const;                // FUN_004251f9
     const ph::ColumnTable& det() const;
     const ph::ColumnTable& dt2() const;
     bool floorAt(bool plane2, bool ground, int x, int& y) const;
@@ -138,17 +133,18 @@ private:
 
     // ---- play_logic.cpp ----
     void updateCamera(Game& g);
-    void emitSprites(Game& g);
     void spawnObjects(Game& g);
     void runObjects(Game& g);
-    bool isGone(int col, int row, const Game& g) const;
+    void timers();                              // FUN_00433a09
+    void displayList(Game& g);                  // FUN_00434f6c
 
     Game* game_ = nullptr;
     int level_ = 0;                  // DAT_00466535
     Harry h_;                        // 0x465800 .. 0x4668ff
     ObjectSystem objects_;
-    std::vector<std::pair<int, int>> collected_;   // (col,row) of picked-up .als entries (this life)
-    std::vector<std::pair<int, int>> cleared_;     // entries whose working id is 0 (object alive or consumed)
+    std::vector<uint8_t> als_;       // the working copy of the .als ids (0 = alive, collected or killed)
+    struct Killed { uint8_t count = 0, id = 0; int als = -1; };
+    Killed killed_[19];              // 0x465a40 .. 0x465ad8
     bool exiting_ = false;
     int deathTimer_ = 0;
     Obj* boss_ = nullptr;            // trg+0x1f4 (the boss object)

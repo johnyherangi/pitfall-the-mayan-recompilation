@@ -50,6 +50,9 @@ public:
         return nullptr;
     }
     bool empty() const { return entries_.empty(); }
+    size_t size() const { return entries_.size(); }
+    size_t indexOf(const ColumnEntry& e) const { return size_t(&e - entries_.data()); }
+    const ColumnEntry& entry(size_t i) const { return entries_[i]; }
 
 private:
     struct Col { uint32_t first = 0, count = 0; };

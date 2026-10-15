@@ -427,14 +427,10 @@ uint8_t PlayLogic::padBits() const {
 }
 
 Obj* PlayLogic::newObjAtHarry(int d0, bool tail) {
-    // FUN_004356bc / FUN_0043546e with a6 = Harry: a fresh record at Harry's position (the
-    // original links it at the head / the tail of the object list; the port's pool runs in
-    // slot order).  FUN_00435905 / FUN_00435780 clear the record: frame 0xff, +0x2e = 10.
-    (void)tail;
-    Obj* o = objects_.alloc();
+    // FUN_004356bc / FUN_0043546e with a6 = Harry: a new record at the head / the tail of the
+    // object list, at Harry's x / y.
+    Obj* o = tail ? objects_.allocTail() : objects_.allocHead();
     if (!o) return nullptr;
-    o->frame = 0xff;
-    o->touchTick = 10;
     if (d0 != 0) o->w(0x26) = 0x6663;                              // FUN_004263a6
     o->x = h_.x();
     o->y = h_.y();

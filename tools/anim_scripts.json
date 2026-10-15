@@ -99,7 +99,8 @@
   "priestRise": "0x45a814",
   "priestMain": "0x45a82f",
   "fireball": "0x45abdc",
-  "hawkDive": "0x45b147"
+  "hawkDive": "0x45b147",
+  "deathFade": "0x45b323"
  },
  "raw": {
   "bungeeScripts": "0x45aaa4+0xc3",

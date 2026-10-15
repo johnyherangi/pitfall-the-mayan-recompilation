@@ -15,6 +15,7 @@
 #include "ph/level.h"
 #include "ph/tables.h"
 
+#include <array>
 #include <cstdint>
 #include <cstring>
 #include <memory>
@@ -49,13 +50,15 @@ struct Obj {
     uint16_t xFrac = 0;            // +0x02
     int16_t y = 0;                 // +0x04
     uint16_t yFrac = 0;            // +0x06
-    uint8_t type = 0;              // +0x08 handler index
+    uint8_t type = 0;              // +0x08 handler index (0 = a free record)
     uint8_t frame = 0;             // +0x09 sprite frame, 0xff = not drawn
     uint8_t hits = 0;              // +0x0a damage taken from the whip / stones
     uint8_t facing = 0;            // +0x0b 1 = faces left (drawn H-flipped)
     uint16_t flags = 0;            // +0x0c 0x8000 = drawn in front of the high-priority tiles
     const ph::Sprite* sprite = nullptr;   // +0x0e
+    int prev = -1, next = -1;      // +0x14 / +0x18 the object list (record indices, -1 = none)
     int col = -1, row = -1;        // +0x1c pointer to the .als entry (col, row here)
+    int als = -1;                  // ... and its index in the level's .als table (-1: the dummy entry 0x466770)
     uint8_t id = 0;                // +0x20 the .als id to restore when the object leaves the view
     uint8_t behind = 0;            // +0x28 drawn behind Harry
     uint8_t vflip = 0;             // +0x29 drawn V-flipped
@@ -69,19 +72,24 @@ struct Obj {
     Obj* link3 = nullptr;          // +0x60 in the boss meter: the % sign
     std::vector<Obj*> parts;       // +0x32.. in the bungee body: pool slots of the rope segments
     const uint8_t* script = nullptr;   // +0x3c / +0x3e / +0x64: an animation script
-    bool freed = false;
-    bool fresh = true;             // first tick after spawning
+    const ph::SpriteHitbox* rawBox = nullptr;   // +0xe pointing at a box record instead of a sprite (FUN_00424af1)
+    bool freed = true;             // on the free stack (FUN_0043598f), not in the list
 
     FieldRef<uint8_t> b(int off) { return {s + off}; }
     FieldRef<int16_t> w(int off) { return {s + off}; }
     FieldRef<int32_t> l(int off) { return {s + off}; }
     AnimCursor& anim(int off) { return *reinterpret_cast<AnimCursor*>(s + off); }
-    void setSprite(const ph::Sprite* spr) { sprite = spr; }
+    void setSprite(const ph::Sprite* spr) { sprite = spr; rawBox = nullptr; }
 };
 
 // Harry's state as the object handlers see it (continuation addresses in
 // DAT_00465b69 and a few flags of the original).
 enum class HarryState { Normal, Jumping, Hurt, Dead, Drowning, Swinging, Climbing, Grabbed, OnBungee };
+
+// FUN_004251f9: the trigger under (x, y).  cls = the class byte (0 when >= 0xf0, d2),
+// id = the trigger id (d3), raw = the class byte itself (d6); found is false when the
+// cell has no trigger (the routine then returns with Z set, as it does for a class >= 0xf0).
+struct Trg { uint8_t cls = 0, id = 0, raw = 0; bool found = false; bool z() const { return !found || raw >= 0xf0; } };
 
 struct ObjCtx {
     Game& g;
@@ -106,16 +114,22 @@ struct ObjCtx {
     uint32_t rnd();                                    // FUN_0043387e
     void sound(int id);                                // FUN_004261b0 / FUN_004262d9 / FUN_004261e2
     void soundNear(const Obj& o, int id);              // only when Harry is within 128 px
+    bool sound0(int id, int pri);                      // FUN_004262d9 / FUN_0042633d: channel 0 by priority
+    bool sound1(int id, int pri);                      // FUN_004261e2: channel 1 by priority
+    void soundNow(int id);                             // FUN_004261b0: channel 1, no priority test
+    bool channel0Busy();                               // FUN_004262c8
     void hurtHarry(int amount);                        // FUN_00428233
-    bool touchesHarry(Obj& o, bool evenHidden = false);   // FUN_00424af1 against Harry (frame 0xff objects skipped unless asked)
+    bool touchesHarry(Obj& o);                         // FUN_00424af1 with a5 = Harry
     bool boxesOverlap(const Obj& a, const Obj& b);     // FUN_00424af1
     const ph::ColumnTable& det() const;                // .det collision plane
     const ph::ColumnTable& dt2() const;                // .dt2
     // FUN_00425d6f: floor in the cell of (x, y) or one above / below; returns the surface y or y.
     bool floorSnap(int x, int& y, bool plane2 = false) const;
-    // FUN_004251f9: trigger at (x + 0x20, y): class byte (kTriggerClass) and id.
+    // FUN_004251f9: trigger at (x + 0x20, y): class byte (the runtime table, 0 for >= 0xf0) and id.
     uint8_t triggerClass(int x, int y, uint8_t* id = nullptr) const;
-    Obj* spawn();                                      // FUN_00435905 (nullptr when the pool is full)
+    Trg trigger(int x, int y) const;                   // FUN_004251f9 with all its results
+    Obj* spawn(bool tail = false);                     // FUN_00435905 / FUN_00435780 (nullptr when the pool is full)
+    Obj* spawnFrom(Obj& parent, bool tail = false);    // FUN_004356bc / FUN_0043546e: at the parent's x / y
     void release(Obj& o);                              // FUN_0043598f
     Obj* spawnEffect(Obj& at, const ph::Sprite* spr, const uint8_t* script, int ticks);   // 0x433914
     void sparkleBurst(Obj& at, const int16_t* offsets);                                    // 0x433747
@@ -124,21 +138,50 @@ struct ObjCtx {
 
 using Handler = void (*)(ObjCtx&, Obj&);
 
+// The object records and their list (FUN_00435274 / FUN_00435905 / FUN_00435780 /
+// FUN_0043598f): 0x50 records of 0x6e bytes at 0x462854, a stack of free records
+// (0x464ab4.., top at DAT_00462850; it counts as empty with 8 records left) and a doubly
+// linked list (DAT_00462848 head, DAT_0046284c tail) that the object pass walks.  A freed
+// record keeps its fields (only the type is cleared) and its list pointers, as the
+// original's does; a new record keeps x / y and their fractions from its last use.
 class ObjectSystem {
 public:
-    static constexpr int kPoolSize = 0x50;   // (0x464ab4 - 0x462854) / 0x6e
+    static constexpr int kPoolSize = 0x50;
+    static constexpr int kReserve = 8;       // 0x464ad4 - 0x464ab4 = 8 entries never handed out
 
-    void reset();
-    Obj* alloc();
-    void free(Obj& o);
-    // One tick of the dispatcher (0x405170): every live object runs its handler.
+    ObjectSystem() { reset(); }
+    void reset();                              // FUN_00435274: every record free (0x4f on top), empty list
+    Obj* allocHead();                          // FUN_00435905 (nullptr when no record is left)
+    Obj* allocTail();                          // FUN_00435780
+    void free(Obj& o);                         // FUN_0043598f
+    // 0x435532: the object goes to the end of the list (it then runs again in this pass and
+    // draws after the others).  false: there was no record to spare, the object was freed
+    // (and the handler has to return).
+    bool moveToTail(Obj& o);
+    // One object pass (0x405170): every object in the list runs its handler.
     void tick(ObjCtx& ctx);
-    std::vector<std::unique_ptr<Obj>>& objects() { return pool_; }
-    const std::vector<std::unique_ptr<Obj>>& objects() const { return pool_; }
+    Obj& record(int i) { return recs_[size_t(i)]; }
+    const Obj& record(int i) const { return recs_[size_t(i)]; }
+    int indexOf(const Obj& o) const { return int(&o - recs_.data()); }
+    std::vector<Obj*> list();                  // the objects in list order (DAT_00462848 ..)
     static Handler handler(uint8_t type);
 
+    // The display lists the pass makes (0x464bfc behind Harry, 0x464d3c in front; FUN_00434f6c
+    // draws them on the next tick): record indices, -2 for an entry whose object freed itself.
+    const std::vector<int>& behindList() const { return behind_; }
+    const std::vector<int>& frontList() const { return front_; }
+
 private:
-    std::vector<std::unique_ptr<Obj>> pool_;
+    void init(Obj& o);                         // 0x43582b
+    void unlink(Obj& o);
+    void linkTail(Obj& o);
+    std::array<Obj, kPoolSize> recs_;
+    int stack_[kPoolSize] = {};
+    int top_ = -1;                             // index of the top entry of the free stack
+    int head_ = -1, tail_ = -1;
+    std::vector<int> behind_, front_;
+    std::vector<int>* curList_ = nullptr;      // DAT_00465b8e: the display entry of the object running now
+    size_t curSlot_ = 0;
 };
 
 // --- shared behaviour pieces (objects.cpp) ---
@@ -153,15 +196,21 @@ void animPeek(ObjCtx& ctx, Obj& o, AnimCursor& cur, const uint8_t* script);
 bool anim2Step(ObjCtx& ctx, Obj& o, int pcOff, int ticksPerFrame);
 bool anim2Step(ObjCtx& ctx, Obj& o, const uint8_t* script, int pcOff, int ticksPerFrame);   // a second script on the same object
 
-// 0x424171: hits from the whip (and the sling, once ported) accumulate in o.hits;
-// returns true when something hit this tick, *killed when hits >= hitPoints.
+// 0x424171: hits from Harry's stones, the boomerang or the whip accumulate in o.hits;
+// returns d1 (something hit this tick), *killed = d0 (hits + 1 > hitPoints; the callers' je).
 bool weaponHits(ObjCtx& ctx, Obj& o, int hitPoints, bool* killed);
+// 0x424733: the webs' reaction to the whip and to stones (see h_web / h_verticalWeb).
+bool webHit(ObjCtx& ctx, Obj& o, bool* cut);
+// 0x433725: a sparkle burst in one of two patterns (chosen at random).
+void debrisPuff(ObjCtx& ctx, Obj& at);
 // 0x4081ae: the score table 0x461aca by type.
 int scoreForType(uint8_t type);
 // 0x4081fc: an enemy dies: score, death effect, permanent-kill bookkeeping, release.
 void killObject(ObjCtx& ctx, Obj& o);
-// 0x407aff: every 6th tick, hurt Harry by `damage` when the boxes overlap.
+// 0x407aff: every 6th call, harryContactNow.
 bool harryContact(ObjCtx& ctx, Obj& o, int damage);
+// 0x407b0f: hurt Harry by `damage` when the boxes overlap (on a vine his box swings with him).
+bool harryContactNow(ObjCtx& ctx, Obj& o, int damage);
 // 0x4301ce: triggers 0x30 / 0x31 at (x + dx, y) toggle the "in front" flag.
 void priorityTrigger(ObjCtx& ctx, Obj& o, int dx);
 // 0x424d6a / 0x424fbb: release the object when it is far from the camera
@@ -173,6 +222,11 @@ bool beyondWide(const ObjCtx& ctx, const Obj& o);      // 0x425051: the test alo
 void exitDespawnTall(ObjCtx& ctx, Obj& o);             // 0x4250ce: far sideways, a tall window vertically
 void exitDespawnVertical(ObjCtx& ctx, Obj& o);         // 0x42501f: the vertical distance alone
 void exitDespawnMid(ObjCtx& ctx, Obj& o);              // 0x424d9c: 0xc8 / 0x208 px sideways, the far window vertically
+// 0x4057b0: +0x2b counts the ticks; every 30th sets +0x2a.
+inline void halfMinuteTick(Obj& o) {
+    o.s[0x2b] = uint8_t(o.s[0x2b] + 1);
+    if (o.s[0x2b] == 0x1e) { o.s[0x2b] = 0; o.s[0x2a] = 0xff; }
+}
 // 0x412629: stop-watch freeze: spawn a sparkle instead of acting.
 void freezeSparkle(ObjCtx& ctx, Obj& o);
 
@@ -194,7 +248,7 @@ extern const uint8_t kAnim_snakeEmerge[], kAnim_snakeMiss[], kAnim_snakeLunge[],
 extern const uint8_t kData_bungeeScripts[];      // 0x45aaa4: Harry's bungee animation triples (see h_bungee)
 extern const uint8_t kData_firePath[];           // 0x45ad94: the fire pit's 59 keyframes {frame, dx, dy, tailFrame, tailDx, tailDy} (int16)
 extern const uint8_t kData_priestDeath[];        // 0x45a849: the fire priest's collapse (a byte script; its cursor jumps past the first 0xf0)
-extern const uint8_t kAnim2_monkeyToss[], kAnim2_condorDive[], kAnim2_jaguarLeap[], kAnim2_jaguarCrouchA[],
+extern const uint8_t kAnim2_deathFade[], kAnim2_monkeyToss[], kAnim2_condorDive[], kAnim2_jaguarLeap[], kAnim2_jaguarCrouchA[],
     kAnim2_jaguarCrouchB[], kAnim2_jaguarCrouchRoar[], kAnim2_jaguarRoar[], kAnim2_bossCloud[],
     kAnim2_skullThrow[], kAnim2_skullChop[], kAnim2_boneTumble[], kAnim2_ballSwingA[], kAnim2_ballSwingB[], kAnim2_ballSwingC[],
     kAnim2_crocSwim[], kAnim2_crocSink[], kAnim2_priestRise[], kAnim2_priestMain[], kAnim2_fireball[],

@@ -883,8 +883,8 @@ void PlayLogic::h4299ad() {
             if (Obj* o = objAt(h_.ul(0x465b59))) objects_.free(*o);
             if (h_.b(0x465b51) != 0) {
                 const int c = std::min(game_->stats().continues, 9) + 0x1a;
-                for (const auto& p : objects_.objects())
-                    if (!p->freed && p->sprite && p->sprite->name() == "ltr_sm" && p->frame == c) { p->frame -= 1; break; }
+                for (Obj* p : objects_.list())
+                    if (p->sprite && p->sprite->name() == "ltr_sm" && p->frame == c) { p->frame -= 1; break; }
             }
             h428dfa();
             return;
@@ -1150,8 +1150,8 @@ void PlayLogic::h42a46d() {
             if (tb[e + 1] == d4) { d1 = int16_t(tb[e] << 4); d7 = int16_t(col << 4); found = true; break; }
     }
     if (!found) {
-        for (const auto& p : objects_.objects())
-            if (!p->freed && p->type == 0x22) { d7 = int16_t(p->x & 0xfff0); d1 = int16_t(p->y & 0xfff0); found = true; break; }
+        for (Obj* p : objects_.list())
+            if (p->type == 0x22) { d7 = int16_t(p->x & 0xfff0); d1 = int16_t(p->y & 0xfff0); found = true; break; }
     }
     if (!found) { std::fprintf(stderr, "harry: warp destination %#x not found\n", d4); return; }   // (an engine error exit)
     h_.x() = int16_t(d7 - 0x10);
@@ -2430,10 +2430,8 @@ void PlayLogic::h42d2ec() {
         uint32_t a4 = 0x465aa1;
         const char* spr = spriteSlotName(ml(0x431516 + uint32_t(game_->levelNumber()) * 4));
         for (int d5 = 6; d5 >= 0; --d5) {
-            Obj* a5 = objects_.alloc();
+            Obj* a5 = objects_.allocTail();                  // FUN_00435780
             if (!a5) { freeChain(); return; }
-            a5->frame = 0xff;
-            a5->touchTick = 10;
             a5->sprite = game_->findSprite(spr);
             if (a4 == 0x465aa1) h_.setUl(0x465ae7, addrOf(a5));
             else if (Obj* p = objAt(a4)) p->l(0x46) = int32_t(addrOf(a5));
@@ -3769,15 +3767,16 @@ void PlayLogic::h42bda7() {
 // ---------------------------------------------------------------- FUN_004311bf: the objects start again
 
 void PlayLogic::h4311bf() {
-    // Every live object (but the sling stones in flight) puts its .als entry back and goes.
-    for (const auto& p : objects_.objects()) {
+    // The enemies killed in the last 15 s come back, then every object puts its .als entry back
+    // and goes, but the sling stones in flight (type 5).  (The stone / boomerang slots keep
+    // pointing at their freed records, as in the original.)
+    for (const Killed& k : killed_)
+        if (k.count != 0 && k.als >= 0) als_[size_t(k.als)] = k.id;
+    for (Obj* p : objects_.list()) {
         Obj& o = *p;
-        if (o.freed || o.type == 5) continue;
         restoreEntry(o);
-        objects_.free(o);
+        if (o.type != 5) objects_.free(o);
     }
-    for (uint32_t a = 0x466808; a <= 0x46681c; a += 4)
-        if (h_.ul(a) && !objAt(h_.ul(a))) h_.setUl(a, 0);
 }
 
 } // namespace game

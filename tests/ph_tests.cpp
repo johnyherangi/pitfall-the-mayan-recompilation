@@ -144,9 +144,8 @@ int jaguarTest(const std::string& dir) {
     int ticks = 0;
     for (; ticks < 9000 && g.levelNumber() == 0; ++ticks) {
         const game::Obj* jag = nullptr;
-        for (const auto& o : pl->objectSystem().objects()) {
-            if (o->freed) continue;
-            if (o->type == 55) jag = o.get();
+        for (const game::Obj* o : pl->objectSystem().list()) {
+            if (o->type == 55) jag = o;
             if (o->type == 0x30) sawMeter = true;
         }
         if (jag) sawBoss = true;
@@ -190,7 +189,7 @@ int bungeeTest(const std::string& dir) {
         engine::HostInput in;
         if (grabbed < 0) in.keyDown[0x27] = true;                       // run right
         if (i >= 14 && i < 24) in.keyDown['W'] = true;                  // jump, held
-        if (grabbed >= 0 && pl->harryBungee() && h.vy() == 0 && pl->harryBungee()->l(0x34) < -0x70000 && released < 0) { in.keyDown['W'] = true; released = i; }
+        if (grabbed >= 0 && pl->harryBungee() && pl->harryBungee()->l(0x34) < -0x70000 && released < 0) { in.keyDown['W'] = true; released = i; }
         g.tick(in);
         if (pl->harryBungee() && grabbed < 0) grabbed = i;
         if (pl->harryBungee()) lowest = std::max(lowest, int(h.y()));
