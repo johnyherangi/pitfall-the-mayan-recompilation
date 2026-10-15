@@ -1910,6 +1910,278 @@ void h_pushCart(ObjCtx& ctx, Obj& o) {
     o.frame = 0;
 }
 
+// ---------------------------------------------------------------- the Balankanche ride (types 115, 0x7e, 7, 0x7f, 0x79, 0x80)
+
+// 0x45b2c0: what the ride sends along a lane, by the script's kinds 1 .. 7 {sprite slot, flags,
+// type, frame} (kinds 8 .. 10 are empty, the bytes after them not a table).
+struct RideThing { const char* sprite; uint16_t flags; uint8_t type, frame; };
+const RideThing kRideThings[7] = {
+    {"ob_mcar", 0x2000, 0x7f, 0}, {"mi_coin", 0, 0x79, 0xff}, {"mi_coin", 0x6000, 0x93, 0}, {"skiready", 0x4000, 0x79, 0},
+    {"tpzhit", 0x4000, 0x79, 0}, {"gvrvapor", 0x4000, 0x80, 0}, {"mi_1up", 0x6000, 2, 0}};
+
+int16_t rideWord(uint32_t va) {
+    const uint32_t i = va - 0x45fdc4;
+    return i + 1 < 0x2a8 ? int16_t(kData_rideScript[i] | kData_rideScript[i + 1] << 8) : 0;
+}
+
+// 0x41a2ae: type 115, the Balankanche ride.  It switches the ride on (DAT_00465c56: the camera
+// and the cart run left at DAT_00466182 px a tick, which approaches the target DAT_0046617e by
+// 0x2000 a tick), makes the level 0x30 cells high and, 0x28 ticks in, lines up the three lane
+// lights (type 0x7e).  Its script (0x45fdc4) sends things along the lanes: kind 1 a runaway cart
+// (type 0x7f) announced by a blinking light (type 7), 2 a marker after each speed change, 3 a
+// coin with three more above it, 6 a vapour (type 0x80), 7 a 1-up; kind 9 sets the target speed
+// and kind 10 ends the ride's loop (DAT_004661c1).  A zero distance takes the last nonzero one.
+// Everything waits while a cart has Harry (state 0x42709d).
+void h_rideDirector(ObjCtx& ctx, Obj& o) {
+    Harry& h = ctx.harry;
+    ObjectSystem& os = ctx.pl.objectSystem();
+    if (o.b(0x32) == 0) {
+        o.b(0x32) = 0xff;
+        h.w(0x4658ae) = 0x30;
+        o.l(0x54) = 0x6400000;
+        h.b(0x465c56) = 0xff;
+        h.l(0x46617c) = 0x60000;
+        h.l(0x466180) = 0x60000;
+        o.l(0x34) = 0x45fdc4;
+        o.w(0x4e) = 0x28;
+        h.b(0x4661c1) = 0;
+    }
+    if (h.cont() == 0x42709d) return;
+    const int16_t dv = int16_t(h.w(0x46617e) - h.w(0x466182));
+    if (dv < 0) h.l(0x466180) -= 0x2000;
+    else if (dv > 0) h.l(0x466180) += 0x2000;
+    if (o.w(0x4e) != 0) {
+        o.w(0x4e) -= 1;
+        if (o.w(0x4e) == 0) {
+            h.w(0x466782) = 0x231;
+            for (int d7 = 2; d7 >= 0; --d7) {
+                if (Obj* l = ctx.spawnFrom(o, true, 1)) {                   // FUN_0043546e(1)
+                    l->setSprite(ctx.spr("ob_lite"));
+                    l->y = h.w(0x466782);
+                    h.w(0x466782) += 0x40;
+                    l->x = 0; l->frame = 0; l->type = 0x7e; l->behind = 0xff; l->flags = 0xa000;
+                    l->w(0x32) = 0x24;
+                }
+            }
+        }
+    }
+    o.l(0x54) -= h.l(0x466180);
+    if (o.l(0x54) >= 0) return;
+    auto distance = [](int16_t d) { return int32_t(uint32_t(uint16_t(uint16_t(d) * 0xa0)) << 16); };
+    uint32_t a0 = uint32_t(o.l(0x34));
+    if (rideWord(a0 + 4) == 0xa) { h.b(0x4661c1) = 0xff; o.l(0x54) = 0x60000000; return; }
+    if (rideWord(a0 + 4) == 9) {
+        h.w(0x46617e) = rideWord(a0 + 6);
+        o.l(0x34) += 8;
+        o.l(0x54) = distance(rideWord(uint32_t(o.l(0x34))));
+        return;
+    }
+    const int kind = rideWord(a0 + 4);
+    if (kind >= 1 && kind <= 7) {
+        const RideThing& t = kRideThings[kind - 1];
+        if (Obj* a5 = ctx.spawnFrom(o)) {                                   // FUN_004356bc(1)
+            h.setUl(0x466788, ctx.pl.addrOf(a5));
+            a5->x = int16_t(h.w(0x4658b4) - 0x28);
+            if (kind == 6) a5->x += 0x186;
+            a5->y = 0x243;
+            if (rideWord(a0 + 2) != 1) { a5->y = 0x283; if (rideWord(a0 + 2) != 2) a5->y = 0x2c3; }
+            a5->setSprite(ctx.spr(t.sprite));
+            if (kind == 1) a5->y -= 0x13;
+            a5->flags = t.flags; a5->frame = t.frame; a5->type = t.type;
+            ctx.pl.setAlsLong(0x384, ctx.pl.addrOf(a5));
+            if (kind == 3) {
+                // three more coins above it, to the left
+                a5->y -= 0x18;
+                int16_t x = a5->x;
+                const int16_t y = a5->y;
+                for (int d2 = 2; d2 >= 0; --d2) {
+                    Obj* c = ctx.spawnFrom(o);
+                    if (!c) break;
+                    c->setSprite(ctx.spr("mi_coin")); c->flags = 0x6000; c->frame = 0; c->type = 2;
+                    x = int16_t(x - 0x28);
+                    c->x = x; c->y = y;
+                }
+            }
+        }
+    }
+    // 0x41a692: the next entry, and the distance to it
+    o.l(0x34) += 6;
+    a0 = uint32_t(o.l(0x34));
+    uint32_t a1 = a0;
+    int16_t d0;
+    while ((d0 = rideWord(a1)) == 0) {
+        a1 -= 6;
+        if (rideWord(a1 + 2) == 9) a1 -= 2;                                 // (a speed entry is 8 bytes)
+    }
+    o.l(0x54) = distance(d0);
+    const int next = rideWord(a0 + 4);
+    if (next == 1 || next == 0xb) {
+        // a light on the cart's lane, lit about when the cart comes; the cart comes 0x1b0 px later
+        int16_t n = 1;
+        for (Obj* a = os.first(); a; a = os.nextOf(*a)) {
+            if (a->type != 0x7e) continue;
+            if (n == rideWord(a0 + 2)) {
+                if (Obj* l = ctx.spawnFrom(o)) {
+                    l->l(0x64) = int32_t(ctx.pl.alsLong(0x384));
+                    l->type = 7;
+                    l->x = a->x; l->y = a->y;
+                    l->behind = 0xff;
+                    l->l(0x4a) = int32_t(ctx.pl.addrOf(a));
+                    l->setSprite(ctx.spr("ob_liter"));
+                    l->frame = 0xff;
+                    l->flags = 0xe000;
+                    l->w(0x46) = int16_t(0xaa - 10 * h.w(0x46617e));
+                    l->l(0x54) = o.l(0x54) + 0x20000;
+                    o.l(0x54) += 0x1b00000;
+                }
+                break;
+            }
+            n += 1;
+        }
+    }
+    if (next == 7) {
+        // the 1-up: the top and bottom lights
+        int16_t n = 1;
+        for (Obj* a = os.first(); a; a = os.nextOf(*a)) {
+            if (a->type != 0x7e) continue;
+            if (n == 3 || n == 1) {
+                if (Obj* l = ctx.spawnFrom(o)) {
+                    l->type = 7;
+                    l->x = a->x; l->y = a->y;
+                    l->behind = 0xff;
+                    l->l(0x4a) = int32_t(ctx.pl.addrOf(a));
+                    l->setSprite(ctx.spr("ob_liter"));
+                    l->frame = 0xff;
+                    l->flags = 0xe000;
+                    l->w(0x46) = 0x1260;
+                }
+            }
+            n += 1;
+        }
+    }
+}
+
+// 0x41b628: type 0x7e, a lane light at the left edge of the screen (ob_lite): it slides in over
+// 0x24 ticks (FUN_0043348e puts it at camX - w32).
+void h_rideLaneLight(ObjCtx& ctx, Obj& o) {
+    if (o.w(0x32) != 0) o.w(0x32) -= 1;
+    ctx.pl.hudAdd(o);                                                       // 0x4150a2
+}
+
+// 0x406b32: type 7, a lane's warning light (ob_liter, at the screen's left edge): hidden until
+// its distance (l54) runs out, then it beeps and blinks for w46 ticks (+0x14).
+void h_rideWarning(ObjCtx& ctx, Obj& o) {
+    ctx.pl.hudAdd(o);                                                       // 0x4150a2
+    if (o.frame == 0xff) {
+        o.l(0x54) -= ctx.harry.l(0x466180);
+        if (o.l(0x54) >= 0) return;
+        o.frame = 0;
+        ctx.sound1(0x57, 9);
+    }
+    o.w(0x50) += 1;
+    if (o.w(0x50) == 0xa) { o.w(0x50) = 0; o.frame ^= 1; }
+    if (ctx.harry.cont() == 0x42709d) return;
+    o.w(0x46) -= 1;
+    if (int16_t(o.w(0x46) + 0x14) < 0) ctx.release(o);
+}
+
+// 0x41b644: type 0x7f, a runaway cart on a lane of the ride (ob_mcar), knocked back (l5a,
+// slowing by 0xc00) when it runs into Harry.  Running into him stops the ride: a cart carries
+// him (state 0x42709d, DAT_00465b45 = the cart, hyihwall) and DAT_0046618a holds the camera.
+void h_rideCart(ObjCtx& ctx, Obj& o) {
+    Harry& h = ctx.harry;
+    moveX(o, -o.l(0x5a));
+    if (o.l(0x5a) != 0) {
+        o.l(0x5a) -= 0xc00;
+        if (o.l(0x5a) < 0) o.l(0x5a) = 0;
+    }
+    if (h.b(0x465b72) == 0 && h.cont() != 0x42709d && h.cont() != 0x430e3a && ctx.touchesHarry(o)) {
+        o.l(0x5a) = 0x1c000;
+        if (Obj* a0 = ctx.pl.objAt(uint32_t(o.l(0x64)))) a0->w(0x46) = 0x1000;
+        ctx.sound1(0xbf, 0x10);
+        h.setCont(0x42709d);
+        h.setUl(0x465b45, ctx.pl.addrOf(&o));
+        h.w(0x465b43) = 0x28;
+        h.setSprite("hyihwall");
+        h.facing() = 0xff;
+        h.frame() = 0;
+        h.b(0x46618a) = 0xff;
+    }
+    exitDespawnFar(ctx, o);                                                 // 0x424d6a
+}
+
+// 0x41b208: type 0x79, what the ride leaves behind (a marker after each speed change): gone once
+// it is 0x17c px right of the camera.
+void h_rideMarker(ObjCtx& ctx, Obj& o) {
+    if (int16_t(o.x - ctx.camX - 0x17c) < 0) return;
+    ctx.pl.restoreEntry(o);
+    ctx.release(o);
+}
+
+// 0x41b736: type 0x80, a vapour on the ride (gvrvapor): it rises 0x21 px with a hiss, bobs along
+// the path 0x45be7e, drifts with the scroll, first back (-2 px a tick, easing off, then a sound)
+// and then speeding up to the left.  Touching Harry sets DAT_00466190, which makes the cart throw
+// up his arms (the reset after it compares the state with 0x465b71, an address, and never runs).
+void h_rideVapor(ObjCtx& ctx, Obj& o) {
+    static const int16_t kPath[45] = {0, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1, 1, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, -1, 0, -1, 0,
+                                      -1, 0, -1, -1, -1, -1, -1, 0, -1, 0, -1, 0, -1, 0, 0, 0, 0, int16_t(0x8000)};
+    Harry& h = ctx.harry;
+    if (o.b(0x59) == 0) {
+        o.behind = 0xff;
+        o.b(0x59) = 0xff;
+        o.y -= 0x21;
+        ctx.sound0(0x2d, 0xa);                                              // FUN_0042633d
+    }
+    if (h.cont() != 0x42709d && ctx.touchesHarry(o)) h.b(0x466190) = 0xff;
+    animStep(ctx, o, o.anim(0x50), kAnim_vaporSpin, 4);
+    o.w(0x32) += 2;
+    const int i = uint16_t(o.w(0x32)) >> 1;
+    const int16_t dy = i < 45 ? kPath[i] : 0;
+    if (dy == int16_t(0x8000)) o.w(0x32) = 0;
+    else o.y += dy;
+    o.x -= h.w(0x466182);
+    if (o.b(0x34) == 0) { o.b(0x34) = 0xff; o.l(0x36) = int32_t(0xfffe0000); }
+    if (o.l(0x36) != 0) {
+        o.l(0x36) += 0x800;
+        if (o.l(0x36) >= 0) { o.l(0x36) = 0; ctx.sound0(8, 8); }
+        moveX(o, o.l(0x36));
+    } else {
+        if (o.w(0x32) != int16_t(0xfff8)) o.l(0x3c) -= 0x2000;
+        moveX(o, o.l(0x3c));
+    }
+    exitDespawnFar(ctx, o);                                                 // 0x424d6a
+}
+
+// 0x41dd6e: type 0x97, a line of text crossing the screen (FUN_0043348e moves it 5 px a tick and
+// holds it in the middle for 0x90 ticks); gone at w32 0x1c7.
+void h_hudText(ObjCtx& ctx, Obj& o) {
+    if (int16_t(o.w(0x32) - 0x1c7) >= 0) { ctx.release(o); return; }
+    ctx.pl.hudAdd(o);                                                       // 0x4150a2
+}
+
+// 0x41e110: type 0x9b, the "GO" sign in the middle of the screen, for 0x50 ticks.
+void h_hudGo(ObjCtx& ctx, Obj& o) {
+    ctx.pl.hudAdd(o);                                                       // 0x4150a2
+    o.w(0x32) += 1;
+    if (o.w(0x32) == 0x50) ctx.release(o);
+}
+
+// ---------------------------------------------------------------- Harry's splash (type 0x7a)
+
+// 0x41b24e: type 0x7a, Harry's splash where he lands in water (fxisplsh, from 0x426c52), with a
+// mirrored twin (l50, typeless: drawn, never run) that takes its frame and sprite; at the end of
+// the script 0x45be4a both go (without a twin it goes at once).
+void h_harrySplash(ObjCtx& ctx, Obj& o) {
+    const bool done = animStep(ctx, o, o.anim(0x32), kAnim_harrySplash, 4);
+    Obj* twin = ctx.pl.objAt(uint32_t(o.l(0x50)));
+    if (!twin) { ctx.release(o); return; }
+    twin->frame = o.frame;
+    twin->sprite = o.sprite; twin->rawBox = o.rawBox;
+    if (!done) return;
+    ctx.release(o);
+    ctx.release(*twin);
+}
+
 // ---------------------------------------------------------------- ropes (types 0xa9, 14) and drifting platforms (0x6f)
 
 int16_t ropeWord(const uint8_t* t, size_t off) { return int16_t(t[off] | t[off + 1] << 8); }
@@ -6397,6 +6669,15 @@ Handler ObjectSystem::handler(uint8_t type) {
     case 14:   return h_rope;
     case 0xa9: return h_ropeSpawner;
     case 0x6f: return h_floatPlatform;
+    case 0x7a: return h_harrySplash;
+    case 115:  return h_rideDirector;
+    case 0x7e: return h_rideLaneLight;
+    case 7:    return h_rideWarning;
+    case 0x7f: return h_rideCart;
+    case 0x79: return h_rideMarker;
+    case 0x80: return h_rideVapor;
+    case 0x97: return h_hudText;
+    case 0x9b: return h_hudGo;
     case 6:    return h_boomerang;
     case 0x87: return h_boomerangBack;
     case 0x8a: return h_stoneSpark;

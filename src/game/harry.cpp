@@ -189,7 +189,75 @@ void PlayLogic::padOverrides() {
         if (h_.y() == 0x132) h_.b(0x465d49) = 0;
         return;
     }
-    // Levels 14 and 7 (the continue screen and the mine-cart ride) script more; not ported yet.
+    if (lv == 0xe) {
+        // The map screen: Harry walks the way DAT_00465c58 / 59 say after 0x20 ticks; past
+        // x 0x1a6 or before 0x30 he has left it (DAT_00465b72 = 0x7f / 0x7e).
+        if (h_.w(0x465c58) == 0) return;
+        if (h_.b(0x465d49) != 0x20) {
+            h_.b(0x465d49) += 1;
+            alsMem_[0x384] = 0;                                    // [DAT_004504e4] + 0x384
+            return;
+        }
+        p.b(0x466768) = h_.b(0x465c58);
+        p.b(0x466767) = h_.b(0x465c59);
+        if (int16_t(h_.x() - 0xc5) < 0 && alsMem_[0x384] == 0) {
+            alsMem_[0x384] = 0xff;
+            h_.w(0x466782) = 0x50;                                 // (a0 = 0x43469b, "[GAME OVER]", is not used)
+            h_.w(0x466784) = int16_t(0xffb8);
+            alsMem_[0x37a] = 0xff;
+        }
+        if (int16_t(h_.x() - 0x1a6) >= 0) h_.b(0x465b72) = 0x7f;
+        if (int16_t(h_.x() - 0x30) < 0) h_.b(0x465b72) = 0x7e;
+        return;
+    }
+    if (lv != 7) return;
+    // Balankanche Mine: Harry walks right to the cart, jumping the gap at 0xe92; past 0xfb2 he
+    // comes back a little, stands, and after 0x1b ticks the "GO" sign comes up, the restart point
+    // moves to the cart and he jumps until he is in it.
+    switch (h_.b(0x465d49)) {
+    case 0x76:
+        if (h_.cont() == 0x42aa3b) { h_.b(0x465d49) = 0; return; }
+        p.b(0x466762) = 0xff;
+        p.b(0x46676d) = 1;
+        p.b(0x46676a) = 1;
+        return;
+    case 0x56:
+        if (int16_t(h_.x() - 0xf48) >= 0) return;
+        h_.b(0x465d49) = 0;
+        return;
+    case 1:
+        p.b(0x466768) = 0xff;
+        if (h_.x() == 0xd08 || h_.x() == 0xd07 || h_.x() == 0xd06) {
+            if (Obj* a5 = newObjAtHarry(1, true)) {                // FUN_0043546e(1): the level's name scrolls by
+                a5->x = 0; a5->type = 0x97; a5->behind = 0xff;
+                a5->setSprite(game_->findSprite("m2_text")); a5->frame = 0; a5->flags = 0xe000;
+            }
+        }
+        if (int16_t(h_.x() - 0xfb2) >= 0) h_.b(0x465d49) = 2;
+        if (int16_t(h_.x() - 0xe92) >= 0 && int16_t(h_.x() - 0xec2) < 0) p.b(0x466762) = 0xff;
+        return;
+    case 2:
+        p.b(0x466767) = 0xff;
+        if (int16_t(h_.x() - 0xfa9) >= 0) return;
+        h_.b(0x465d49) = 3;
+        return;
+    default:
+        p.b(0x466762) = 0xff;
+        h_.b(0x465d49) += 1;
+        if (h_.b(0x465d49) == 0x1e) {
+            if (Obj* a5 = newObjAtHarry(2, true)) {                // FUN_0043546e(2)
+                a5->x = 0; a5->behind = 0xff; a5->type = 0x9b;
+                a5->setSprite(game_->findSprite("mi_go")); a5->frame = 0; a5->flags = 0xe000;
+                h_.w(0x46679e) = 0xf96; h_.w(0x4667a0) = 0x4a; h_.w(0x4667a2) = 0xf92; h_.b(0x4667a4) = 0xff;
+                Game::Checkpoint& cp = game_->checkpoint();        // (the port keeps the restart point here)
+                cp.valid = true; cp.x = 0xf96; cp.y = 0x4a; cp.markerX = 0xf92; cp.facingLeft = true;
+                h_.b(0x465d49) = 0x76;
+            }
+            return;
+        }
+        if (h_.b(0x465d49) == 0x37) h_.b(0x465d49) = 0x56;
+        return;
+    }
 }
 
 // ---------------------------------------------------------------- triggers and floors

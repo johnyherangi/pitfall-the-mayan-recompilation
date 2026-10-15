@@ -110,11 +110,12 @@ void PlayLogic::harryUpdate() {
                 a3->x = h_.x(); a3->y = int16_t(h_.y() - 0x10);
                 a3->behind = 0xff;
                 if (Obj* a5 = newObjAtHarry(9)) {
-                    a3->link = a5;                         // (+0x50, written twice)
+                    a3->l(0x50) = int32_t(addrOf(a5));     // (written twice)
+                    std::memcpy(a3->s + 0x12, a5->s + 0x12, 2);
                     a3->w(0x26) = 0x6663;
                     a5->sprite = game_->findSprite("fxisplsh");
                     a5->flags = 0xa000;
-                    a5->link = a3;
+                    a5->l(0x50) = int32_t(addrOf(a3));      // (the twin has no type: drawn, never run)
                     a5->x = h_.x(); a5->y = int16_t(h_.y() - 0x10);
                     a5->facing = 0xff;
                     a5->behind = 0xff;

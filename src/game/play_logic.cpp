@@ -38,6 +38,7 @@ void PlayLogic::enter(Game& g) {
     const ph::LevelData& lv = g.level();
     h_ = Harry{};
     alsMem_ = lv.als;                                          // [DAT_004504e4]
+    if (alsMem_.size() < 0x1000) alsMem_.resize(0x1000, 0);
     for (const auto& cr : g.permanentlyGone()) {               // collected for good (FUN_00430eb6 keeps them)
         const uint16_t off = alsWord(4 + size_t(cr.first) * 2);
         if (off == 0) continue;

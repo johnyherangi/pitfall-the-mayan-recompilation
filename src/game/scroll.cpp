@@ -29,6 +29,16 @@ uint16_t PlayLogic::alsWord(size_t off) const {
 
 uint8_t PlayLogic::alsByte(size_t off) const { return off < alsMem_.size() ? alsMem_[off] : 0xff; }
 
+uint32_t PlayLogic::alsLong(size_t off) const {
+    uint32_t v = 0;
+    if (off + 4 <= alsMem_.size()) std::memcpy(&v, alsMem_.data() + off, 4);   // (little-endian, as the PC stores it)
+    return v;
+}
+
+void PlayLogic::setAlsLong(size_t off, uint32_t v) {
+    if (off + 4 <= alsMem_.size()) std::memcpy(alsMem_.data() + off, &v, 4);
+}
+
 // ---------------------------------------------------------------- FUN_00404714
 
 void PlayLogic::camera() {

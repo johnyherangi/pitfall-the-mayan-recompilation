@@ -86,6 +86,11 @@ public:
     void startBossOutro() { h_.b(0x465d49) = 1; }   // DAT_00465d49 (FUN_0043426d)
     void hudAdd(const Obj& o) { hud_.push_back(objects_.indexOf(o)); }   // 0x4150a2: FUN_0043348e places it next tick
     uint32_t& fadeCmd() { return fadeCmd_; }      // DAT_0046b1b0 (0xc0: the big stone's white flash)
+    // [DAT_004504e4] + off: the Genesis variables the PC keeps in the .als buffer past the level's
+    // data (+0x384: the Balankanche ride's last obstacle, the map screen's flags); the copy here is
+    // padded to the 4 KB the death restart saves (0x4288a2).
+    uint32_t alsLong(size_t off) const;
+    void setAlsLong(size_t off, uint32_t v);
 
 private:
     friend struct HarryAccess;
