@@ -1,0 +1,25 @@
+# Original game files -- never committed; supply your own copies.
+original/
+original_genesis/
+*.[Pp][Hh]
+[Pp][Ii][Tt][Ff][Aa][Ll][Ll].[Ee][Xx][Ee]
+*.[Bb][Ii][Nn]
+*.[Ss][Mm][Dd]
+*.[Gg][Ee][Nn]
+*.elf
+
+# Build output
+build/
+build-*/
+out/
+.vs/
+CMakeUserPresets.json
+*.user
+
+# Runtime / scratch files
+pitfall.ini
+*.ppm
+__pycache__/
+*.pyc
+*.whl
+.cache/

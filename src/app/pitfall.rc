@@ -1,0 +1,28 @@
+// Resources for the Win32 front end.  The icon is the original one from
+// PITFALL.EXE (RT_GROUP_ICON #4216), extracted with tools/phtool.py helpers.
+#include <windows.h>
+
+PITFALL_ICON ICON "pitfall.ico"
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 1,0,0,0
+ PRODUCTVERSION 1,0,0,0
+ FILEOS VOS_NT_WINDOWS32
+ FILETYPE VFT_APP
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"
+        BEGIN
+            VALUE "FileDescription", "Pitfall: The Mayan Adventure (reconstruction)"
+            VALUE "InternalName", "pitfall"
+            VALUE "OriginalFilename", "pitfall.exe"
+            VALUE "ProductName", "Pitfall: The Mayan Adventure"
+            VALUE "ProductVersion", "1.0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END
