@@ -97,8 +97,12 @@ demo 2 (level 20 — the Atari 2600 easter-egg level), then the intro (21).
 | `FUN_00428dfa`, `FUN_0042babc`, `FUN_00426810` | Harry state machine (run, jump, whip, …) | `PlayLogic::step*` (subset) |
 | `FUN_004300e0` | velocity decay helper | `stepHorizontal` |
 | `FUN_004237a5` | animation script interpreter (`0x46166b` run, …) | `PlayLogic::animate` |
-| `FUN_00403fa0` .. `FUN_004042fe` | spawn `.als` objects entering the view | `PlayLogic::spawnObjects` |
-| `FUN_0040454e` | object init from template (`0x4678c4`) | `ph::kObjectTemplates` |
+| `FUN_00404714` | the game-logic camera: lead `DAT_004658ba` (-0x44 .. 0x44), look offset `DAT_004658a6`, 1/8 (sideways) and 1/4 (up / down) of the distance a tick capped at 7 px, the locks `DAT_00465b09 / 0b / 0d` (the right one tested before the move), boss and swing leads, the Balankanche ride branch (`DAT_00465c56`) | `PlayLogic::camera` (`game/scroll.cpp`) |
+| `0x404dcb` / `0x404ea2` / `0x404f75` / `0x40503e` | scroll left / right / up / down; crossing into another 16-px cell flags that edge (`DAT_00465894 / 95 / 92 / 93`), the next tick that scrolls the same way without crossing spawns it | `scrollLeft / scrollRight / scrollUp / scrollDown` |
+| `FUN_00403fa0` / `FUN_00404016` / `FUN_00404269` / `FUN_004042fe` | spawn the `.als` column 0x40 px left / 0x160 px right of the camera (rows `camY/16 - 3 < row <= camY/16 + 16`), the row two above / sixteen below its top (29 columns) | `spawnLeftColumn / spawnRightColumn / spawnTopRow / spawnBottomRow` |
+| `FUN_0040454e` | object init from the `.als` template (`0x4678c4`; byte +9 picks the head or the tail of the list); the entry's id is cleared while the object lives | `PlayLogic::spawnEntry`, `ph::kObjectTemplates` |
+| `FUN_00405114` / `FUN_00433d0b` | the level start's 33-column spawn; the ids without templates placed by the level start (rope spawners 0x15 / 0x16, drifting platforms 0xc9, a pushed mine cart where it was left) | `spawnAll / preSpawn` |
+| `[DAT_004504e4]` | the level's `.als` data (4-byte header, a big-endian word per column with the offset of its `(row, id)` pairs, 0xff ending them), worked on in place; past the data the PC keeps Genesis variables (+0x384) | `PlayLogic::alsMem_` (padded to 4 KB), `alsLong / setAlsLong` |
 | `FUN_00435780` / `FUN_00435905` | object pool alloc / free | `std::vector<LevelObject>` |
 | `FUN_00434eef` | object → display-list entry (+0x10, flags 0x40 hflip / 0x80 vflip / 0x20 front) | `PlayLogic::emitSprites` |
 | `FUN_004251f9` | trigger lookup at `(x + 0x20, y)` | `PlayLogic::checkTriggers` |
@@ -170,26 +174,32 @@ demo 2 (level 20 — the Atari 2600 easter-egg level), then the intro (21).
 
 ### Handlers ported (type: name in `handlers.cpp` `PC address`)
 
-1 static `0x405322`, 2 item `0x405328`, 3 checkpoint `0x405aae`, 4 bigStone `0x405c86`, 5 slingStone `0x40613c`,
-6 boomerang `0x406487`, 8 web `0x406bbc`, 9 dropBall `0x406ea6`,
-10 condor `0x406f62`, 11 turtle `0x4078b0`, 12 roamingSnake `0x407bfc`, 13 crocSwimmer `0x4085fe`, 16 sparkle `0x40a2c8`,
-18 bat `0x40a4be`, 20 crocLurker `0x40b08a`, 23 rat `0x40b5d2`, 26 lever `0x40b9e0`, 27 bungee `0x40c5fe`,
-28 spear `0x40d322`, 29 projectile `0x40d3b0`, 30 piston `0x40d77a`, 31 door `0x40d9e6`, 32 verticalWeb `0x40dc2e`,
-33 chute `0x40de86`, 34 tnt `0x40e18d`, 35 monkey `0x40e394`, 36 spit `0x40ebb0`, 38 pot `0x40ed62`, 39 firePit `0x40f2ba`,
-40 pit `0x40f620`, 43 sleepingBat `0x40f9dc`, 44 fireball `0x40fa04`, 45 firePriest `0x40fc84`, 46 torch `0x4100a0`,
-47 fish `0x4100ca`, 48 bossMeter `0x41018c`, 50 explosion `0x41052a`, 51 floorSpikes `0x41061a`, 52 stoneBlock `0x410946`,
-55 jaguar `0x410ce6`, 56 templeArcher `0x411aae`, 57 arrow `0x412124`, 59 pitCreature `0x412444`, 60 treeSnakeBody `0x412710`,
-61 gargoyle `0x41271a`, 62 axe `0x412b2c`, 63 leafSpawner `0x412c52`, 64 feather `0x412d6a`, 65 dust `0x412f14`, 66 skullWarrior `0x412fc2`,
-67 wheel `0x414100`, 68 swingBall `0x41479e`, 70 climbingRat `0x414ab1`, 72 vineMonkey `0x414dac`, 74 pouchRespawner `0x415028`,
-76 fallingRock `0x41514e`, 78 batRoost `0x4153e0`, 80 boar `0x415640`, 81 bossDeathBurst `0x415d15`, 82 dripper `0x415e92`,
-83 drip `0x415f4a`, 85 hawk `0x4165f2`, 87 explodingPlant `0x416be0`, 91 tonguePlant `0x417a54`, 96 ceilingDripper `0x41836e`,
-97 ceilingSpikes `0x418474`, 100 fireJet `0x418834`, 102 fly `0x418992`, 104 effect `0x418ec6`, 109 snake `0x418fd0`,
-110 spider `0x419622`, 112 rat2 `0x419ec8`, 113 hidden1up `0x41a092`, 116 floorSkull `0x41a9fa`, 117 hoppingSkull `0x41aade`,
-118 markerFlame `0x41ae9a`, 119 whipLever `0x41aee0`, 123 branch `0x41b2da`, 124 branchTip `0x41b424`, 125 branchPiece `0x41b5d8`,
-129 ripple `0x41b92e`, 130 deathCloud `0x41b9d1`, 132 / 133 scorpion `0x41baa0`, 135 boomerangBack `0x41bcb2`,
-137 stonePiece `0x41bfe2`, 138 stoneSpark `0x41c420`, 142 heart `0x41d520`, 147 coin `0x41d876`,
-148 pitWheel `0x41d9e6`, 149 wheelSpawner `0x41dbf2`, 150 ceilingRock `0x41dc50`, 156 hangingPouch `0x41e132`, 160 eyes `0x41f2c2`,
-161 dot `0x41f320`, 164 snakeRespawner `0x41f5e6`, 170 oneUpFly `0x41fd26`, 172 treeSnake `0x420090`, 173 oneWayDoor `0x42068c`,
+1 static `0x405322`, 2 item `0x405328`, 3 checkpoint `0x405aae`, 4 bigStone `0x405c86`, 5 slingStone `0x40613c`, 6
+boomerang `0x406487`, 7 rideWarning `0x406b32`, 8 web `0x406bbc`, 9 dropBall `0x406ea6`, 10 condor `0x406f62`, 11
+turtle `0x4078b0`, 12 roamingSnake `0x407bfc`, 13 crocSwimmer `0x4085fe`, 14 rope `0x4088ba`, 15 mineCart `0x408f5a`,
+16 sparkle `0x40a2c8`, 18 bat `0x40a4be`, 19 pushCart `0x40ab62`, 20 crocLurker `0x40b08a`, 23 rat `0x40b5d2`, 26
+lever `0x40b9e0`, 27 bungee `0x40c5fe`, 28 spear `0x40d322`, 29 projectile `0x40d3b0`, 30 piston `0x40d77a`, 31 door
+`0x40d9e6`, 32 verticalWeb `0x40dc2e`, 33 chute `0x40de86`, 34 tnt `0x40e18d`, 35 monkey `0x40e394`, 36 spit
+`0x40ebb0`, 37 cartSpark `0x40eca2`, 38 pot `0x40ed62`, 39 firePit `0x40f2ba`, 40 pit `0x40f620`, 41 hollow
+`0x40f900`, 43 sleepingBat `0x40f9dc`, 44 fireball `0x40fa04`, 45 firePriest `0x40fc84`, 46 torch `0x4100a0`, 47 fish
+`0x4100ca`, 48 bossMeter `0x41018c`, 50 explosion `0x41052a`, 51 floorSpikes `0x41061a`, 52 stoneBlock `0x410946`, 55
+jaguar `0x410ce6`, 56 templeArcher `0x411aae`, 57 arrow `0x412124`, 59 pitCreature `0x412444`, 60 treeSnakeBody
+`0x412710`, 61 gargoyle `0x41271a`, 62 axe `0x412b2c`, 63 leafSpawner `0x412c52`, 64 feather `0x412d6a`, 65 dust
+`0x412f14`, 66 skullWarrior `0x412fc2`, 67 wheel `0x414100`, 68 swingBall `0x41479e`, 70 climbingRat `0x414ab1`, 72
+vineMonkey `0x414dac`, 74 pouchRespawner `0x415028`, 76 fallingRock `0x41514e`, 78 batRoost `0x4153e0`, 79 rippleTwin
+`0x41562c`, 80 boar `0x415640`, 81 bossDeathBurst `0x415d15`, 82 dripper `0x415e92`, 83 drip `0x415f4a`, 84
+leapingCroc `0x4160b2`, 85 hawk `0x4165f2`, 87 explodingPlant `0x416be0`, 88 limpSnake `0x416f48`, 91 tonguePlant
+`0x417a54`, 92 pushLever `0x417d0e`, 96 ceilingDripper `0x41836e`, 97 ceilingSpikes `0x418474`, 98 cartSpawner
+`0x4185ce`, 99 runawayCart `0x4186c4`, 100 fireJet `0x418834`, 101 crocSplash `0x4188e0`, 102 fly `0x418992`, 104
+effect `0x418ec6`, 109 snake `0x418fd0`, 110 spider `0x419622`, 111 floatPlatform `0x419d00`, 112 rat2 `0x419ec8`, 113
+hidden1up `0x41a092`, 115 rideDirector `0x41a2ae`, 116 floorSkull `0x41a9fa`, 117 hoppingSkull `0x41aade`, 118
+markerFlame `0x41ae9a`, 119 whipLever `0x41aee0`, 121 rideMarker `0x41b208`, 122 harrySplash `0x41b24e`, 123 branch
+`0x41b2da`, 124 branchTip `0x41b424`, 125 branchPiece `0x41b5d8`, 126 rideLaneLight `0x41b628`, 127 rideCart
+`0x41b644`, 128 rideVapor `0x41b736`, 129 ripple `0x41b92e`, 130 deathCloud `0x41b9d1`, 132 / 133 scorpion `0x41baa0`,
+135 boomerangBack `0x41bcb2`, 137 stonePiece `0x41bfe2`, 138 stoneSpark `0x41c420`, 142 heart `0x41d520`, 147 coin
+`0x41d876`, 148 pitWheel `0x41d9e6`, 149 wheelSpawner `0x41dbf2`, 150 ceilingRock `0x41dc50`, 151 hudText `0x41dd6e`,
+155 hudGo `0x41e110`, 156 hangingPouch `0x41e132`, 160 eyes `0x41f2c2`, 161 dot `0x41f320`, 164 snakeRespawner
+`0x41f5e6`, 169 ropeSpawner `0x41fc1a`, 170 oneUpFly `0x41fd26`, 172 treeSnake `0x420090`, 173 oneWayDoor `0x42068c`,
 174 leanLever `0x4208f8`.
 
 Notes on some of them: the jaguar boss's states are INTRO `0x411391`, GO `0x41124d`, POUNCE `0x411054`, REVERSE
@@ -198,12 +208,10 @@ Notes on some of them: the jaguar boss's states are INTRO `0x411391`, GO `0x4112
 hawk share the stun tumble `0x4073d3` / `0x407555`, the wall turn `0x40769b` and the climb `0x40775b`; the vault levers
 of levels 11..13 (the Simon game at `0x40b9e0`'s vault branch) are not ported.
 
-Still `h_default` (drawn in the template frame, never act): the mine-cart ride (15 `0x408f5a`, carts 19 `0x40ab62` /
-98 `0x4185ce`), 41 `0x40f900` (crouch into a hollow: Harry state `0x426fee`), 71 vortex `0x414c58` (Harry warp
-`0x428780`), 84 `0x4160b2` (crzjump), 88 limp snake `0x416f48` (Harry's hang states), 92 push lever `0x417d0e` (Harry's
-push states `0x42f0e1` / `0x42f140`), 103 vault letters `0x418e24`, 105 the Warrior Spirit `0x420bd0`, 115 `0x41a2ae`,
-and the later jaguars 140 `0x41c4c2` / 158 `0x41e462`, with the objects only they spawn.  The boss meter's
-branches for types 0x69 / 0x8c and the level-8 boss are not ported.
+Still `h_default` (drawn in the template frame, never act): 71 vortex `0x414c58` (Harry's warp `0x428780` and the
+vault / ending transitions), 103 vault letters `0x418e24` (with the Simon game of the vault levers), 105 the Warrior
+Spirit `0x420bd0`, and the later jaguars 140 `0x41c4c2` / 158 `0x41e462`, with the objects only they spawn.  The
+boss meter's branches for types 0x69 / 0x8c and the level-8 boss are not ported.
 
 Every ported handler has been checked against its disassembly, in address order.  Quirks of the original that
 are kept: the boar's grazing test reads a `d1` the contact test may have clobbered; the fire jet's roar count
