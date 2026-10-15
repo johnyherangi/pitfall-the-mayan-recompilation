@@ -77,6 +77,7 @@ public:
     const uint8_t* cell(int i) const { return pixels_.data() + size_t(i) * cellBytes_; }
     int colourCount() const { return ncolors_; }
     const uint8_t* localPalette() const { return pal_.data(); }
+    const std::vector<uint8_t>& pixels() const { return pixels_; }
     void remapInPlace(const uint8_t remap[256]);
 
 private:

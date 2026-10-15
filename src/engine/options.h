@@ -34,6 +34,11 @@ struct Options {
     uint32_t levelBits = 1;    // Option_Level    DAT_0046d38c: the menu's levels that are on (a bit a level),
                                //                kept as DAT_00453190's 64 bytes (levelBitsEncode)
     KeyBindings keys;
+    // Not a setting but what the display is (FUN_0043e1c0's GetDeviceCaps): a palette device keeps
+    // its static colours, half of them at each end (DAT_00453184: 10, the free range [10, 246)); a
+    // true-colour display, as every display now, none (the free range [0, 256), after the "256
+    // color mode" warning).  The Win32 front end asks the display as the original.
+    int staticColours = 0;
 
     bool load(const std::string& iniPath);
     bool save(const std::string& iniPath) const;

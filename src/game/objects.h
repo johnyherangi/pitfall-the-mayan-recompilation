@@ -130,6 +130,12 @@ struct ObjCtx {
 
 using Handler = void (*)(ObjCtx&, Obj&);
 
+// The first eight bytes of an object record (x, its fraction, y, its fraction), which neither the
+// pool's reset (FUN_00435274) nor a new record (0x43582b) writes: the original never clears its
+// records (0x462854, zero at the start), so a record handed out on a new level starts from what
+// the last level left in it, its fractions included.
+struct ObjPlace { int16_t x = 0; uint16_t xFrac = 0; int16_t y = 0; uint16_t yFrac = 0; };
+
 // The object records and their list (FUN_00435274 / FUN_00435905 / FUN_00435780 /
 // FUN_0043598f): 0x50 records of 0x6e bytes at 0x462854, a stack of free records
 // (0x464ab4.., top at DAT_00462850; it counts as empty with 8 records left) and a doubly
@@ -141,8 +147,12 @@ public:
     static constexpr int kPoolSize = 0x50;
     static constexpr int kReserve = 8;       // 0x464ad4 - 0x464ab4 = 8 entries never handed out
 
+    using Places = std::array<ObjPlace, 0x50>;
+
     ObjectSystem() { reset(); }
     void reset();                              // FUN_00435274: every record free (0x4f on top), empty list
+    void loadPlaces(const Places& p);          // the records' places as the last level left them
+    void savePlaces(Places& p) const;
     Obj* allocHead();                          // FUN_00435905 (nullptr when no record is left)
     Obj* allocTail();                          // FUN_00435780
     void free(Obj& o);                         // FUN_0043598f

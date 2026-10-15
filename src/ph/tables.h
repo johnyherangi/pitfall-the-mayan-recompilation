@@ -20,6 +20,8 @@
 
 namespace ph {
 
+class Arena;
+
 extern const uint8_t kCollisionHeights[256 * 16];   // 0x4668c4
 extern const uint8_t kTriggerClass[255];             // 0x461f8e
 extern const uint8_t kStartFacing[25];               // 0x433334 (0 right, 1 left)
@@ -54,10 +56,19 @@ public:
     size_t indexOf(const ColumnEntry& e) const { return size_t(&e - entries_.data()); }
     const ColumnEntry& entry(size_t i) const { return entries_[i]; }
 
+    // The table's place in the load block (ph::Arena): the probes then walk the block's bytes as
+    // the original does, past the table too, and see what the game logic writes there.  An
+    // unplaced table (no block) is walked from its entries.
+    void place(const Arena* arena, uint32_t base) { arena_ = arena; base_ = base; }
+    const Arena* arena() const { return arena_; }
+    uint32_t base() const { return base_; }
+
 private:
     struct Col { uint32_t first = 0, count = 0; };
     std::vector<Col> cols_;
     std::vector<ColumnEntry> entries_;
+    const Arena* arena_ = nullptr;
+    uint32_t base_ = 0;
 };
 
 // Object template (0x4678c4 table, one per .als id; FUN_0040454e copies it into a new object).
@@ -122,5 +133,10 @@ FloorHit probeNear(const ColumnTable& t, int x, int y);
 // FUN_00425a25 / FUN_00425bca: like probeCell, but a surface in the lower half of the
 // cell only counts while y is in the lower half too (Harry falling onto a floor).
 FloorHit probeLanding(const ColumnTable& t, int x, int y);
+
+// FUN_004251f9's walk of the trigger table: the id of the trigger under (x, y) (none when
+// x + 0x20 is negative); found is false without one.
+struct TriggerHit { bool found = false; uint8_t id = 0; };
+TriggerHit triggerAt(const ColumnTable& t, int x, int y);
 
 } // namespace ph

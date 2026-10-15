@@ -298,3 +298,40 @@ the HUD.
 * `0x461aca` score per type, `0x45b6c3` class bits (2 = stays dead after a
   death), `0x45b814` death effect kind (1 debris puff, 2 `fx_deat2`, 3
   `fxzdeath` with the body under the cloud).
+
+## 10. The load block
+
+WinMain takes 1.5 MB with `GlobalAlloc(2, 0x180000)` (`DAT_004504dc`) and every record the game
+loads goes into it, one after the other, as `ph::Arena` keeps it:
+
+```
+INIT.PH (FUN_004457d0)      font, scoline (raw images), the 118 sprites: each record up to its
+                            palette, where the next one goes
+DAT_004504e0                the next 32-byte boundary: each level from here (FUN_004460e0)
+  background                as read, its tiles in the palette's colours
+  .trg, its copy            DAT_00450510, DAT_0045052c = .trg + its size
+  .det                      DAT_00450fc0 (each record at the last one's end rounded up to 16
+  .dt2                      DAT_00450518  bytes; a record that is not there leaves the last
+  .als area                 DAT_004504e4  size in force), 0x1000 bytes cleared: the working
+                            copy, the level's own copy at +0x800 (DAT_004504c4)
+  parallax map              DAT_00450f90: past the .als area at the next 32 bytes (32 on from a
+                            boundary), its tiles in the palette's colours
+  extra map                 levels 15 / 22 (DAT_004504f0)
+  expanded parallax         levels 0 / 5: w*8 x h*8 bytes
+  sprites (FUN_00447190)    each up to its palette, +4 its name's address, +8 FUN_004361ee's
+                            word for its slot (4 + 12 * its entry at 0x468824, or 0xffff)
+```
+
+What a load does not write keeps the last loads' bytes.  The game logic reads past its tables
+into it: the collision probes (`FUN_0042571f` and its siblings) take the column word at
+`.det + ((x >> 3) & 0xfffe) + 4` in 16 bits, so at a negative x they read 8 KB past the table's
+start (on level 1 the parallax map, whose bytes then make a "floor" that breaks sling stones
+thrown off the left edge), and follow the word as a signed offset wherever it points; the
+trigger lookup reads past its offsets the same way for an x beyond the level.  The PC also keeps
+Genesis RAM inside the trigger record: the jaguar's pounce distance at `+0x1ea`, the boss
+pointer (big-endian) at `+0x1f4`, the vaults' ceiling, timers and Harry's squash script from
+`+0x1f4` to `+0x3f3` — over the trigger lists of most levels, past the short records of the vaults
+in the `.als` area's unused part — and a lost life copies the record back from its copy
+(`FUN_00430eb6`).  The tools generate the sprites' header words from `PITFALL.EXE`
+(`tools/gen_arena_data.py`).
+

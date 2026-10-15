@@ -60,9 +60,11 @@ public:
     // `rows` lines of the buffer from `bufRow`, 320 px wide, to colour 0.
     void clearRows(int bufRow, int rows);
 
-    // FUN_00436534 (levels 0/5 branch): line-scrolled, horizontally wrapping bitmap.
-    // lineOffsets (optional) holds one signed byte per screen line (DAT_00450fd0).
-    void drawParallaxLinear(const ph::LinearBitmap& bmp, int scrollX, int scrollY,
+    // FUN_00436534 (levels 0/5 branch): line-scrolled, horizontally wrapping bitmap, each line
+    // 320 px from x scrollX (+ its offset) written at the view's origin (DAT_004504f4: the main
+    // layer's fine scroll, mainScrollX & 7).  lineOffsets (optional) holds one signed byte per
+    // screen line (DAT_00450fd0).
+    void drawParallaxLinear(const ph::LinearBitmap& bmp, int scrollX, int scrollY, int mainScrollX,
                             const int8_t* lineOffsets, int lineCount);
     // Tile-based parallax layer with horizontal wrap (other levels).
     // mainFineX = main layer scrollX & 7 (the fine scroll applied at blit time).

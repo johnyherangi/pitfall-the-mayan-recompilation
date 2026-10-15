@@ -96,7 +96,8 @@ private:
 
 Game::Game(std::string dataDir, engine::Options& options)
     : dataDir_(std::move(dataDir)), options_(options) {
-    assets_ = std::make_unique<ph::AssetBank>(ph::loadInit(dataDir_, palette_));   // FUN_004457d0
+    palette_.setFreeRange(options_.staticColours, 256 - options_.staticColours);    // FUN_0043e1c0
+    assets_ = std::make_unique<ph::AssetBank>(ph::loadInit(dataDir_, palette_, &arena_));   // FUN_004457d0
     mixer_.loadBank(*assets_);                                                      // FUN_0043ce10
     mixer_.setEnabled(options_.soundEnabled);
     cd_ = std::make_unique<RippedCd>(dataDir_, mixer_);                             // FUN_00441cf0
@@ -175,6 +176,7 @@ const ph::Sprite* Game::findSprite(const std::string& name) const {
 
 void Game::startLevel(int level) {
     // FUN_004460e0
+    ++levelLoads_;
     stages_.clear();
     exitCmd_.clear();                                    // DAT_0046b1a8 = 0
     titleSoundA_ = titleSoundB_ = false;                 // DAT_0046fa40 / 44 = 0
@@ -199,7 +201,7 @@ void Game::startLevel(int level) {
         fb_.clear();
         if (loadingHook) loadingHook(level == kTitleScreen ? 2 : 1);
     }
-    level_ = std::make_unique<ph::LevelData>(ph::loadLevel(level, dataDir_, palette_));
+    level_ = std::make_unique<ph::LevelData>(ph::loadLevel(level, dataDir_, palette_, &arena_));
     fs_ = FrameState{};
     fs_.mainLayer = level_->hasBg;                       // DAT_00450fcc
     fs_.parallaxLayer = level_->hasParallax;             // DAT_00450514
@@ -230,9 +232,11 @@ void Game::startLevel(int level) {
         // The game logic (FUN_00435fc0) runs every level but the title: the levels with collision
         // data, and the map, the 2600 level and the cutscenes with their own code.  (The explorer,
         // a free camera, is left for a level without either; none of the shipped ones.)
-        if (level == kTitleScreen) logic_.reset();          // (FUN_00442410 starts no logic on the title)
+        // (The last level's logic goes first: it gives back the object records' places.)
+        logic_.reset();
+        if (level == kTitleScreen) {}                       // (FUN_00442410 starts no logic on the title)
         else if (!level_->collision.empty() || level == kAtari2600Level || level == kMapScreen || (level >= kIntro && level <= kCredits))
-            logic_ = std::make_unique<PlayLogic>(logicMem_);
+            logic_ = std::make_unique<PlayLogic>(logicMem_, objPlaces_);
         else logic_ = std::make_unique<ExplorerLogic>();
     }
     // The level's CD tracks (0x470470 / 0x4704d8; the intro after the demos plays track 5).
@@ -310,7 +314,7 @@ void Game::pollJoypad(const engine::HostInput& host) {
     else pad = input_.poll(host, options_.joystick, options_.allowCheat);
     input_.bindings = options_.keys;
 
-    if (demoPlaying()) {
+    if (demoPlaying() && engineOn_) {                    // (DAT_0046fbb4: not during a load's engine ticks)
         if (pad != 0) { fs_.joypad = 0xff; return; }
         if (--demoCountdown_ == 0) {                     // DAT_0046fb98, a byte
             const DemoScript& d = demoScript(demoIndex_);
@@ -339,12 +343,16 @@ void Game::preTicks(int n) {
     // Engine ticks before the first frame: FUN_004460e0 runs one after the level's logic start
     // and thirteen more on levels 0, 2, 5, 8 and 16 (the table at 0x46ffa0), the "*3" path the
     // thirteen alone.  FUN_00443370 does nothing once a command is set.  DAT_00451940 is put
-    // back after them, so the HUD slides in from where the logic's start left it.
+    // back after them, so the HUD slides in from where the logic's start left it.  The engine is
+    // off meanwhile (DAT_0046fbb4 = 0 from the load's start to the end of its fade in): the demo
+    // script waits (FUN_00444940), the joypad is the keys as they are.
     const int slide = fs_.hudSlide;
+    engineOn_ = false;
     for (int i = 0; i < n && !exitPending(); ++i) {
         pollJoypad(lastHost_);
         engineTick();
     }
+    engineOn_ = true;
     fs_.hudSlide = slide;
 }
 
@@ -747,7 +755,7 @@ void Game::composeFrame() {
     // FUN_00436534: the parallax map (DAT_00450514).
     if (snap_.parallaxLayer && level_->hasParallax) {
         if (levelNo_ == kCeibaJungle || levelNo_ == kLakamulRainForest) {
-            renderer_.drawParallaxLinear(level_->parallaxLinear, snap_.parX, snap_.parY,
+            renderer_.drawParallaxLinear(level_->parallaxLinear, snap_.parX, snap_.parY, snap_.scrollX,
                                          snap_.lineScroll.empty() ? nullptr : snap_.lineScroll.data(),
                                          int(snap_.lineScroll.size()));
         } else if (levelNo_ == kXibalbaFalls || levelNo_ == kYaxchilanLagoon || levelNo_ == kJainaIslandFalls) {

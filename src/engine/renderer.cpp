@@ -34,19 +34,22 @@ void Renderer::drawTile(uint8_t* dst, const uint8_t* tile, uint16_t entry) {
 
 void Renderer::drawTileLayer(const ph::Background& bg, View& view, std::vector<DeferredTile>& deferred) {
     if (bg.wTiles == 0 || bg.hTiles == 0) { clearView(view.scrollX); return; }
-    // FUN_00436fb4: clamp the camera to the map, then draw 41x29 whole tiles.
-    const int maxX = bg.wTiles * 8 - kViewW, maxY = bg.hTiles * 8 - kViewH;
-    const int sx = std::clamp(view.scrollX, 0, std::max(0, maxX));
-    const int sy = std::clamp(view.scrollY, 0, std::max(0, maxY));
-    uint8_t* dstRow = fb_.px.data() + kViewBaseOffset - (sy & 7) * kBufW;
-    int tx0 = sx >> 3, ty0 = sy >> 3;
-    const int cols = std::min(kTileCols, bg.wTiles - tx0);
-    const int rows = std::min(kTileRows, bg.hTiles - ty0);
-    for (int r = 0; r < rows; ++r) {
-        const uint16_t* src = &bg.tilemap[size_t(ty0 + r) * bg.wTiles + tx0];
+    // FUN_00436fb4: the camera clamped to the map (unsigned compares, as the listing's), then 29
+    // rows of 41 entries read on from the clamped corner, a row of the map apart, whatever the
+    // map's width: at its right edge a row's 41st entry is the next row's first, which shows when
+    // the camera is past the edge (the view's origin takes the camera's own x & 7), and past the
+    // map's end the record's next bytes are zero (twelve, then the blank tile 0).
+    const uint32_t maxX = uint32_t(bg.wTiles * 8 - kViewW), maxY = uint32_t(bg.hTiles * 8 - kViewH);
+    uint32_t sx = uint32_t(view.scrollX), sy = uint32_t(view.scrollY);
+    if (maxX <= sx) sx = maxX;
+    if (maxY <= sy) sy = maxY;
+    uint8_t* dstRow = fb_.px.data() + kViewBaseOffset - int(sy & 7) * kBufW;
+    const size_t n = bg.tilemap.size(), w = size_t(bg.wTiles);
+    size_t i = size_t(sy >> 3) * w + (sx >> 3);
+    for (int r = 0; r < kTileRows; ++r, i += w - size_t(kTileCols)) {
         uint8_t* dst = dstRow;
-        for (int c = 0; c < cols; ++c, ++src, dst += 8) {
-            const uint16_t e = *src;
+        for (int c = 0; c < kTileCols; ++c, ++i, dst += 8) {
+            const uint16_t e = i < n ? bg.tilemap[i] : 0;
             if (e & 0x8000) { deferred.push_back(DeferredTile{dst, e}); continue; }
             const int t = e & 0xfff;
             if (t < bg.tileCount()) drawTile(dst, &bg.tiles[size_t(t) * 64], e);
@@ -145,13 +148,13 @@ void Renderer::clearView(int scrollX) {
 
 // ------------------------------------------------------------- parallax ----
 
-void Renderer::drawParallaxLinear(const ph::LinearBitmap& bmp, int scrollX, int scrollY,
+void Renderer::drawParallaxLinear(const ph::LinearBitmap& bmp, int scrollX, int scrollY, int mainScrollX,
                                   const int8_t* lineOffsets, int lineCount) {
     if (bmp.w <= 0 || bmp.h <= 0) return;
     const int W = bmp.w;
     int lines = kViewH;
     if (scrollY + kViewH > bmp.h) lines = kViewH - (scrollY + kViewH - bmp.h);
-    uint8_t* dst = fb_.viewBase(scrollX);
+    uint8_t* dst = fb_.viewBase(mainScrollX);                 // DAT_004504f4
     for (int i = 0; i < lines; ++i, dst += kBufW) {
         const int srcRow = scrollY + i;
         if (srcRow < 0 || srcRow >= bmp.h) continue;

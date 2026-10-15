@@ -1304,16 +1304,16 @@ void PlayLogic::h42a46d() {
     // FUN_0042a46d: come out at the trigger whose id is DAT_00465b45 (or at the type 0x22 object).
     h_.frame() = 0xff;
     h_.onGround() = 0xff;
-    const std::vector<uint8_t>& tb = game_->level().trg;
+    // (the trigger record in the load block; each column's word added unsigned, its pairs walked
+    // two bytes at a time to the 0xff)
     const uint8_t d4 = h_.b(0x465b45);
     bool found = false;
     int16_t d7 = 0, d1 = 0;
-    auto be16 = [&](size_t o) { return o + 1 < tb.size() ? uint16_t(tb[o] << 8 | tb[o + 1]) : uint16_t(0); };
     for (int col = 0; col < uint16_t(h_.w(0x4658ac)) && !found; ++col) {
-        const uint16_t p = be16(size_t(col) * 2);
+        const uint16_t p = uint16_t(trgAt(col * 2) << 8 | trgAt(col * 2 + 1));
         if (p == 0) continue;
-        for (size_t e = p; e + 1 < tb.size() && tb[e] != 0xff; e += 2)
-            if (tb[e + 1] == d4) { d1 = int16_t(tb[e] << 4); d7 = int16_t(col << 4); found = true; break; }
+        for (uint16_t e = p, n = 0; trgAt(e) != 0xff && n < 0x8000; e = uint16_t(e + 2), ++n)
+            if (trgAt(e + 1) == d4) { d1 = int16_t(trgAt(e) << 4); d7 = int16_t(col << 4); found = true; break; }
     }
     if (!found) {
         for (Obj* p : objects_.list())
@@ -2617,14 +2617,14 @@ update:
             if (f != 3 && f != 4 && f != 5 && f != 6) d4 = 0;
         }
         h_.l(0x466788) = 0;
-        const std::vector<uint8_t>& tb = game_->level().trg;
-        const size_t colOff = size_t((uint16_t(h_.w(0x465ae5) + 0x10) >> 3) & 0xfffe);
-        const uint16_t ptr = colOff + 1 < tb.size() ? uint16_t(tb[colOff] << 8 | tb[colOff + 1]) : 0;
+        // (the trigger record in the load block: the column's word added signed)
+        const int colOff = (uint16_t(h_.w(0x465ae5) + 0x10) >> 3) & 0xfffe;
+        const uint16_t ptr = uint16_t(trgAt(colOff) << 8 | trgAt(colOff + 1));
         if (ptr == 0) { freeChain(); return; }
-        size_t a0 = ptr;
+        int a0 = int16_t(ptr);
         uint16_t row = uint16_t(d5 >> 4) & 0xff;
         uint32_t a4 = 0x465aa1;
-        auto byteAt = [&](size_t o) -> uint8_t { return o < tb.size() ? tb[o] : 0xff; };
+        auto byteAt = [&](int o) -> uint8_t { return trgAt(o); };
         for (int guard = 0; guard < 64; ++guard) {
             const uint8_t d0 = byteAt(a0);
             int id = -1;
@@ -3947,7 +3947,7 @@ void PlayLogic::h428780() {
     const char* cmd = nullptr;
     switch (id) {
     case 0x89:                                             // 0x4288a2
-        wp.als = alsMem_;
+        wp.als.assign(alsMem_.begin(), alsMem_.end());
         wp.cpX = h_.w(0x46679e); wp.cpY = h_.w(0x4667a0); wp.cpFacing = h_.w(0x4667a4);   // -> 0x46a860..
         cmd = "*50";
         break;
@@ -3967,7 +3967,7 @@ void PlayLogic::h428780() {
 void PlayLogic::h4288ec() {
     // FUN_004288ec: the level as Harry leaves it for a vault, and where he comes back.
     Game::Warp& wp = game_->warp();
-    wp.als = alsMem_;                                      // [DAT_004504e4] -> 0x4601dd (4 KB)
+    wp.als.assign(alsMem_.begin(), alsMem_.end());         // [DAT_004504e4] -> 0x4601dd (4 KB)
     std::memcpy(wp.classes, h_.trgClass(), 0x100);        // 0x4658c0 -> 0x4611dd
     wp.level = level_;                                     // DAT_00465af3
     wp.x = int16_t(h_.x() + 4);                            // DAT_00465af7

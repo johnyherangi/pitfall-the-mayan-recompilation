@@ -128,6 +128,26 @@ void createBackBuffer() {
     ReleaseDC(g_app.hwnd, dc);
 }
 
+int staticColours() {
+    // FUN_0043e1c0's look at the display: a palette device (RC_PALETTE, or 256 colours) keeps its
+    // static colours, NUMRESERVED / 2 at each end of the palette (DAT_00453184); any other display
+    // none, and the game says so (string 0x11) and goes on with all 256 for its own.
+    HDC dc = GetDC(g_app.hwnd);
+    int n = 0;
+    if ((GetDeviceCaps(dc, RASTERCAPS) & RC_PALETTE) || GetDeviceCaps(dc, SIZEPALETTE) == 0x100) {
+        SetSystemPaletteUse(dc, SYSPAL_NOSTATIC);
+        SetSystemPaletteUse(dc, SYSPAL_STATIC);
+        if (GetSystemPaletteUse(dc) != SYSPAL_ERROR) {
+            const int reserved = GetDeviceCaps(dc, NUMRESERVED);   // DAT_0045305c
+            if (reserved != 0 && reserved != -1) n = reserved >> 1;
+        }
+    }
+    ReleaseDC(g_app.hwnd, dc);
+    if (n == 0)
+        MessageBoxW(nullptr, L"Pitfall must be played in 256 color mode for optimum performance.", L"Pitfall", MB_OK | MB_ICONHAND);
+    return n;
+}
+
 void present() {
     // FUN_00443b90: the 320x224 view out of the 448x256 back buffer, BitBlt at its own size or
     // StretchBlt to the game area (Window_SizeX x Window_SizeY); full screen keeps the view's
@@ -706,6 +726,7 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, PWSTR, int) {
     ShowWindow(g_app.hwnd, SW_SHOWDEFAULT);
     UpdateWindow(g_app.hwnd);
     createBackBuffer();
+    g_app.options.staticColours = staticColours();                  // FUN_0043e1c0 (before INIT.PH's colours)
     SetThreadExecutionState(ES_CONTINUOUS | ES_DISPLAY_REQUIRED);   // (the original turned the screen saver off)
 
     // "Loading..." while INIT.PH and the intro load (WinMain to FUN_004460e0's end).

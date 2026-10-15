@@ -49,8 +49,10 @@ public:
     void showAll() { shown_ = rgb_; dirty_ = true; }   // FUN_0043ed00: every entry set again
     uint8_t flags(int i) const { return flags_[i & 0xff]; }
 
-    // Remap table built by the last allocate() call (original DAT_004503c0).
+    // Remap table built by the last allocate() call (original DAT_004503c0); what a call does not
+    // set stays as the calls before left it.
     const std::array<uint8_t, 256>& remap() const { return remap_; }
+    void setRemap(int local, uint8_t global) { remap_[local & 0xff] = global; }
 
     // Allocate `count` colours starting at local index `firstLocal`.
     //   rgb      -> packed r,g,b triplets, one per local colour

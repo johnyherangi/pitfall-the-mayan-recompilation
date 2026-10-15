@@ -35,10 +35,10 @@ function boundaries are unreliable there; the full decompilation is kept in
 | `0x443370`   | per-tick engine update: input, logic dispatch, parallax camera | `Game::tick`, `game/camera.cpp` |
 | `0x443c90`   | frame composition, level transitions, attract sequencing | `Game::render`, `Game::tickAttract` |
 | `0x443b90`   | present (BitBlt / StretchBlt of the 320×224 view)      | `present()` in the front ends         |
-| `0x43e1c0`   | DIB section + system palette setup                     | `engine/framebuffer.h`, `ph::Palette::setFreeRange` |
+| `0x43e1c0`   | DIB section + system palette setup: on a palette device (`RC_PALETTE` or 256 colours) the static colours kept, half at each end (`DAT_00453184` = `NUMRESERVED` / 2: the free range [10, 246)); on any other display the "256 color mode" warning (string 0x11) and the free range [0, 256) | `engine/framebuffer.h`, `ph::Palette::setFreeRange` from `Options::staticColours` (`staticColours()` in `main_win32.cpp`) |
 | `0x444fe0`   | open a .PH file                                        | `ph::PhStream::fromFile`              |
 | `0x4453a0`   | load next sprite record, allocate colours, remap       | `ph::Sprite`, `ph::loadInit/loadLevel` |
-| `0x4455f0`   | load next raw image (font / score digits)              | `ph::RawImage`                        |
+| `0x4455f0`   | load next raw image (font / score digits): local 0 to 0, the triplets allocated from local 1 (the last one unused), pixel values past them keeping the remap's stale entries | `ph::RawImage`, `ph::loadInit`        |
 | `0x4451a0`   | palette colour allocator                               | `ph::Palette::allocate`               |
 | `0x43ebc0`   | set a palette entry                                    | `ph::Palette::setColour`              |
 | `0x4457d0`   | INIT.PH load order                                     | `ph::initManifest()`                  |
@@ -46,7 +46,7 @@ function boundaries are unreliable there; the full decompilation is kept in
 | `0x447190`   | per-level sprite load order                            | `ph::levelSprites()`                  |
 | `0x43ce10`   | WAIL32 (Miles) init + sound bank load                  | `ph::loadInit` (sounds), `engine::Mixer` |
 | `0x43cc10`   | play sound id                                          | `Game::playSound`                     |
-| `0x436fb4`   | tile layer renderer (41×29 tiles, deferred hi-priority); without a map (`DAT_00450fcc`) it clears the view; level 22's second room is the map at `DAT_004504f0` (`room2_extra`); level 21 draws its map last, wrapping, at the parallax camera | `Renderer::drawTileLayer`, `Game::composeFrame` |
+| `0x436fb4`   | tile layer renderer (41×29 tiles read on row by row from the clamped corner, the 41st past the map's right edge the next row's first; deferred hi-priority); without a map (`DAT_00450fcc`) it clears the view; level 22's second room is the map at `DAT_004504f0` (`room2_extra`); level 21 draws its map last, wrapping, at the parallax camera | `Renderer::drawTileLayer`, `Game::composeFrame` |
 | `0x436b00` / `0x436b2c` | deferred tile drain / one tile (flips, see-through) | `Renderer::drawDeferredTiles`, `Renderer::drawTile` |
 | `0x437078` / `0x437128` | `FUN_00436fb4` on level 20: the 2600 screen, two 40-tile strips of the map picked by the screen's descriptor | `Game::renderAtari2600`, `Renderer::drawTileStrip` |
 | `0x436534`   | parallax renderer: levels 0 / 5 a line-scrolled bitmap (`0x43682c`), 1 / 6 / 18 the waterfalls, 7 none while the ride loops (`0x4366a8`), the vaults and level 21 their scene as the parallax map at the main camera with its priority tiles kept (`FUN_0043731c`), the others the map wrapping at the parallax camera in whole 8-px rows but on level 9 (`0x4371a5`; in a 200-line display mode 27 rows, one lower) | `Renderer::drawParallaxLinear`, `Renderer::drawWaterfall`, `Renderer::drawWrappedLayer`, `Game::composeFrame` |
@@ -62,7 +62,7 @@ function boundaries are unreliable there; the full decompilation is kept in
 | `0x4387c0`   | raw cell draw (font / digits)                          | `Renderer::drawCell`                  |
 | `0x442600`   | text drawing                                           | `Renderer::drawText`                  |
 | `0x442fa0`   | HUD: score, the damage crocodile and `mi_life` (`FUN_00435d45`), lives, treasures, weapon, ammo; "DEMONSTRATION" in a demo | `Game::renderHud`, `Game::hudMeter` (`game/hud.cpp`) |
-| `0x444940`   | joypad from keyboard / joystick / demo script          | `engine::Input`, `Game::tick`         |
+| `0x444940`   | joypad from keyboard / joystick / demo script (a demo steps only while the engine runs, `DAT_0046fbb4`: not in a level load's logic ticks) | `engine::Input`, `Game::pollJoypad`   |
 | `0x4400f0` / `0x4404a0` | registry options load / save                | `engine::Options`                     |
 | `0x43ee50`   | string resources (titles, errors)                      | `ph::levelName`, literals             |
 | `0x43e470`   | fade out: the free colours 13 darker every 30 ms, 19 times (`AnimatePalette`) | `Game::runStages`, `Game::showFade` |
@@ -116,6 +116,9 @@ function boundaries are unreliable there; the full decompilation is kept in
 | `0x450fcc` / `0x450514` | the level has a map / a parallax map (`FUN_004460e0`; the cutscenes' `0x40160e` clears both) | `FrameState::mainLayer / parallaxLayer` |
 | `0x456000` .. `0x4569df` | the cutscenes' data: the script's cursor, the wait's count (`0x456004`), the exit's string (`0x456008`), flags, texts, frame scripts, the ten actors (`0x45623f`, the frame's copy at `0x4564bf`), the scripts (`0x456753` ..) | `Game::cutsceneData`, `PlayLogic::cb` |
 | `0x46fb90`   | the cutscenes' actors are drawn | `FrameState::cutscene` |
+| `0x4504dc` / `0x4504e0` | the load block (1.5 MB, `GlobalAlloc`) and where a level's records start in it, past INIT.PH's (`docs/FORMATS.md` § 10) | `ph::Arena`, `ph::ArenaLayout` |
+| `0x450fc4` / `0x450510` / `0x45052c` / `0x450fc0` / `0x450518` / `0x4504e4` / `0x4504c4` / `0x450f90` | in the load block: the background, the triggers and their copy, the collision planes (the probes' `0x46615c` / `0x466160`), the objects' working copy and the level's own, the parallax map | `ArenaLayout::base / trg / det / dt2 / als / parallax`, `PlayLogic::alsMem_ / tb` |
+| `0x462854` .. `0x464ab3` | the 0x50 object records, never cleared (x, y and their fractions kept from a record's last use, a level before too) | `ObjectSystem`, `Game::objectPlaces` |
 | `0x453080`   | palette entry flags                      | `ph::Palette::flags_`        |
 | `0x4503c0`   | local→global colour remap table          | `ph::Palette::remap_`        |
 | `0x46d3e8`   | 448×256 DIB bits                         | `engine::Framebuffer`        |

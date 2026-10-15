@@ -23,20 +23,25 @@ inline bool neg16(int v) { return int16_t(v) < 0; }
 inline bool present(const ph::ObjectTemplate& t) { return t.sprite[0] || t.type != 0; }   // the 0x4678c4 slot is set
 }
 
+// [DAT_004504e4] + off, off taken as signed (a list's offset is a signed word): the load block
+// past the 4 KB too.
 uint16_t PlayLogic::alsWord(size_t off) const {
-    return off + 1 < alsMem_.size() ? uint16_t(alsMem_[off] << 8 | alsMem_[off + 1]) : 0;
+    return game_->arena().be16(int64_t(game_->arenaLayout().als) + int64_t(off));
 }
 
-uint8_t PlayLogic::alsByte(size_t off) const { return off < alsMem_.size() ? alsMem_[off] : 0xff; }
+uint8_t PlayLogic::alsByte(size_t off) const { return game_->arena().at(int64_t(game_->arenaLayout().als) + int64_t(off)); }
 
 uint32_t PlayLogic::alsLong(size_t off) const {
     uint32_t v = 0;
-    if (off + 4 <= alsMem_.size()) std::memcpy(&v, alsMem_.data() + off, 4);   // (little-endian, as the PC stores it)
+    for (int i = 3; i >= 0; --i) v = v << 8 | alsByte(off + size_t(i));   // (little-endian, as the PC stores it)
     return v;
 }
 
 void PlayLogic::setAlsLong(size_t off, uint32_t v) {
-    if (off + 4 <= alsMem_.size()) std::memcpy(alsMem_.data() + off, &v, 4);
+    for (int i = 0; i < 4; ++i) {
+        const uint8_t b = uint8_t(v >> (8 * i));
+        game_->arena().put(int64_t(game_->arenaLayout().als) + int64_t(off) + i, &b, 1);
+    }
 }
 
 // ---------------------------------------------------------------- FUN_00404714

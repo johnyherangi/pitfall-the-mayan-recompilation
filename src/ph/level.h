@@ -8,6 +8,7 @@
 //   u8  tiles[n][64]    8x8 pixels, local palette indices, 0 = transparent
 //   rgb24 palette[ncolors-1]   local index i (>=1) -> palette[i-1]
 #pragma once
+#include "ph/arena.h"
 #include "ph/manifests.h"
 #include "ph/palette.h"
 #include "ph/sprite.h"
@@ -29,6 +30,7 @@ struct Background {
     int tileCount() const { return int(tiles.size() / 64); }
     int colourCount = 0;
     std::vector<uint8_t> localPalette;  // rgb24 * (colourCount-1)
+    uint32_t tilesOffset = 0;           // where the tiles start in the record
 
     static Background parse(const std::string& name, std::span<const uint8_t> body);
     // Allocate colours into `pal` and remap tile pixels (local 0 stays 0).
@@ -60,6 +62,7 @@ struct LevelData {
     bool hasExtra = false;
     std::vector<std::unique_ptr<Sprite>> sprites;   // per-level sprites, manifest order
     std::map<std::string, Sprite*> spriteByName;
+    ArenaLayout arena;                   // where the records went in the load block (when given one)
 
     Sprite* sprite(const std::string& name) const {
         auto it = spriteByName.find(name);
@@ -67,8 +70,9 @@ struct LevelData {
     }
 };
 
-// Loads "LEVEL%02d.PH" exactly the way FUN_004460e0 does.
-LevelData loadLevel(int level, const std::string& dataDir, Palette& pal);
+// Loads "LEVEL%02d.PH" exactly the way FUN_004460e0 does: with a load block, its records go into
+// it as the original lays them out, and the column tables are placed there.
+LevelData loadLevel(int level, const std::string& dataDir, Palette& pal, Arena* arena = nullptr);
 
 // INIT.PH: global font, score digits, Harry + common sprites, sound effects.
 struct SoundSample {
@@ -95,7 +99,7 @@ struct AssetBank {
     }
 };
 
-// Loads INIT.PH the way FUN_004457d0 + FUN_0043ce10 do.
-AssetBank loadInit(const std::string& dataDir, Palette& pal);
+// Loads INIT.PH the way FUN_004457d0 + FUN_0043ce10 do (with a load block, its records at its start).
+AssetBank loadInit(const std::string& dataDir, Palette& pal, Arena* arena = nullptr);
 
 } // namespace ph

@@ -41,15 +41,12 @@ void PlayLogic::enter(Game& g) {
     g.bridge([&] {
         // (the logic's memory keeps what the last level, or the last game, left in it)
         // [DAT_004504e4]: the .als working copy (0x800 bytes, zero past the data) and the level's
-        // own copy after it ([DAT_004504c4], what a lost life restores from).
-        const std::vector<uint8_t>& als = g.level().als;
-        alsMem_.assign(0x1000, 0);
-        std::copy(als.begin(), als.begin() + std::ptrdiff_t(std::min<size_t>(als.size(), 0x800)), alsMem_.begin());
-        std::copy(alsMem_.begin(), alsMem_.begin() + 0x800, alsMem_.begin() + 0x800);
+        // own copy after it ([DAT_004504c4], what a lost life restores from), as the level's load
+        // set them up in the load block.
+        alsMem_ = std::span<uint8_t>(g.arena().data() + g.arenaLayout().als, 0x1000);
         exiting_ = false;
         deathTimer_ = 0;
         boss_ = nullptr;
-        std::memset(trgRam_, 0, sizeof trgRam_);
         h_.l(0x466535) = level_;
         endTimer_ = 0;                                             // DAT_0046b1b4
         g.state().displayList.clear();                             // DAT_0046aa90 = 0x46aa94
@@ -620,9 +617,38 @@ void PlayLogic::h430eb6() {
         if ((d4 >= 0x58 && d4 <= 0x5c) || (d4 >= 0xf0 && d4 <= 0xf6)) continue;   // gold, 1-up, coin, silver, ring, P-I-T-F-A-L-L
         alsMem_[i] = d4;
     }
-    boss_ = nullptr;                                       // [DAT_0045052c] -> [DAT_00450510]
+    {
+        // [DAT_0045052c] -> [DAT_00450510]: the triggers' record from its copy (the boss pointer,
+        // and what else the logic keeps there, as far as the record goes)
+        ph::Arena& a = game_->arena();
+        const ph::ArenaLayout& lay = game_->arenaLayout();
+        for (uint32_t i = 0; i < lay.trgSize; ++i) {
+            const uint8_t v = a.at(int64_t(lay.trg) + lay.trgSize + i);
+            a.put(int64_t(lay.trg) + i, &v, 1);
+        }
+        boss_ = nullptr;
+    }
     std::memset(game_->levelFlags(), 0, 0x12);
     game_->loseLife();
+}
+
+// ---------------------------------------------------------------- the triggers' record
+
+uint8_t& PlayLogic::trgByte(int off) {
+    static uint8_t outside = 0;                            // (past the load block)
+    const int64_t at = int64_t(game_->arenaLayout().trg) + off;
+    if (!game_->arena().contains(at)) { outside = 0; return outside; }
+    return game_->arena().data()[size_t(at)];
+}
+
+uint8_t PlayLogic::trgAt(int off) const { return game_->arena().at(int64_t(game_->arenaLayout().trg) + off); }
+
+void PlayLogic::setBoss(Obj* o) {
+    // [DAT_00450510] + 0x1f4 = the boss's record, as the 68000 code stores it (big-endian), and
+    // DAT_00466507
+    boss_ = o;
+    h_.b(0x466507) = o ? 0xff : 0;
+    if (o) setTl(0x1f4, addrOf(o));
 }
 
 // ---------------------------------------------------------------- the entry points the objects call

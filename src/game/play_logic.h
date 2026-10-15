@@ -9,6 +9,7 @@
 #include "game/harry.h"
 #include "game/objects.h"
 
+#include <span>
 #include <vector>
 
 namespace game {
@@ -26,8 +27,12 @@ constexpr LevelScriptEntry kLevelScript[] = {
 
 class PlayLogic : public LevelLogic {
 public:
-    // mem: the logic's memory (0x465800 .. 0x4668ff), the Game's, kept from level to level.
-    explicit PlayLogic(Harry& mem) : h_(mem) {}
+    // mem: the logic's memory (0x465800 .. 0x4668ff), the Game's, kept from level to level;
+    // places: the object records' places (ObjPlace), the Game's too, taken and given back.
+    PlayLogic(Harry& mem, ObjectSystem::Places& places) : h_(mem), places_(places) { objects_.loadPlaces(places_); }
+    ~PlayLogic() override { objects_.savePlaces(places_); }
+    PlayLogic(const PlayLogic&) = delete;
+    PlayLogic& operator=(const PlayLogic&) = delete;
     void enter(Game& g) override;               // FUN_00435fc0 / FUN_0043256f: a level starts
     void tick(Game& g) override;
     void restart(Game& g) override;             // FUN_004360e9 / FUN_00432615: "*3", again at the checkpoint
@@ -85,7 +90,7 @@ public:
     int cameraLeftLock() const { return h_.w(0x465b09); }
     void lockCameraRight(int x) { h_.w(0x465b0b) = int16_t(x); }   // DAT_00465b0b
     int cameraRightLock() const { return h_.w(0x465b0b); }
-    void setBoss(Obj* o) { boss_ = o; h_.b(0x466507) = o ? 0xff : 0; }   // DAT_00466507
+    void setBoss(Obj* o);                       // trg+0x1f4 (big-endian) and DAT_00466507
     void endBoss() { h_.b(0x466507) = 0; }        // (trg+0x1f4 keeps pointing at the dead boss)
     Obj* bossObject() const { return boss_; }
     bool bossActive() const { return h_.b(0x466507) != 0; }
@@ -103,16 +108,18 @@ public:
     uint32_t alsLong(size_t off) const;
     void setAlsLong(size_t off, uint32_t v);
     void setAlsByte(size_t off, uint8_t v) { if (off < alsMem_.size()) alsMem_[off] = v; }
-    // [DAT_00450510] + off, off 0x1f4 .. 0x3f3: Genesis RAM the PC keeps in the trigger buffer
-    // (the vaults' ceiling, timers and Harry's squash script; the boss pointer at +0x1f4 is
-    // boss_).  The 68000 code reads it big-endian; tln() is the native long FUN_004237a5 reads.
-    uint8_t& tb(int off) { return trgRam_[size_t(off - 0x1f4)]; }
-    uint16_t tw(int off) const { return uint16_t(trgRam_[size_t(off - 0x1f4)] << 8 | trgRam_[size_t(off - 0x1f3)]); }
-    void setTw(int off, uint16_t v) { trgRam_[size_t(off - 0x1f4)] = uint8_t(v >> 8); trgRam_[size_t(off - 0x1f3)] = uint8_t(v); }
+    // [DAT_00450510] + off: the triggers' record in the load block, where the PC keeps Genesis RAM
+    // (the jaguar's distance at 0x1ea; from 0x1f4 the boss pointer, the vaults' ceiling, timers and
+    // Harry's squash script), over the level's trigger lists, or past a short record over its
+    // copy and the tables after it.  The 68000 code reads it big-endian; tln() is the native long
+    // FUN_004237a5 reads.
+    uint8_t& tb(int off) { return trgByte(off); }
+    uint16_t tw(int off) const { return uint16_t(trgAt(off) << 8 | trgAt(off + 1)); }
+    void setTw(int off, uint16_t v) { trgByte(off) = uint8_t(v >> 8); trgByte(off + 1) = uint8_t(v); }
     uint32_t tl(int off) const { return uint32_t(tw(off)) << 16 | tw(off + 2); }
     void setTl(int off, uint32_t v) { setTw(off, uint16_t(v >> 16)); setTw(off + 2, uint16_t(v)); }
-    uint32_t tln(int off) const { uint32_t v; std::memcpy(&v, &trgRam_[size_t(off - 0x1f4)], 4); return v; }
-    void setTln(int off, uint32_t v) { std::memcpy(&trgRam_[size_t(off - 0x1f4)], &v, 4); }
+    uint32_t tln(int off) const { return uint32_t(trgAt(off)) | uint32_t(trgAt(off + 1)) << 8 | uint32_t(trgAt(off + 2)) << 16 | uint32_t(trgAt(off + 3)) << 24; }
+    void setTln(int off, uint32_t v) { for (int i = 0; i < 4; ++i) trgByte(off + i) = uint8_t(v >> (8 * i)); }
     // FUN_00434a30: spell `text` out in letter objects of `type` (ltr_lg / ltr_md / ltr_sm, one
     // object a glyph), each line centred on x + 0xa0; 0xf0 starts a line 0x19 lower, 0xf1 centres
     // the next one.
@@ -262,9 +269,10 @@ private:
     Game* game_ = nullptr;
     int level_ = 0;                  // DAT_00466535
     Harry& h_;                       // 0x465800 .. 0x4668ff (Game::logicMemory)
+    ObjectSystem::Places& places_;   // the records' places between levels (Game::objectPlaces)
     ObjectSystem objects_;
     std::vector<int> hud_;           // 0x466874: the records 0x4150a2 listed in the last object pass
-    std::vector<uint8_t> alsMem_;    // [DAT_004504e4]: the level's .als data as the spawner works on it (an id is 0 while its object lives, or once collected or killed), then at +0x800 the level's own copy ([DAT_004504c4])
+    std::span<uint8_t> alsMem_;      // [DAT_004504e4], 4 KB of the load block: the level's .als data as the spawner works on it (an id is 0 while its object lives, or once collected or killed), then at +0x800 the level's own copy ([DAT_004504c4])
     struct Killed { uint8_t count = 0, id = 0; int als = -1; };   // als: the entry's offset in alsMem_
     Killed killed_[19];              // 0x465a40 .. 0x465ad8
     bool exiting_ = false;
@@ -273,7 +281,8 @@ private:
     // Sound channel state (FUN_004262d9 / FUN_004261e2).
     uint8_t ch0Pri_ = 0, ch0Id_ = 0, ch0Hold_ = 0;   // DAT_004627be / DAT_004627bf / DAT_004627c2
     uint8_t ch1Pri_ = 0, ch1Id_ = 0;                 // DAT_004627c0 / DAT_004627c1
-    uint8_t trgRam_[0x200] = {};     // [DAT_00450510] + 0x1f4 ..
+    uint8_t& trgByte(int off);                  // [DAT_00450510] + off in the load block
+    uint8_t trgAt(int off) const;
     std::vector<uint32_t> strayReturns_;   // return addresses left on the stack during the object pass
     // The 2600 level's own globals outside Harry's memory.
     uint32_t a26Deferred_ = 0;       // DAT_00457408: 1 = waiting for the first input, else the code to run when ...

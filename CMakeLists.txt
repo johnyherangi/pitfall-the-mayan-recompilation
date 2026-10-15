@@ -48,6 +48,7 @@ add_library(pitfall_ph STATIC
     src/ph/sprite.cpp
     src/ph/level.cpp
     src/ph/manifests_data.cpp
+    src/ph/arena_data.cpp
     src/ph/tables.cpp
     src/ph/tables_data.cpp
     src/ph/object_templates_data.cpp

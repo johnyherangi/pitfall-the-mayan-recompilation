@@ -116,7 +116,7 @@ build\Release\phdump.exe wav original 1 sound01.wav
 build\Release\phdump.exe objects original 2                  # .als object ids / types of a level
 tools\ghidra\export_decomp.bat                             # regenerate re\pitfall_decomp.c
 tools\ghidra\export_handlers.bat                           # (headless decompiler: currently every function times out; the port is read from disassembly)
-python tools\gen_tables.py && python tools\gen_anim_scripts.py && python tools\gen_slot_bindings.py   # regenerate the data tables from PITFALL.EXE / re\pitfall_decomp.c
+python tools\gen_tables.py && python tools\gen_anim_scripts.py && python tools\gen_slot_bindings.py && python tools\gen_arena_data.py   # regenerate the data tables from PITFALL.EXE / re\pitfall_decomp.c
 python re\pc_dis.py 0x412fc2 0x414100                       # annotated x86 listing of a handler (needs objdump)
 python tools\genesis_dis.py 66                               # the same handler in the Genesis ROM (needs capstone)
 ```
@@ -134,10 +134,17 @@ behaviour types, the camera and spawner, the triggers and level scripts, every
 boss, the Loltun vaults, the continue screen, the map screen, the Atari 2600
 level, the title, the intro, the reunion, the end and its credits, the
 typed cheat codes, the waterfalls and water effects, and the original's
-window with its menu, status bar, dialogs and property sheet.  What still
-differs from the original is listed in `docs/RECONSTRUCTION_LEDGER.md`
-(the platform's parts: the mixer for Miles, the ini file for the registry,
-the full-screen modes, WinHelp).
+window with its menu, status bar, dialogs and property sheet.  Run side by
+side with the original (under Wine, captured frame by frame for five minutes),
+the whole attract run — the title, the three demos and the intro — matches it
+pixel for pixel but for the time the original's loads take.  What still differs
+from the original is listed in `docs/RECONSTRUCTION_LEDGER.md` (the platform's
+parts: the mixer for Miles, the ini file for the registry, the full-screen
+modes, WinHelp).
+
+As the original, the Win32 build warns "Pitfall must be played in 256 color
+mode for optimum performance." on a display that is not a 256-colour one (every
+display now) and then uses the whole palette, as the original does there.
 
 ## Legal
 

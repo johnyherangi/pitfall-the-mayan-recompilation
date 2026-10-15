@@ -261,15 +261,13 @@ void PlayLogic::padOverrides() {
 // ---------------------------------------------------------------- triggers and floors
 
 Trg PlayLogic::trg(int x, int y) const {
-    // FUN_004251f9
+    // FUN_004251f9: the trigger's id from the record in the load block, its class from the runtime
+    // table DAT_004658c0
     Trg r;
-    const int tx = int16_t(x + 0x20);
-    if (tx < 0) return r;
-    if (int16_t(y) < 4) y = 4;
-    const ph::ColumnEntry* e = game_->level().triggers.find(tx >> 4, (y & 0xffff) >> 4 & 0xff);
-    if (!e) return r;
-    r.id = e->id;
-    r.raw = h_.trgClass()[e->id];
+    const ph::TriggerHit t = ph::triggerAt(game_->level().triggers, x, y);
+    if (!t.found) return r;
+    r.id = t.id;
+    r.raw = h_.trgClass()[t.id];
     r.found = true;
     r.cls = r.raw >= 0xf0 ? 0 : r.raw;
     return r;

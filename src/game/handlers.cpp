@@ -2,6 +2,7 @@
 // Each handler quotes the address it was read from; state offsets are the
 // original ones (see objects.h).  Helper names follow objects.h.
 #include "game/objects.h"
+#include "ph/arena.h"
 
 #include "game/game.h"
 #include "game/play_logic.h"
@@ -5089,8 +5090,8 @@ void h_bungee(ObjCtx& ctx, Obj& o) {
 // State: w36 anim cursor, l38 vx (w3a its integer part), l3e/b42 and l46/b4a pointer-script
 // cursors (one shared script pointer here: every state that uses one sets it), w4c a tick
 // counter (b4d: "hit while roaring"), l50 vy or a counter, w58 the fight timer (0x960 ticks
-// make it aggressive), b5a death-burst spread, b5b "charging to the wall", w5c the pounce
-// distance (trg+0x1ea in the original), w68 the GO sign timer, w6a accumulated damage.
+// make it aggressive), b5a death-burst spread, b5b "charging to the wall", w68 the GO sign
+// timer, w6a accumulated damage; its pounce distance is the word at trg+0x1ea (PlayLogic::tw).
 
 namespace jaguar {
 enum State : uint8_t { kIntro = 1, kGoWait, kPounce, kReverse, kRun, kCrouch, kRoar, kStop };
@@ -5249,9 +5250,8 @@ void h_jaguar(ObjCtx& ctx, Obj& o) {
             ctx.pl.lockCameraLeft(0x9fa);           // DAT_00465b09
             ctx.harry.facing() = 0xff;
             ctx.pl.setBoss(&o);                     // DAT_00466507 = 0xff, trg+0x1f4 = this
-            o.w(0x5c) = 0x50;                       // trg+0x1ea = 0x5000 (big-endian 80): a Genesis variable the PC
-                                                    // keeps inside the level's trigger buffer (on level 0 over the end
-                                                    // of column 0x22's list); kept in the jaguar's +0x5c here
+            ctx.pl.setTw(0x1ea, 0x50);              // trg+0x1ea: a Genesis variable the PC keeps inside the level's
+                                                    // trigger record (on level 0 over the end of column 0x22's list)
             o.b(0x3c) = uint8_t((ctx.rnd() & 3) + 2);
             o.y += 0x18;
             o.b(0x32) = kIntro;
@@ -5375,8 +5375,8 @@ void h_jaguar(ObjCtx& ctx, Obj& o) {
                 int d = ctx.harry.x() - o.x;
                 bool fast = o.w(0x3a) >= 3;
                 if (!fast && o.w(0x3a) < -3) { fast = true; d = -d; }
-                if (fast && between(d - o.w(0x5c), -10, 10)) {
-                    o.w(0x5c) = o.w(0x5c) == 0x64 ? 0x90 : 0x64;
+                if (fast && between(d - int16_t(ctx.pl.tw(0x1ea)), -10, 10)) {
+                    ctx.pl.setTw(0x1ea, ctx.pl.tw(0x1ea) == 0x64 ? 0x90 : 0x64);
                     o.script = kAnim2_jaguarCrouchA;
                     if (ctx.rnd() & 1) o.script = kAnim2_jaguarCrouchB;
                     if (!(ctx.rnd() & 1)) o.script = kAnim2_jaguarCrouchRoar;
@@ -7436,20 +7436,26 @@ bool slopeBytes(const ObjCtx& ctx, int x, int y, int& left, int& right) {
     const ph::FloorHit f = ph::probeNear(ctx.det(), x, y);
     if (f.hit) { left = ph::kCollisionHeights[f.shape * 16]; right = ph::kCollisionHeights[f.shape * 16 + 15]; return true; }
     if (int16_t(y) < 0x12) return false;
+    // (the .det's bytes in the load block, past the table too; its column word added signed)
+    const ph::ColumnTable& t = ctx.lv.collision;
     const std::vector<uint8_t>& det = ctx.lv.det;
-    auto at = [&](size_t i) { return i < det.size() ? int(det[i]) : 0; };
-    const size_t col = ((uint16_t(x) >> 3) & 0xfffe) + 4;
-    const size_t off = size_t(at(col) << 8 | at(col + 1));
-    size_t a0 = 0, d3 = 0;
+    auto at = [&](int64_t i) {
+        if (t.arena()) return int(t.arena()->at(int64_t(t.base()) + i));
+        return i >= 0 && size_t(i) < det.size() ? int(det[size_t(i)]) : 0;
+    };
+    auto inside = [&](int64_t i) { return t.arena() ? t.arena()->contains(int64_t(t.base()) + i) : i < int64_t(det.size()); };
+    const int64_t col = uint16_t(((uint16_t(x) >> 3) & 0xfffe) + 4);
+    const uint16_t off = uint16_t(at(col) << 8 | at(col + 1));
+    int64_t a0 = 0, d3 = 0;
     if (off != 0) {
         const int row = (uint16_t(y) >> 4);
-        a0 = off;
+        a0 = int16_t(off);
         for (;;) {
-            d3 = size_t(at(a0));
+            d3 = at(a0);
             if (int(d3) == row + 1 || int(d3) == row || int(d3) == row - 1) break;   // (a hit: not here)
             if (int16_t((row - 1) - int(d3)) < 0) break;                             // the stop entry
             a0 += 2;
-            if (a0 >= det.size()) break;
+            if (!inside(a0)) break;
         }
     }
     d3 &= 0xfff0;

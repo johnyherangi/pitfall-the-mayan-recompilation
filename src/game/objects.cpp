@@ -1,6 +1,7 @@
 // Object pool, dispatcher and the helpers shared by the behaviour handlers.
 // Each function names the routine of PITFALL.EXE it reproduces.
 #include "game/objects.h"
+#include "ph/arena.h"
 #include "game/harry.h"
 
 #include "game/game.h"
@@ -193,6 +194,21 @@ void ObjectSystem::linkTail(Obj& o) {
     o.prev = tail_;
     o.next = -1;
     tail_ = i;
+}
+
+void ObjectSystem::loadPlaces(const Places& p) {
+    for (int i = 0; i < kPoolSize; ++i) {
+        Obj& o = recs_[size_t(i)];
+        const ObjPlace& q = p[size_t(i)];
+        o.x = q.x; o.xFrac = q.xFrac; o.y = q.y; o.yFrac = q.yFrac;
+    }
+}
+
+void ObjectSystem::savePlaces(Places& p) const {
+    for (int i = 0; i < kPoolSize; ++i) {
+        const Obj& o = recs_[size_t(i)];
+        p[size_t(i)] = ObjPlace{o.x, o.xFrac, o.y, o.yFrac};
+    }
 }
 
 Obj* ObjectSystem::allocHead() {
@@ -695,12 +711,18 @@ Trg priorityTrigger(ObjCtx& ctx, Obj& o, int dx) {
 }
 
 uint32_t floorProbeD3(const ObjCtx& ctx, int x, int y, uint32_t d3) {
-    // FUN_00425d6f walks the raw .det: the column's offset (a big-endian word at
-    // (x >> 4) * 2 + 4, added sign-extended), then its (row, shape) byte pairs.
+    // FUN_00425d6f walks the .det's bytes (in the load block, past the table too): the column's
+    // offset (a big-endian word at ((x >> 3) & 0xfffe) + 4, 16 bits, added sign-extended), then
+    // its (row, shape) byte pairs.
     if (int16_t(int16_t(y) - 0x12) < 0) return d3;                  // cmp d1.w,0x12 / js
+    const ph::ColumnTable& t = ctx.lv.collision;
     const std::vector<uint8_t>& det = ctx.lv.det;
-    auto at = [&](int64_t i) { return i >= 0 && size_t(i) < det.size() ? uint32_t(det[size_t(i)]) : 0u; };
-    const int64_t col = ((uint16_t(x) >> 3) & 0xfffe) + 4;
+    const bool inBlock = t.arena() != nullptr;
+    auto at = [&](int64_t i) {
+        if (inBlock) return uint32_t(t.arena()->at(int64_t(t.base()) + i));
+        return i >= 0 && size_t(i) < det.size() ? uint32_t(det[size_t(i)]) : 0u;
+    };
+    const int64_t col = uint16_t(((uint16_t(x) >> 3) & 0xfffe) + 4);
     const uint16_t off = uint16_t(at(col) << 8 | at(col + 1));
     if (off == 0) return 0;
     const uint16_t row = uint16_t(y) >> 4;
@@ -709,7 +731,7 @@ uint32_t floorProbeD3(const ObjCtx& ctx, int x, int y, uint32_t d3) {
         if (e == uint16_t(row + 1) || e == row || e == uint16_t(row - 1))
             return at(a0 + 1) * 16 + (uint16_t(x) & 15);
         if (int16_t(uint16_t(row - 1) - e) < 0) return e;           // the entry that ends the scan
-        if (a0 >= int64_t(det.size())) return e;                    // (past the data: reads 0)
+        if (inBlock ? !t.arena()->contains(int64_t(t.base()) + a0) : a0 >= int64_t(det.size())) return e;   // (past it: reads 0)
     }
 }
 

@@ -427,10 +427,11 @@ int deathTest(const std::string& dir) {
     const int score = g.stats().score, lives = g.stats().lives;
     if (id(silver) != 0) { std::printf("FAIL: the silver was not collected (score %d)\n", score); ++fails; }
     pl->harry().b(0x465b72) = 0xfa;                       // fell out of the level
+    const int loads = g.levelLoads();
     g.tick(engine::HostInput{});
     settle(g);                                            // the sounds, the fade out, 750 ms, "*3", the fade in
     const game::Harry& h = pl->harry();
-    if (game::g_debugLogic != pl) { std::printf("FAIL: the level was loaded again\n"); ++fails; }
+    if (g.levelLoads() != loads) { std::printf("FAIL: the level was loaded again\n"); ++fails; }
     if (g.stats().lives != lives - 1) { std::printf("FAIL: lives %d -> %d\n", lives, g.stats().lives); ++fails; }
     if (id(silver) != 0) { std::printf("FAIL: the silver came back after the death\n"); ++fails; }
     if (h.x() != h.w(0x46679e)) { std::printf("FAIL: Harry at x %d, not at the checkpoint %d\n", int(h.x()), int(h.w(0x46679e))); ++fails; }
@@ -451,7 +452,7 @@ int vaultTest(const std::string& dir) {
     g.startLevel(12); g.setMode(game::Mode::Playing); settle(g);
     game::PlayLogic* pl = game::g_debugLogic;
     if (!pl) return 1;
-    const int score0 = g.stats().score, lives0 = g.stats().lives;
+    const int score0 = g.stats().score, lives0 = g.stats().lives, loads = g.levelLoads();
     int nextKey = 0, solvedAt = -1, outAt = -1, lowest = 1000;
     for (int t = 0; t < 6000; ++t) {
         game::Harry& h = pl->harry();
@@ -464,7 +465,7 @@ int vaultTest(const std::string& dir) {
         }
         lowest = std::min(lowest, int(int16_t(pl->tw(0x1f4))));
         g.tick(in);
-        if (game::g_debugLogic != pl) { outAt = t; break; }
+        if (g.levelLoads() != loads) { outAt = t; break; }
         if (solvedAt < 0 && pl->tb(0x215)) solvedAt = t;
         if (pl->tb(0x214)) { std::printf("FAIL: the vault's ceiling fell at tick %d\n", t); return fails + 1; }
     }
@@ -747,8 +748,9 @@ int atari2600Test(const std::string& dir) {
     }
     if (!vine || !flew) fail("the demo never swung on the vine of screen 2");
     // (The level's start sets only the whole parts of Harry's x and y, 0x401f23: their fractions
-    // are what demo 1 left, which brings him to the pond 1 px earlier than from zero.)
-    if (last.screen != 3 || last.x != 342 || last.y != 0x18a || last.score != 1993 || last.lives != 2) {
+    // are what demo 1 left, so the demo ends at x 343, as the original's does in its attract run
+    // captured under Wine.)
+    if (last.screen != 3 || last.x != 343 || last.y != 0x18a || last.score != 1993 || last.lives != 2) {
         std::printf("FAIL: 2600: the demo ended at screen %d (%d, %d), score %d, lives %d\n", last.screen, last.x, last.y, last.score, last.lives);
         ++fails;
     }
@@ -819,9 +821,10 @@ int atari2600Test(const std::string& dir) {
     const int stungAt = run(400, 8, [&] { return h.b(0x465e86) != 0; });
     const int livesStung = h.b(0x465e85), screenStung = h.uw(0x465ba8);
     int exitAt = -1;
+    const int loads = g.levelLoads();
     for (int i = 0; i < 600 && exitAt < 0; ++i) {
         g.tick(a26Pad(i >= 300 && (i & 1) ? 0x40 : 0));
-        if (game::g_debugLogic != pl) exitAt = i;
+        if (g.levelLoads() != loads) exitAt = i;
     }
     if (stungAt < 0 || livesStung != 0 || screenStung != 3 || exitAt < 300) {               // (h is gone with the old logic)
         std::printf("FAIL: 2600: the scorpion (stung %d, lives %d, screen %d), out at %d\n", stungAt, livesStung, screenStung, exitAt);
@@ -990,11 +993,12 @@ int transitionTest(const std::string& dir) {
     game::PlayLogic* pl = game::g_debugLogic;
     for (int i = 0; i < 20; ++i) g.tick(idle);
     pl->harry().b(0x465b72) = 0xfa;
+    const int loads = g.levelLoads();
     g.tick(idle);
     int restarted = -1;
     const uint32_t ticks0 = g.logicTicks();
     for (int i = 0; i < 300 && restarted < 0; ++i) { g.tick(idle); if (g.logicTicks() != ticks0) restarted = i; }
-    if (restarted < 76 || restarted > 80 || game::g_debugLogic != pl) { std::printf("FAIL: transition: \"*3\" restarted at %d\n", restarted); ++fails; }
+    if (restarted < 76 || restarted > 80 || g.levelLoads() != loads) { std::printf("FAIL: transition: \"*3\" restarted at %d\n", restarted); ++fails; }
     std::printf("transition: title -> level 0 at %d (fade in %d), \"*3\" after %d\n", loaded, fadeIn, restarted);
     return fails;
 }
@@ -1297,8 +1301,9 @@ int cheatTest(const std::string& dir) {
     opts.levelBits = 1;
     game::Game g2(dir, opts);
     engine::HostInput idle;
-    for (int t = 0; t < 7340; ++t) g2.tick(idle);              // the intro, the title, demo 0, the title, demo 1 on level 1
-    const bool demoOff = g2.levelNumber() == 1 && !(g2.menuUnlocks() & 1u << 1) && (g2.menuUnlocks() & 1u << 15);
+    for (int t = 0; t < 9000 && !(g2.levelNumber() == 1 && !g2.transitionActive()); ++t) g2.tick(idle);   // the intro, the title, demo 0, the title, demo 1 on level 1
+    for (int t = 0; t < 60; ++t) g2.tick(idle);
+    const bool demoOff = g2.levelNumber() == 1 && g2.mode() == game::Mode::Attract && !(g2.menuUnlocks() & 1u << 1) && (g2.menuUnlocks() & 1u << 15);
     g2.setMode(game::Mode::Playing);
     g2.startLevel(5);
     if (!demoOff || !(g2.menuUnlocks() & 1u << 5)) {

@@ -118,6 +118,7 @@ public:
 
     // FUN_004460e0 + FUN_00447190: load a level and reset per-level state.
     void startLevel(int level);
+    int levelLoads() const { return levelLoads_; }   // how many levels were loaded (for the tests and tools)
     void setLogic(std::unique_ptr<LevelLogic> logic);
 
     // FUN_004448c0 / FUN_00443370: one callback of the 17 ms timer.  `host` is the raw host input.
@@ -275,6 +276,11 @@ public:
     // the start as the original's data section and kept from level to level as it keeps it; each
     // level's logic (PlayLogic) works in it.
     Harry& logicMemory() { return logicMem_; }
+    // The load block (ph::Arena) and where the level's records are in it.
+    ph::Arena& arena() { return arena_; }
+    const ph::ArenaLayout& arenaLayout() const { return level_->arena; }
+    // The object records' places (ObjPlace) while no level's logic holds them.
+    ObjectSystem::Places& objectPlaces() { return objPlaces_; }
 
 private:
     void computeParallax();            // FUN_00443370 per-level switch
@@ -307,8 +313,11 @@ private:
     std::string dataDir_;
     engine::Options& options_;
     ph::Palette palette_;
+    ph::Arena arena_;                  // the load block (DAT_004504dc), kept from load to load
     std::unique_ptr<ph::AssetBank> assets_;
     std::unique_ptr<ph::LevelData> level_;
+    int levelLoads_ = 0;
+    ObjectSystem::Places objPlaces_{};   // (before logic_, which gives them back as it goes)
     std::unique_ptr<LevelLogic> logic_;
     bool autoLogic_ = true;            // pick PlayLogic / ExplorerLogic per level
     engine::Framebuffer fb_;
@@ -329,7 +338,8 @@ private:
     int demoPos_ = 0;                  // DAT_0046fb8c (0x800 == not in demo)
     uint8_t demoCountdown_ = 1;        // DAT_0046fb98
     uint32_t demoButtons_ = 0;         // DAT_0046fb94
-    int cloudDrift_ = 0;               // DAT_00450f94 accumulator for drifting layers
+    bool engineOn_ = true;             // DAT_0046fbb4: off while a load runs its engine ticks (preTicks)
+    int cloudDrift_ = 0;              // DAT_00450f94 accumulator for drifting layers
     int ruinsCounter_ = 0;             // DAT_004517e0
     // The engine's water (FUN_00443370; zero in the BSS, never reset): the forest's shimmer
     // (DAT_0046fb48 / 4c), the six falling phases of the waterfalls (DAT_00450014 / 18 / 1c / 20 /
