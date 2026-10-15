@@ -38,7 +38,7 @@ enum Level : int {
     kMapScreen = 19, kAtari2600Level = 20, kIntro = 21, kSimonRoom = 22, kCredits = 23, kEnding = 24,
 };
 
-enum class Mode { Title, Attract, Playing, Paused, LevelComplete, GameOver };
+enum class Mode { Title, Attract, Playing, LevelComplete, GameOver };
 
 // Shared per-frame state (the globals the Genesis logic and the renderer exchange).
 struct FrameState {
@@ -108,8 +108,10 @@ public:
     const ph::Palette& palette() const { return palette_; }
     ph::Palette& palette() { return palette_; }
     int viewScrollX() const { return snap_.scrollX; }   // for the (scrollX & 7) blit offset
-    bool paused() const { return mode_ == Mode::Paused; }
-    void togglePause();
+    bool paused() const { return paused_; }               // DAT_0046d050
+    void togglePause();                                   // the Pause key (FUN_00444ee0)
+    void setPaused(bool on);
+    void setCdOptions(bool music, bool ambient);          // the options dialog's CD settings (0x4410a9)
     engine::Mixer& mixer() { return mixer_; }
     bool quitRequested() const { return quit_; }
 
@@ -123,10 +125,12 @@ public:
     void setMode(Mode m) { mode_ = m; }
     engine::Options& options() { return options_; }
     const ph::Sprite* findSprite(const std::string& name) const;   // level first, then INIT.PH
-    void playSound(int id) { mixer_.play(id, options_.wavVolume); }   // FUN_0043cc10
+    void playSound(int id);                                           // FUN_0043cc10(id, 0)
     bool soundPlaying(int id) const { return mixer_.playing(id); }
     void stopSound(int id) { mixer_.stop(id); }
-    void playChannel(int ch, int id) { mixer_.playChannel(ch, id, options_.wavVolume); }   // FUN_0043cc10(id, ch)
+    void playChannel(int ch, int id);                                 // FUN_0043cc10(id, ch)
+    // DAT_00450500: the stop-watch turns the CD down to a quarter (1) and back (2) at the next frame.
+    void setCdVolumeCmd(int c) { cdVolumeCmd_ = c; }
     bool channelBusy(int ch) const { return mixer_.channelBusy(ch); }                       // FUN_0043cbc0(ch)
     void completeLevel();                                             // 0x430912: the level is kept (DAT_0046b1ac), "*4"
     int tourLevel() const { return tourLevel_; }                      // DAT_0046b1ac: the level last completed
@@ -243,12 +247,15 @@ private:
     static constexpr int kFadeStepMs = 30;       // the fades' busy waits
     static constexpr int kFadeOutMs = 19 * 30;
     static constexpr int kFadeInMs = 30 + 15 * 30;
+    static constexpr int kCdFadeMs = 20 * 100;   // FUN_00442190(2.0, 20): the CD's volume down in 20 steps
     struct Stage {
-        enum Kind { WaitSounds, FadeOut, Wait, GameOver, NewGame, Load, Restart, FadeIn } kind;
+        enum Kind { WaitSounds, FadeOut, Wait, GameOver, NewGame, CdFade, Load, Restart, FadeIn } kind;
         int ms = 0;                    // the stage's length (fades, waits)
         int level = 0;                 // Load
+        bool cdFaded = false;          // Load: FUN_00442190 has run
     };
     void beginCommand();               // the switch on DAT_0046b1a8[1]
+    void loadLevel(int level);         // FUN_004460e0 as the switch calls it (with the CD's fade)
     void enterStage(const Stage& st);
     void beginStage();
     void runStages(int ms);
@@ -261,6 +268,16 @@ private:
     bool drawPending_ = false;         // a frame to compose while the stages run (the load's first)
     uint8_t startKey_ = 0;             // DAT_0046fb88: a key went down (WM_KEYDOWN)
     int audioRem_ = 0;                 // (the game-time audio clock's remainder)
+    bool paused_ = false;              // DAT_0046d050
+    // CD audio (engine/music.h): the level's music and ambient tracks (DAT_0046e110 / DAT_0046e114),
+    // the intro the attract loads playing track 5 (DAT_0046fb84), the stop-watch's volume command.
+    engine::CdTracks cd_;
+    int musicTrack_ = 0, ambientTrack_ = 0;
+    bool introAfterDemos_ = false;
+    int cdVolumeCmd_ = 0;
+    void cdPlay(int track);            // FUN_00441b80
+    void cdPlayTracks();
+    void setCdVolume(int pct);         // FUN_00441c50
     // FUN_0043de70's effect: the logic's brightness (DAT_0046b1b0), as the last frame took it
     // (DAT_00452770), as last applied (DAT_00452768), the colours kept meanwhile (DAT_0046dc2c,
     // DAT_0045276c).

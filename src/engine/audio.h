@@ -6,6 +6,7 @@
 // MCI ("cdaudio").  Here the samples are decoded once and mixed in software;
 // the platform layer pulls 16-bit stereo PCM from Mixer::render().
 #pragma once
+#include "engine/music.h"
 #include "ph/level.h"
 
 #include <cstdint>
@@ -42,6 +43,13 @@ public:
 
     // Mix `frames` stereo frames into `out` (interleaved L/R).
     void render(int16_t* out, int frames);
+    // The CD audio (engine/music.h): one stereo track, played again at its end (MM_MCINOTIFY), at
+    // the CD line's volume (auxSetVolume: 0 .. 0xffff), apart from the samples' volumes.
+    void playMusic(MusicPcm pcm);
+    void stopMusic();
+    bool musicPlaying() const;
+    void setMusicVolume(int v);
+    int musicVolume() const { return musicVolume_; }
     // Without an audio device (tests, tools) the voices move on with the game's clock instead:
     // the front ends set the device clock once their output runs.
     void advance(int frames);
@@ -62,9 +70,12 @@ private:
     std::vector<DecodedSample> samples_;
     Voice voices_[kVoices];
     mutable std::mutex mutex_;
-    int master_ = 0x50;
+    int master_ = 0x7f;
     bool enabled_ = true;
     bool deviceClock_ = false;
+    MusicPcm music_;
+    size_t musicPos_ = 0;                  // in frames
+    int musicVolume_ = 0xffff;
 };
 
 // Minimal RIFF/WAVE PCM decoder (8/16-bit, mono/stereo) used by the mixer.

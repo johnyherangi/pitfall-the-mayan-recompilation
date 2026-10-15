@@ -428,6 +428,7 @@ void PlayLogic::timers() {
     // the chili pepper and the stop-watch run their own music beat
     auto beat = [&](uint32_t timer) {
         h_.w(timer) -= 1;
+        if (timer == 0x46652f && h_.w(timer) == 0) game_->setCdVolumeCmd(2);   // 0x433c42: the CD back up
         h_.b(0x465897) -= 1;
         if (int8_t(h_.b(0x465897)) < 0) {
             h_.b(0x466506) ^= 1;

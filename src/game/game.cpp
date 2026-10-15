@@ -77,9 +77,50 @@ Game::Game(std::string dataDir, engine::Options& options)
     : dataDir_(std::move(dataDir)), options_(options) {
     assets_ = std::make_unique<ph::AssetBank>(ph::loadInit(dataDir_, palette_));   // FUN_004457d0
     mixer_.loadBank(*assets_);                                                      // FUN_0043ce10
-    mixer_.setMasterVolume(options_.wavVolume);
     mixer_.setEnabled(options_.soundEnabled);
+    cd_ = engine::CdTracks(dataDir_);                                               // FUN_00441cf0
+    setCdVolume(options_.cdVolume);
     startLevel(kIntro);                                                             // WinMain: FUN_004460e0(0x15)
+}
+
+void Game::playSound(int id) {
+    // FUN_0043cc10 on channel 0, at Option_WavVolume (0..100) * 0x7f / 100.
+    mixer_.playChannel(0, id, options_.wavVolume * 0x7f / 100);
+}
+
+void Game::playChannel(int ch, int id) {
+    mixer_.playChannel(ch, id, options_.wavVolume * 0x7f / 100);   // FUN_0043cc10(id, ch)
+}
+
+void Game::cdPlay(int track) {
+    // FUN_00441b80: a track from its start (and again at its end), or the CD stopped (0).
+    if (track != 0 && !options_.slow) {
+        if (engine::MusicPcm pcm = cd_.load(track)) mixer_.playMusic(std::move(pcm));
+        else mixer_.stopMusic();
+        return;
+    }
+    mixer_.stopMusic();
+}
+
+void Game::cdPlayTracks() {
+    // The level's tracks by the options (FUN_004460e0's end, the end of a pause, MM_MCINOTIFY): the
+    // ambient one after the music, so it is the one that plays when both are on.
+    if (options_.cdMusic) cdPlay(musicTrack_);
+    if (options_.cdAmbient) cdPlay(ambientTrack_);
+}
+
+void Game::setCdOptions(bool music, bool ambient) {
+    // The options' apply (0x441071 ..): a track turned on starts, both off stop the CD.
+    if (music && !options_.cdMusic) cdPlay(musicTrack_);
+    if (ambient && !options_.cdAmbient) cdPlay(ambientTrack_);
+    options_.cdAmbient = ambient;
+    options_.cdMusic = music;
+    if (!music && !ambient) cdPlay(0);
+}
+
+void Game::setCdVolume(int pct) {
+    // FUN_00441c50: auxSetVolume with the option (0 .. 100) times 0x28f a channel.
+    mixer_.setMusicVolume(pct * 0x28f);
 }
 
 void Game::setLogic(std::unique_ptr<LevelLogic> logic) { logic_ = std::move(logic); autoLogic_ = false; }
@@ -95,7 +136,8 @@ void Game::startLevel(int level) {
     exitCmd_.clear();                                    // DAT_0046b1a8 = 0
     levelNo_ = level;
     if (level == kTitleScreen) newGame();                // FUN_004324c6
-    mixer_.stopAll();                                    // FUN_0043d910: the two channels end
+    mixer_.stopAll();                                    // FUN_0043d910: the two channels end, and the CD
+    cdPlay(0);
     brightness_ = 0;                                     // DAT_0046b1b0, DAT_00452770
     shownBrightness_ = 0;
     appliedBrightness_ = 0;                              // FUN_004451a0 forgets the effect (without its colours)
@@ -130,6 +172,12 @@ void Game::startLevel(int level) {
         if (!level_->collision.empty() || level == kAtari2600Level || level == kMapScreen) logic_ = std::make_unique<PlayLogic>();
         else logic_ = std::make_unique<ExplorerLogic>();
     }
+    // The level's CD tracks (0x470470 / 0x4704d8; the intro after the demos plays track 5).
+    musicTrack_ = engine::levelMusicTrack(level);
+    ambientTrack_ = engine::levelAmbientTrack(level);
+    if (introAfterDemos_ && level == kIntro) musicTrack_ = ambientTrack_ = 5;
+    cdPlayTracks();
+    cdVolumeCmd_ = 0;
     startKey_ = 0;                                       // FUN_00442410: DAT_0046fb88 = 0
     if (logic_) logic_->enter(*this);
     preTicks(1 + preTickCount(level));                   // FUN_004460e0's end (on the title: no logic, the counters and the pan)
@@ -138,9 +186,23 @@ void Game::startLevel(int level) {
     if (level < kIntro || level > kCredits) enterStage(Stage{Stage::FadeIn, kFadeInMs});
 }
 
-void Game::togglePause() {
-    if (mode_ == Mode::Playing) mode_ = Mode::Paused;
-    else if (mode_ == Mode::Paused) mode_ = Mode::Playing;
+void Game::togglePause() { setPaused(!paused_); }
+
+void Game::setPaused(bool on) {
+    // FUN_00444ee0: not while a level loads (nor in the switch's waits), nor into a pause in the
+    // vaults.  The pause stops the two channels and the CD (FUN_0043d910) and shows "PAUSED" at
+    // once (DAT_00450fa8 = 0x20); its end plays the level's tracks from their start.
+    if (!stages_.empty() || on == paused_) return;
+    if (on && levelNo_ >= kLoltunVault2 && levelNo_ <= kLoltunVault1) return;
+    if (on) {
+        paused_ = true;
+        mixer_.stopAll();
+        cdPlay(0);
+        timerTicks_ = 0x20;
+        return;
+    }
+    cdPlayTracks();
+    paused_ = false;
 }
 
 void Game::pollJoypad(const engine::HostInput& host) {
@@ -204,18 +266,31 @@ void Game::tick(const engine::HostInput& host) {
         mixer_.advance(audioRem_ / 1000);
         audioRem_ %= 1000;
     }
-    // WM_KEYDOWN: any key but F1, Esc and Pause is the engine's start key (DAT_0046fb88).
-    for (int k = 0; k < 256; ++k)
-        if (host.keyDown[size_t(k)] && k != 0x70 && k != 0x1b && k != 0x13 && mode_ != Mode::Paused) startKey_ = 1;
+    // WM_KEYDOWN (FUN_004388c0) for any key but F1, Esc and Pause: a key pressed ends a pause;
+    // otherwise any key down is the engine's start key (DAT_0046fb88; a held key repeats).
+    bool pressed = false, held = false;
+    for (int k = 0; k < 256; ++k) {
+        if (k == 0x70 || k == 0x1b || k == 0x13 || !host.keyDown[size_t(k)]) continue;
+        held = true;
+        if (!lastHost_.keyDown[size_t(k)]) pressed = true;
+    }
+    if (paused_) { if (pressed) setPaused(false); }
+    else if (held) startKey_ = 1;
     lastHost_ = host;
     if (!stages_.empty()) { runStages(kTickMs); return; }           // the main thread is busy: no ticks, no frames
 
-    if (mode_ == Mode::Paused) return;
+    if (paused_) return;
     if (exitPending()) { beginCommand(); return; }                   // (a command set outside a tick)
     pollJoypad(host);
     engineTick();                                                    // FUN_00443370
     if (exitPending()) beginCommand();                               // the switch on DAT_0046b1a8
     else tickAttract();
+}
+
+void Game::loadLevel(int level) {
+    Stage st{Stage::Load};
+    st.level = level;
+    enterStage(st);
 }
 
 void Game::enterStage(const Stage& st) {
@@ -275,7 +350,23 @@ void Game::runStages(int ms) {
         case Stage::NewGame:
             newGame();                                   // FUN_004324c6
             break;
+        case Stage::CdFade: {
+            // FUN_00442190: the CD's volume a twentieth down every 100 ms, then the CD stopped and
+            // its volume set back.
+            const int v0 = options_.cdVolume * 0x28f;
+            if (stageMs_ < st.ms) { mixer_.setMusicVolume(v0 - std::min(stageMs_ / 100 + 1, 20) * (v0 / 20)); return; }
+            stageMs_ -= st.ms;
+            cdPlay(0);
+            setCdVolume(options_.cdVolume);
+            break;
+        }
         case Stage::Load:
+            if (!st.cdFaded && mixer_.musicPlaying()) {  // FUN_004460e0 starts with the CD's fade
+                stages_.front().cdFaded = true;
+                stages_.push_front(Stage{Stage::CdFade, kCdFadeMs});
+                stageMs_ = 0;
+                continue;
+            }
             stages_.pop_front();
             startLevel(st.level);                        // (its own fade in follows)
             return;
@@ -365,7 +456,7 @@ void Game::beginCommand() {
     auto fadeOut = [&] { enterStage(Stage{Stage::FadeOut, kFadeOutMs}); };
     auto waitSounds = [&] { enterStage(Stage{Stage::WaitSounds}); };
     auto wait = [&](int ms) { enterStage(Stage{Stage::Wait, ms}); };
-    auto load = [&](int level) { Stage st{Stage::Load}; st.level = level; enterStage(st); };
+    auto load = [&](int level) { loadLevel(level); };
     switch (cmd.size() > 1 ? cmd[1] : 0) {
     case '0':                                            // 0x444200: the continue screen; the level is kept for "*1"
         fadeOut();
@@ -454,9 +545,7 @@ void Game::tickAttract() {
                 enterStage(Stage{Stage::FadeOut, kFadeOutMs});
                 enterStage(Stage{Stage::Wait, 500});
                 enterStage(Stage{Stage::NewGame});
-                Stage st{Stage::Load};
-                st.level = kCeibaJungle;
-                enterStage(st);
+                loadLevel(kCeibaJungle);
                 return;
             }
         }
@@ -464,10 +553,10 @@ void Game::tickAttract() {
             // 0x4447f1: the next demo (0: level 0, 1: level 1, 2: the 2600 level), each a new
             // game (FUN_004324c6); after the third the intro again.  No fade out.
             ++demoIndex_;
-            if (demoIndex_ == 3) { demoIndex_ = -1; startLevel(kIntro); return; }
+            if (demoIndex_ == 3) { demoIndex_ = -1; introAfterDemos_ = true; loadLevel(kIntro); return; }   // DAT_0046fb84
             mode_ = Mode::Attract;
             newGame();
-            startLevel(demoScript(demoIndex_).level);
+            loadLevel(demoScript(demoIndex_).level);
         }
     } else if (levelNo_ == kIntro && fs_.frame > kTitleAttractFrames) {
         command("*8");                                   // (a stand-in for the intro's own logic, FUN_00401071)
@@ -539,6 +628,9 @@ void Game::composeFrame() {
     // ---- FUN_00443c90: snapshot the logic state --------------------------
     snap_ = fs_;
     shownBrightness_ = int32_t(brightness_);                       // DAT_00452770 = DAT_0046b1b0
+    if (cdVolumeCmd_ == 1) setCdVolume(options_.cdVolume >> 2);     // DAT_00450500: the stop-watch
+    if (cdVolumeCmd_ == 2) setCdVolume(options_.cdVolume);
+    cdVolumeCmd_ = 0;
     engine::View view{snap_.scrollX, snap_.scrollY};
     deferred_.clear();
 
@@ -569,7 +661,7 @@ void Game::composeFrame() {
 
     if (levelNo_ == kTitleScreen) renderTitle();
     renderHud();                                                   // FUN_00442fa0
-    if (mode_ == Mode::Paused && (timerTicks_ & 0x60) != 0) renderer_.drawText(assets_->font, 0x82, 0x60, "PAUSED", snap_.scrollX);   // TextOutA in the original
+    if (paused_ && (timerTicks_ & 0x60) != 0) renderer_.drawText(assets_->font, 0x82, 0x60, "PAUSED", snap_.scrollX);   // TextOutA in the original
 }
 
 void Game::renderAtari2600() {
@@ -600,7 +692,7 @@ void Game::renderVault() {
         if (it->flags & engine::kSprFront) renderer_.drawSprite(*it, view);
     renderer_.drawWrappedLayer(level_->bg, snap_.parX, snap_.parY, fine, fine, nullptr);
     renderHud();
-    if (mode_ == Mode::Paused && (timerTicks_ & 0x60) != 0) renderer_.drawText(assets_->font, 0x82, 0x60, "PAUSED", snap_.scrollX);   // TextOutA in the original
+    if (paused_ && (timerTicks_ & 0x60) != 0) renderer_.drawText(assets_->font, 0x82, 0x60, "PAUSED", snap_.scrollX);   // TextOutA in the original
 }
 
 void Game::completeLevel() {

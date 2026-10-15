@@ -106,6 +106,8 @@ void Mixer::stop(int soundId) {
 
 void Mixer::render(int16_t* out, int frames) {
     std::lock_guard<std::mutex> lock(mutex_);
+    const std::vector<int16_t>* m = music_ ? music_.get() : nullptr;
+    const size_t mFrames = m ? m->size() / 2 : 0;
     for (int i = 0; i < frames; ++i) {
         int acc = 0;
         for (auto& v : voices_) {
@@ -118,13 +120,43 @@ void Mixer::render(int16_t* out, int frames) {
             v.pos += v.step;
         }
         acc = acc * master_ / 0x7f;
-        const int16_t s = int16_t(std::clamp(acc, -32768, 32767));
-        out[i * 2] = s; out[i * 2 + 1] = s;
+        int l = acc, r = acc;
+        if (mFrames) {
+            if (musicPos_ >= mFrames) musicPos_ = 0;                // the track again
+            l += int((*m)[musicPos_ * 2] * int64_t(musicVolume_) / 0xffff);
+            r += int((*m)[musicPos_ * 2 + 1] * int64_t(musicVolume_) / 0xffff);
+            ++musicPos_;
+        }
+        out[i * 2] = int16_t(std::clamp(l, -32768, 32767));
+        out[i * 2 + 1] = int16_t(std::clamp(r, -32768, 32767));
     }
+}
+
+void Mixer::playMusic(MusicPcm pcm) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    music_ = std::move(pcm);
+    musicPos_ = 0;
+}
+
+void Mixer::stopMusic() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    music_.reset();
+    musicPos_ = 0;
+}
+
+bool Mixer::musicPlaying() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return music_ != nullptr;
+}
+
+void Mixer::setMusicVolume(int v) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    musicVolume_ = std::clamp(v, 0, 0xffff);
 }
 
 void Mixer::advance(int frames) {
     std::lock_guard<std::mutex> lock(mutex_);
+    if (music_ && !music_->empty()) musicPos_ = (musicPos_ + size_t(frames)) % (music_->size() / 2);
     for (auto& v : voices_) {
         if (!v.active) continue;
         v.pos += v.step * frames;

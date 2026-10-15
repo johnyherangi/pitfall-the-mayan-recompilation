@@ -99,7 +99,8 @@ void applyPickup(ObjCtx& ctx, Obj& o) {
     } else if (o.frame == 0) {
         if (n == "mi_chili") { ctx.harry.w(0x46652b) = 0x380; st.score += 600; ctx.sound1(0xfe, 0xc); }   // 0x405a5b
         else if (n == "mi_time") {                      // 0x405a88: the stop-watch
-            ctx.harry.w(0x46652f) = 0x300; st.score += 750; ctx.harry.b(0x465897) = 0;   // (and DAT_00450500 = 1)
+            ctx.harry.w(0x46652f) = 0x300; st.score += 750; ctx.harry.b(0x465897) = 0;
+            ctx.g.setCdVolumeCmd(1);                     // DAT_00450500: the CD turned down
         } else if (n == "mi_1up") { ctx.sound0(0x33, 0x14); st.lives += 1; st.score += 2000; }   // 0x4059ed
         else if (n == "mi_gold") treasure(500, 5, 0xfe);
         else if (n == "mi_silvr") treasure(200, 2, 0xfe);

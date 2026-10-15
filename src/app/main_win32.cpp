@@ -28,7 +28,9 @@
 #include <thread>
 #include <vector>
 
+#ifdef _MSC_VER
 #pragma comment(lib, "winmm.lib")
+#endif
 
 namespace {
 
@@ -36,7 +38,7 @@ constexpr wchar_t kClassName[] = L"Pitfall";                  // string resource
 constexpr wchar_t kTitle[] = L"Pitfall: The Mayan Adventure"; // string resource #5
 
 enum MenuIds : UINT {
-    kMenuExit = 100, kMenuPause, kMenuWindow1x, kMenuWindow2x, kMenuFullscreen, kMenuSound,
+    kMenuExit = 100, kMenuPause, kMenuWindow1x, kMenuWindow2x, kMenuFullscreen, kMenuSound, kMenuCdMusic, kMenuCdAmbient,
     kMenuJoystick, kMenuFrameRate, kMenuAbout, kMenuLevelBase = 200,
 };
 
@@ -191,7 +193,7 @@ void present() {
 HMENU buildMenu() {
     HMENU bar = CreateMenu();
     HMENU file = CreatePopupMenu();
-    AppendMenuW(file, MF_STRING, kMenuPause, L"&Pause\tP");
+    AppendMenuW(file, MF_STRING, kMenuPause, L"&Pause\tPause");
     AppendMenuW(file, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(file, MF_STRING, kMenuExit, L"E&xit");
     AppendMenuW(bar, MF_POPUP, (UINT_PTR)file, L"&Game");
@@ -201,6 +203,8 @@ HMENU buildMenu() {
     AppendMenuW(opts, MF_STRING, kMenuFullscreen, L"Full Screen\tAlt+Enter");
     AppendMenuW(opts, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(opts, MF_STRING, kMenuSound, L"Sound Effects");
+    AppendMenuW(opts, MF_STRING, kMenuCdMusic, L"CD Music");
+    AppendMenuW(opts, MF_STRING, kMenuCdAmbient, L"CD Ambient Sounds");
     AppendMenuW(opts, MF_STRING, kMenuJoystick, L"Joystick");
     AppendMenuW(opts, MF_STRING, kMenuFrameRate, L"Show Frame Counter");
     AppendMenuW(bar, MF_POPUP, (UINT_PTR)opts, L"&Options");
@@ -221,6 +225,8 @@ void refreshMenuChecks() {
     HMENU m = GetMenu(g_app.hwnd);
     if (!m) return;
     CheckMenuItem(m, kMenuSound, g_app.options.soundEnabled ? MF_CHECKED : MF_UNCHECKED);
+    CheckMenuItem(m, kMenuCdMusic, g_app.options.cdMusic ? MF_CHECKED : MF_UNCHECKED);
+    CheckMenuItem(m, kMenuCdAmbient, g_app.options.cdAmbient ? MF_CHECKED : MF_UNCHECKED);
     CheckMenuItem(m, kMenuJoystick, g_app.options.joystick ? MF_CHECKED : MF_UNCHECKED);
     CheckMenuItem(m, kMenuFrameRate, g_app.options.frameRate ? MF_CHECKED : MF_UNCHECKED);
     CheckMenuItem(m, kMenuWindow1x, (!g_app.fullscreen && g_app.scale == 1) ? MF_CHECKED : MF_UNCHECKED);
@@ -246,11 +252,13 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         if (id == kMenuWindow2x) { setDisplayMode(1); return 0; }
         if (id == kMenuFullscreen) { setDisplayMode(g_app.fullscreen ? 0 : 3); return 0; }
         if (id == kMenuSound) { g_app.options.soundEnabled = !g_app.options.soundEnabled; g_app.game->mixer().setEnabled(g_app.options.soundEnabled); refreshMenuChecks(); return 0; }
+        if (id == kMenuCdMusic) { g_app.game->setCdOptions(!g_app.options.cdMusic, g_app.options.cdAmbient); refreshMenuChecks(); return 0; }
+        if (id == kMenuCdAmbient) { g_app.game->setCdOptions(g_app.options.cdMusic, !g_app.options.cdAmbient); refreshMenuChecks(); return 0; }
         if (id == kMenuJoystick) { g_app.options.joystick = !g_app.options.joystick; refreshMenuChecks(); return 0; }
         if (id == kMenuFrameRate) { g_app.options.frameRate = !g_app.options.frameRate; refreshMenuChecks(); return 0; }
         if (id == kMenuAbout) {
             MessageBoxW(hwnd, L"Pitfall: The Mayan Adventure\nReconstruction from PITFALL.EXE (Kinesoft / Activision, 1995).\n\n"
-                              L"Arrows: move   W: jump   Q: whip   E: shoot   Space: select   P: pause\n"
+                              L"Arrows: move   W: jump   Q: whip   E: shoot   Space: select   Pause: pause\n"
                               L"Level menu: load any level in explorer mode.", kTitle, MB_OK | MB_ICONINFORMATION);
             return 0;
         }
@@ -265,7 +273,8 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         if (wp == VK_RETURN && (lp & (1 << 29))) { setDisplayMode(g_app.fullscreen ? 0 : 3); return 0; }
         break;
     case WM_KEYDOWN:
-        if (wp == 'P' || wp == VK_PAUSE) { g_app.game->togglePause(); return 0; }
+        // FUN_004388c0: Pause (not its repeats) toggles the pause; any other key ends one (Game::tick).
+        if (wp == VK_PAUSE && !(lp & 0x40000000)) { g_app.game->togglePause(); return 0; }
         if (wp == VK_ESCAPE && g_app.fullscreen) { setDisplayMode(0); return 0; }
         break;
     case WM_PAINT: {

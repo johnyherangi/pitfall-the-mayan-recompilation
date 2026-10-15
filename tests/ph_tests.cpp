@@ -7,6 +7,8 @@
 #include "ph/manifests.h"
 
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
 #include <set>
 #include <algorithm>
 #include <cstdlib>
@@ -94,7 +96,7 @@ namespace { int jaguarTest(const std::string& dir); int bungeeTest(const std::st
             int stoneJaguarTest(const std::string& dir); int jaguarManTest(const std::string& dir);
             int warriorSpiritTest(const std::string& dir); int atari2600Test(const std::string& dir);
             int mapScreenTest(const std::string& dir); int continueTest(const std::string& dir);
-            int transitionTest(const std::string& dir); }
+            int transitionTest(const std::string& dir); int musicTest(const std::string& dir); }
 namespace {
 // The engine's blocking parts run out: a command's fades and waits, a level load's fade in.
 int settle(game::Game& g, int cap = 1000) {
@@ -152,6 +154,7 @@ int gameplayTests(const std::string& dir) {
     fails += mapScreenTest(dir);
     fails += continueTest(dir);
     fails += transitionTest(dir);
+    fails += musicTest(dir);
     return fails;
 }
 }
@@ -982,6 +985,78 @@ int transitionTest(const std::string& dir) {
     for (int i = 0; i < 300 && restarted < 0; ++i) { g.tick(idle); if (g.logicTicks() != ticks0) restarted = i; }
     if (restarted < 76 || restarted > 80 || game::g_debugLogic != pl) { std::printf("FAIL: transition: \"*3\" restarted at %d\n", restarted); ++fails; }
     std::printf("transition: title -> level 0 at %d (fade in %d), \"*3\" after %d\n", loaded, fadeIn, restarted);
+    return fails;
+}
+}
+
+// CD audio from ripped tracks: TrackNN.wav in $PITFALL_MUSIC_DIR is decoded to 44.1 kHz stereo;
+// the level's music track (level 0: track 5) plays after its load, a pause stops it and its end
+// plays it again, the stop-watch turns it down to a quarter, and a level's exit fades it out over
+// two seconds before the next level loads (the map's track 4 is missing: silence).
+namespace {
+void writeWav(const std::string& path, int rate, int seconds10) {
+    const int n = rate * seconds10 / 10;
+    std::vector<uint8_t> d(44 + size_t(n) * 2);
+    auto put32 = [&](size_t o, uint32_t v) { for (int i = 0; i < 4; ++i) d[o + size_t(i)] = uint8_t(v >> (8 * i)); };
+    auto put16 = [&](size_t o, uint32_t v) { d[o] = uint8_t(v); d[o + 1] = uint8_t(v >> 8); };
+    std::memcpy(d.data(), "RIFF", 4); put32(4, uint32_t(d.size() - 8)); std::memcpy(d.data() + 8, "WAVEfmt ", 8);
+    put32(16, 16); put16(20, 1); put16(22, 1); put32(24, uint32_t(rate)); put32(28, uint32_t(rate * 2)); put16(32, 2); put16(34, 16);
+    std::memcpy(d.data() + 36, "data", 4); put32(40, uint32_t(n * 2));
+    for (int i = 0; i < n; ++i) put16(44 + size_t(i) * 2, uint16_t(int16_t((i % 50) * 400 - 10000)));
+    std::ofstream(path, std::ios::binary).write(reinterpret_cast<const char*>(d.data()), std::streamsize(d.size()));
+}
+int musicTest(const std::string& dir) {
+    int fails = 0;
+    const std::filesystem::path tmp = std::filesystem::temp_directory_path() / "pitfall_music_test";
+    std::filesystem::create_directories(tmp);
+    writeWav((tmp / "Track05.wav").string(), 22050, 10);
+    writeWav((tmp / "06 - unused.wav").string(), 44100, 5);
+    engine::CdTracks probe(tmp.string() + "/none");
+    std::vector<int16_t> pcm;
+    if (!engine::CdTracks::decodeWavFile((tmp / "Track05.wav").string(), pcm) || pcm.size() < 2 * 44090 || pcm.size() > 2 * 44110) {
+        std::printf("FAIL: music: the 22050 Hz track decoded to %zu samples\n", pcm.size()); ++fails;
+    }
+#ifndef _WIN32
+    setenv("PITFALL_MUSIC_DIR", tmp.string().c_str(), 1);
+#endif
+    engine::Options opts;
+    game::Game g(dir, opts);
+#ifndef _WIN32
+    unsetenv("PITFALL_MUSIC_DIR");
+#endif
+    g.setMode(game::Mode::Playing);
+    g.newGame();
+    g.startLevel(0);
+    const bool playing = g.mixer().musicPlaying();
+    settle(g);
+    g.togglePause();
+    const bool stopped = !g.mixer().musicPlaying() && g.paused();
+    engine::HostInput key; key.keyDown['W'] = true;
+    g.tick(engine::HostInput{});
+    g.tick(key);                                          // a key ends the pause
+    const bool again = g.mixer().musicPlaying() && !g.paused();
+    g.setCdVolumeCmd(1);
+    g.render();
+    const int quarter = g.mixer().musicVolume();
+    g.setCdVolumeCmd(2);
+    g.render();
+    const int full = g.mixer().musicVolume();
+    g.completeLevel();
+    int mapAt = -1, quieter = 0;
+    for (int i = 0; i < 400 && mapAt < 0; ++i) {
+        const int v = g.mixer().musicVolume();
+        g.tick(engine::HostInput{});
+        if (g.mixer().musicVolume() < v) ++quieter;
+        if (g.levelNumber() == 19) mapAt = i;
+    }
+    if (!playing || !stopped || !again || quarter != (0x50 >> 2) * 0x28f || full != 0x50 * 0x28f || mapAt < 190 || mapAt > 200 ||
+        quieter < 19 || g.mixer().musicPlaying() || g.mixer().musicVolume() != full) {
+        std::printf("FAIL: music: playing %d, paused %d, again %d, volumes %#x / %#x, the map at %d after %d fade steps\n",
+                    playing, stopped, again, quarter, full, mapAt, quieter);
+        ++fails;
+    }
+    std::printf("music: track 5 at the load, the map at %d after a fade of %d steps\n", mapAt, quieter);
+    std::filesystem::remove_all(tmp);
     return fails;
 }
 }

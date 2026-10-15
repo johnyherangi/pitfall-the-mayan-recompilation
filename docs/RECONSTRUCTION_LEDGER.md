@@ -45,7 +45,7 @@ decompiled code by a test or a rendered image.
 | Title screen animation | final composition + blink only; the seven logo pieces drop in on frames 0xd2–0x163 (`FUN_004426e0`) |
 | Engine exits inside the logic tick | `engineExit` unwinds the tick at once; the port runs the tick out and skips only its end (`0x4363bd`) |
 | "PAUSED" | drawn with `TextOutA` in the original, in the 8×8 font here |
-| Audio | software mixer instead of Miles; CD music/ambience tracks are listed but not played. The game logic's two sample channels and their priorities (`FUN_004262d9` / `FUN_004261e2`) are modelled |
+| Audio | software mixer instead of Miles (the samples at Option_WavVolume % of 0x7f, the logic's two channels and their priorities, `FUN_004262d9` / `FUN_004261e2`); the CD's tracks are files ripped from the disc (`TrackNN.wav` / `.ogg`) instead of the disc through MCI, mixed in at the CD volume, with the original's choice of track by level and option, its replay at the end, the stop on a pause, the two-second fade at a level load and the stop-watch's quarter volume; the disc check by track lengths has no equivalent |
 | Options UI | the original property sheet (`PropertySheetA`, "System / Sound / Difficulty / Joystick / Keyboard / Language") is replaced by a menu; settings persist in `pitfall.ini` instead of the registry |
 | Full-screen modes | DISPDIB 320×200 mode replaced by a stretched borderless window |
 
@@ -76,12 +76,13 @@ decompiled code by a test or a rendered image.
 
 The machine-translated 68000 half of the binary (`0x401000–0x437fff`) is ported routine by routine: Harry's
 states, the object system and 140 of its behaviour types, the camera and spawner, the triggers and level
-scripts, the map screen, the 2600 level, the continue screen and the engine's transitions.  What is left: CD
-music (with its volume, `FUN_00441c50`, and its fade at a level load, `FUN_00442190`), the intro, title, credits,
-ending and reunion room logic (levels 15, 21 .. 24; the title's own sounds 0x25 / 0x29 and its jungle sounds), the
-typed cheat codes (`0x439868`, e.g. the invincibility of `DAT_0046d054`), the per-level water effects of
-`FUN_00443370` / `FUN_00437ba0`, the window's status bar with the level's name (`FUN_00440bc0`) and the "loading"
-dialog of a windowed level load, any key ending the pause (`WM_KEYDOWN`), and the MSVC build.
+scripts, the map screen, the 2600 level, the continue screen, the engine's transitions and CD audio.  What is
+left: the intro, title, credits, ending and reunion room logic (levels 15, 21 .. 24; the title's own sounds 0x25 /
+0x29 and its jungle sounds), the typed cheat codes (`0x439868`, e.g. the invincibility of `DAT_0046d054`), the
+per-level water effects of `FUN_00443370` / `FUN_00437ba0`, the window's status bar with the level's name
+(`FUN_00440bc0`), the "loading" dialog of a windowed level load, the original's options property sheet, the real
+disc through MCI in the Win32 front end, and a build with MSVC itself (the Windows build is checked with clang /
+llvm-mingw).
 
 The Genesis half's own palette fades (`DAT_0046655e` .. `DAT_00466568`: the death colours, the continue screen's
 match, a boss's) are written but never read on the PC (`FUN_004263e3`, the Genesis routine that ran them, is a

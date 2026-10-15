@@ -15,13 +15,13 @@ struct Options {
     // value name            original global   default
     int  windowSizeX  = 320;   // Window_SizeX    DAT_00453068  0x140
     int  windowSizeY  = 224;   // Window_SizeY    DAT_0045306c  0xe0
-    int  windowTopX   = 0;     // Window_TopX     DAT_00453060
-    int  windowTopY   = 0;     // Window_TopY     DAT_00453064
+    int  windowTopX   = 0x90;  // Window_TopX     DAT_00453060
+    int  windowTopY   = 0x6e;  // Window_TopY     DAT_00453064
     bool joystick     = false; // Option_JoyStick DAT_0046e060
     int  difficulty   = 0;     // Option_Difficulty DAT_0046fb78 (0 normal, 1 hard)
     int  priority     = 0;     // Option_Priority DAT_0046efd8 (0 normal,1 high,2 realtime)
-    int  cdVolume     = 0x50;  // Option_CDVolume DAT_0046f098
-    int  wavVolume    = 0x50;  // Option_WavVolume DAT_0046e104 (0..0x7f)
+    int  cdVolume     = 0x50;  // Option_CDVolume DAT_0046f098 (0..100: auxSetVolume's 0x28f a step)
+    int  wavVolume    = 0x50;  // Option_WavVolume DAT_0046e104 (0..100: the samples at * 0x7f / 100)
     bool cdMusic      = true;  // Option_CDMusic  DAT_0046e11c
     bool cdAmbient    = false; // Option_CDAmbient DAT_0046e118
     bool soundEnabled = true;  // Option_SoundEnabled DAT_0046d060

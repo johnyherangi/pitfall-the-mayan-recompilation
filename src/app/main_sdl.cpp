@@ -81,7 +81,7 @@ int main(int argc, char** argv) {
         while (SDL_PollEvent(&ev)) {
             if (ev.type == SDL_QUIT) running = false;
             if (ev.type == SDL_KEYDOWN) {
-                if (ev.key.keysym.scancode == SDL_SCANCODE_P || ev.key.keysym.scancode == SDL_SCANCODE_PAUSE) g->togglePause();
+                if (ev.key.keysym.scancode == SDL_SCANCODE_PAUSE && !ev.key.repeat) g->togglePause();   // (any other key ends a pause)
                 if (ev.key.keysym.scancode == SDL_SCANCODE_RETURN && (ev.key.keysym.mod & KMOD_ALT)) {
                     const bool fs = (SDL_GetWindowFlags(win) & SDL_WINDOW_FULLSCREEN_DESKTOP) != 0;
                     SDL_SetWindowFullscreen(win, fs ? 0 : SDL_WINDOW_FULLSCREEN_DESKTOP);

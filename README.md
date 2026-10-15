@@ -18,7 +18,8 @@ src/engine/      software renderer, input, options, audio mixer
 src/game/        game driver, camera/parallax, HUD, attract-mode demos
 src/app/         Win32/GDI front end (default) and SDL2 front end (optional)
 src/tools/       phdump command-line tool
-tests/           asset round-trip tests
+tests/           asset round-trip and gameplay tests
+third_party/stb/ stb_vorbis (public domain / MIT), for Ogg rips of the CD's music
 ```
 
 ## Building (Visual Studio 2022)
@@ -30,9 +31,15 @@ ctest --test-dir build -C Release
 ```
 
 This produces `build\Release\pitfall.exe` (the game), `phdump.exe` and
-`ph_tests.exe`.  No third-party dependencies are needed for the Win32 build.
-For a portable SDL2 build add `-DPITFALL_USE_SDL=ON` (SDL 2.30 is fetched by
-CMake).
+`ph_tests.exe`.  No third-party dependencies are needed for the Win32 build
+beyond the vendored `third_party/stb/stb_vorbis.c`.  For a portable SDL2 build
+add `-DPITFALL_USE_SDL=ON` (SDL 2.30 is fetched by CMake).  A MinGW / clang
+cross build works too (checked with llvm-mingw 20240619):
+
+```
+cmake -S . -B build-win -G Ninja -DCMAKE_SYSTEM_NAME=Windows ^
+      -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-clang++ -DCMAKE_RC_COMPILER=x86_64-w64-mingw32-windres
+```
 
 Run `pitfall.exe` from the repository root, or copy `original\*.PH` next to
 the executable, or pass the data directory:
@@ -51,8 +58,19 @@ build\Release\pitfall.exe original -level 1
 | shoot  | E     | button 2 |
 | whip   | Q     | button 3 |
 | select | Space | button 4 |
-| pause  | P     |          |
+| pause  | Pause (any other key ends it) | |
 | full screen | Alt+Enter |     |
+
+## Music
+
+The original plays the game CD's audio tracks (2 .. 23) as music and ambient
+sound.  Rip them to files named `TrackNN.wav` or `TrackNN.ogg` (`Track 02`,
+`02 - title.ogg` and the like work too) in `original\ASSETS\MUSIC` (or
+`original\MUSIC`, or any folder named by the `PITFALL_MUSIC_DIR` environment
+variable).  The Options menu's *CD Music* and *CD Ambient Sounds* are the
+original's two CD options (the ambient track plays when both are on); without
+the files the game is silent where the CD would play, as the original is
+without its disc.
 
 The **Level** menu loads any of the 25 levels.  Gameplay levels run the
 reconstructed Harry physics on the original collision data (run, jump, fall,
@@ -84,20 +102,15 @@ debug drivers used to verify each object handler.
 
 ## Status
 
-The asset pipeline, palette management, renderer, input, options, sound bank
-and the Windows-side game flow are reconstructed from the engine half of the
-binary and verified against the original data.  The level tables (collision
-shapes, object placement, triggers) are decoded and Harry's core movement
-runs on them with the original constants, so the levels can be run through
-from start to exit.  The object system and 92 of its behaviour types
-(the Ceiba Jungle jaguar boss, bungee vines, skull warriors, crocodiles,
-temple archers, fire priests, condors and hawks, rolling and pit wheels, stone
-balls, the lever / door / chute level script and the hidden 1-ups among them)
-are ported from the Genesis-derived half.  Next: Harry's full state machine
-(crouch, climb, hang, swing, swim, push and the thrown weapons), which the
-remaining object types (mine carts, vortex warps, the later jaguars and
-bosses) depend on, the per-level camera and the vault mini-game.
-See `docs/RECONSTRUCTION_LEDGER.md` for the exact status.
+The engine half of the binary (assets, palette, renderer, input, options,
+sound, CD audio, the level transitions with their fades, the HUD, the
+attract-mode demos) and most of the Genesis-derived game logic are
+reconstructed: Harry's whole state machine, the object system with 140
+behaviour types, the camera and spawner, the triggers and level scripts, every
+boss, the Loltun vaults, the continue screen, the map screen and the Atari 2600
+level.  Still to do: the intro, title animation, credits, ending and reunion
+room logic (levels 15, 21 .. 24), the typed cheat codes and the per-level
+water effects.  See `docs/RECONSTRUCTION_LEDGER.md` for the exact status.
 
 ## Legal
 

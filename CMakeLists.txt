@@ -59,6 +59,8 @@ add_library(pitfall_engine STATIC
     src/engine/input.cpp
     src/engine/options.cpp
     src/engine/audio.cpp
+    src/engine/music.cpp
+    src/engine/stb_vorbis_impl.cpp
 )
 target_include_directories(pitfall_engine PUBLIC src)
 target_link_libraries(pitfall_engine PUBLIC pitfall_ph)
@@ -94,6 +96,9 @@ if(PITFALL_USE_SDL)
 elseif(WIN32)
     add_executable(pitfall WIN32 src/app/main_win32.cpp src/app/pitfall.rc)
     target_link_libraries(pitfall PRIVATE pitfall_game winmm gdi32 user32 shell32)
+    if(MINGW)
+        target_link_options(pitfall PRIVATE -municode -static)   # (wWinMain; no MinGW DLLs to ship)
+    endif()
 endif()
 
 # ---- tests -----------------------------------------------------------------
