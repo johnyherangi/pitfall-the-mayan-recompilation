@@ -210,7 +210,8 @@ markerFlame `0x41ae9a`, 119 whipLever `0x41aee0`, 121 rideMarker `0x41b208`, 122
 135 boomerangBack `0x41bcb2`, 137 stonePiece `0x41bfe2`, 138 stoneSpark `0x41c420`, 140 stoneJaguar `0x41c4c2`, 141
 stoneJaguarBase `0x41d47a`, 142 heart `0x41d520`, 147 coin
 `0x41d876`, 148 pitWheel `0x41d9e6`, 149 wheelSpawner `0x41dbf2`, 150 ceilingRock `0x41dc50`, 151 hudText `0x41dd6e`,
-153 jaguarFight `0x41ddac`, 154 jaguarRope `0x41e032`, 155 hudGo `0x41e110`, 156 hangingPouch `0x41e132`, 160 eyes `0x41f2c2`, 161 dot `0x41f320`, 164 snakeRespawner
+153 jaguarFight `0x41ddac`, 154 jaguarRope `0x41e032`, 155 hudGo `0x41e110`, 156 hangingPouch `0x41e132`, 158 jagMan
+`0x41e462`, 159 jagManClaw `0x41f24c`, 160 eyes `0x41f2c2`, 161 dot `0x41f320`, 164 snakeRespawner
 `0x41f5e6`, 166 vaultReward `0x41f6ae`, 169 ropeSpawner `0x41fc1a`, 170 oneUpFly `0x41fd26`, 172 treeSnake `0x420090`, 173 oneWayDoor `0x42068c`,
 174 leanLever `0x4208f8`.
 
@@ -245,9 +246,21 @@ with both dead it turns into the head of the rope (154) with eight type-0 segmen
 onto the walkway that leads to the exit trigger 0x5f.  The fight start also copies the jaguars' colours into the
 Genesis palette line at `0x462654` and sets the Genesis music byte `DAT_004627bd`; the PC reads neither.
 
-Still `h_default` (drawn in the template frame, never act): 105 the Warrior Spirit `0x420bd0`, and the level-8
-jaguar 158 `0x41e462`, with the objects only they spawn.  The boss meter (48) has all its branches: the type 0x69
-boss on level 10, a type 0x8c jaguar at l50, the boss at trg+0x1f4 (0x3e hit points on level 8).
+The jaguar man of level 8 (158) keeps its state the same way: HIDDEN `0x41ecc3` (until Harry is up at x >= 0x1640
+above y 0xba; it then shows 0xf0 px to the right, sets the boss (trg+0x1f4, `DAT_00466507`), the camera locks and
+`DAT_00465d49`, which walks Harry right until he lands at y 0x132), WAKE `0x41ef24`, ROAR `0x41ee76`, RUN `0x41efd1`,
+REVERSE `0x41f140`, CROUCH `0x41e80c` (into the man form), READY `0x41e8bd`, SWIPE `0x41eac3`, WAIT `0x41eaa1`,
+MORPH `0x41eb76` and CHARGE `0x41ebf4` (back to the jaguar, slow or at 6 px/tick); 0x3e hit points (w6c >> 3).  Its
+tests of Harry's damage byte are signed (`js`), so the claw (159) comes with every swipe at an unhurt Harry, and a
+touch on a Harry whose damage byte is below 0x16 would count as a fatal one.  Its death and the type 55's are
+`call 0x415b92`s that never return: the code after them runs when the pass's `ret` pops their return addresses
+(`PlayLogic::strayReturn`): 0x410e6a starts the Ceiba Jungle walk-out, 0x41e62c stands a dazed Harry up.  After
+the fight the stone face's tongue (91) throws Harry up to the walkway that leads to the exit (0x5f).
+
+Still `h_default` (drawn in the template frame, never act): 105 the Warrior Spirit `0x420bd0`, with the objects
+only it spawns, and the types whose templates no level places (58 `0x412282`, 77 `0x4152bc`, 94 `0x41829c`, 157
+`0x41e250`).  The boss meter (48) has all its branches: the type 0x69 boss on level 10, a type 0x8c jaguar at l50,
+the boss at trg+0x1f4 (0x3e hit points on level 8).
 
 Every ported handler has been checked against its disassembly, in address order.  Quirks of the original that
 are kept: the boar's grazing test reads a `d1` the contact test may have clobbered; the fire jet's roar count

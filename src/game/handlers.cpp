@@ -5261,8 +5261,8 @@ void h_jaguar(ObjCtx& ctx, Obj& o) {
             h_bossDeathBurst(ctx, o);               // 0x415b92 runs straight into the 0x51 handler
             // The `call 0x415b92` never returns here (the handler ends with `jmp 0x405313`); its
             // return address is popped by the `ret` that ends the object pass, which then sets
-            // DAT_00465d49 = 1 at 0x410e6a.  Only Harry's code reads it, after the pass.
-            ctx.pl.startBossOutro();
+            // DAT_00465d49 = 1 at 0x410e6a (the walk-out).
+            ctx.pl.strayReturn(0x410e6a);
             return;
         }
         if (ctx.harry.invulnerable() == 0 && harryContact(ctx, o, 0xf) && o.b(0x32) == kPounce) {
@@ -5859,6 +5859,327 @@ void h_jaguarRope(ObjCtx& ctx, Obj& o) {
         s->y = y;
     }
     if (harryOnBox(ctx, o, -8, 8, -192, 160)) h.w(0x466508) = o.x;   // the box at 0x45bfca
+}
+
+// ---------------------------------------------------------------- the jaguar man (types 158 / 159)
+//
+// The end of Tazumal (level 8): a jaguar that turns into a man to strike.  It keeps hidden until
+// Harry is up at its arena (x >= 0x1640 above y 0xba), then shows 0xf0 px further right, roars
+// and runs about as the Ceiba Jungle jaguar does, but where that one pounces this one crouches
+// into its man form, faces Harry and swipes at him within 0x70 px; 70 ticks later it changes
+// back, charging at 6 px/tick (a shove on contact) when Harry is 0x80 px away or more, else at 3.
+// The swipe's blow (jm0swipe, frame 3) costs 0x1e; a touch that leaves Harry done for gets him
+// dazed and finished off by the next blow (his states 0x428cc5 / 0x428d7b), and the swipe comes
+// with a claw (type 159) when Harry's damage byte tests 0x95 or more as a signed byte - near
+// death, but also unhurt.  Health: w6c >> 3, 0x3e kills; the boss meter shows it, and the arena
+// keeps it in x 0x1660 .. 0x17b0.
+// State: l32 the continuation address (below), w36 anim cursor, l38 vx (w3a its integer part),
+// l3e / b42 the crouch script's cursor, l46 / b4a the roar's, l50 / b54 the man form's, b4c / b4d
+// the roar's count and "hit while roaring", w56 the man form's count (l56 also the claw, 0 when
+// none), b5c "its touch has done for Harry", b6a "set up".
+namespace jagMan {
+constexpr uint32_t kHidden = 0x41ecc3, kWake = 0x41ef24, kRoar = 0x41ee76, kRun = 0x41efd1, kReverse = 0x41f140,
+                   kCrouch = 0x41e80c, kReady = 0x41e8bd, kWait = 0x41eaa1, kSwipe = 0x41eac3, kMorph = 0x41eb76,
+                   kCharge = 0x41ebf4;
+enum Flow { kDone, kRestart, kJump };              // return / `jmp 0x41e462` / a jump into another state's code
+
+void setState(Obj& o, uint32_t st) { o.l(0x32) = int32_t(st); }
+bool spriteIs(const Obj& o, const char* name) { return o.sprite && o.sprite->name() == name; }
+bool manForm(const Obj& o) {
+    for (const char* n : {"jmzmorf2", "jmzmorfa", "jmzmorfb", "jmzswipe", "jm0swipe", "jm1swipe", "jmzready"})
+        if (spriteIs(o, n)) return true;
+    return false;
+}
+void snap(ObjCtx& ctx, Obj& o) {                   // 0x41ef8e
+    int y = o.y + 0xd;
+    ctx.floorSnap(o.x, y);
+    o.y = int16_t(y - 0xd);
+}
+void toRun(ObjCtx& ctx, Obj& o, int16_t animPos) {
+    o.sprite = ctx.spr("jgurun");
+    o.w(0x4c) = 0;
+    setState(o, kRun);
+    o.w(0x36) = animPos;
+}
+void toRoar(Obj& o) {
+    setState(o, kRoar);
+    o.w(0x4c) = 0;
+    o.script = kAnim2_jaguarRoar; o.l(0x46) = 0; o.w(0x4a) = 0;   // 0x45ac6f
+}
+void toReady(ObjCtx& ctx, Obj& o, uint32_t st) {   // the man form's idle script (0x45b428)
+    o.sprite = ctx.spr("jmzready");
+    setState(o, st);
+    o.script = kAnim2_jagManReady; o.l(0x50) = 0;
+}
+// 0x41ea03: back to the jaguar, charging when Harry is 0x80 px away or more.
+void changeBack(ObjCtx& ctx, Obj& o) {
+    const int16_t d = int16_t(ctx.harry.x() - o.x);
+    o.script = kAnim2_jagManMorph; o.l(0x50) = 0; o.l(0x54) = 0;   // 0x45b476
+    const bool far = d >= 0x80 || d < -0x80;
+    setState(o, far ? kCharge : kMorph);
+    const int32_t v = far ? 0x60000 : 0x30000;
+    o.l(0x38) = o.facing ? v : -v;
+}
+
+Flow body(ObjCtx& ctx, Obj& o, uint32_t st, uint32_t& next) {
+    Harry& h = ctx.harry;
+    switch (st) {
+    case kHidden:                                  // 0x41ecc3
+        o.sprite = ctx.spr("jgustill");
+        o.frame = 0xff;
+        if (h.y() >= 0xba || h.x() < 0x1640) { exitDespawnTall(ctx, o); return kDone; }
+        h.w(0x465b09) = 0x1625;
+        // 0x41ecfc: its colours (0x45b4d4) into the Genesis palette line 2 at 0x462654, which the
+        // PC build does not draw from (see the stone jaguars)
+        stoneJaguar::spawnMeter(ctx, o, 0, 0);     // the boss meter (b5a 0, l50 0: the boss at trg+0x1f4)
+        o.x += 0xf0;
+        o.frame = 0;
+        h.b(0x465d49) = 1;
+        ctx.pl.setBoss(&o);                        // trg+0x1f4 (stored big-endian) and DAT_00466507
+        // (FUN_004263a2(0x47): the Genesis boss music, a stub in the PC build)
+        h.w(0x465b0d) = 0x92;
+        o.sprite = ctx.spr("jguroar");
+        setState(o, kWake);
+        return kRestart;
+    case kWake:                                    // 0x41ef24: comes to life (the stone jaguars' script)
+        if (animStep(ctx, o, o.anim(0x36), kAnim_stoneJagWake, 3)) {
+            o.w(0x4c) = 0;
+            setState(o, kRun);
+            o.sprite = ctx.spr("jgurun");
+            o.b(0x5a) = 0xff;
+            if (int8_t(o.hits - 0x19) < 0) toRoar(o);
+            return kRestart;
+        }
+        snap(ctx, o);
+        return kDone;
+    case kRoar: {                                  // 0x41ee76: a pause that gives Harry his opening
+        anim2Step(ctx, o, 0x46, 4);
+        o.b(0x4c) += 1;
+        if (o.b(0x4c) != 0x70) {
+            if (h.b(0x466782)) o.b(0x4d) = 0xff;
+            if (spriteIs(o, "jguroar") && o.frame != 5) { snap(ctx, o); return kDone; }
+            if (o.b(0x4d) == 0) {
+                const int16_t d = int16_t(o.x - h.x());
+                if (d < -0x68 || d >= 0x68) { snap(ctx, o); return kDone; }
+            }
+        }
+        toRun(ctx, o, 4);                          // 0x41eefc
+        return kRestart;
+    }
+    case kRun: {                                   // 0x41efd1
+        animStep(ctx, o, o.anim(0x36), kAnim_run8, 3);
+        jaguar::accelerate(o, 0x3500, ctx.levelNo == 8 ? 6 : 5, uint8_t(o.facing ^ 1) == 0);   // 0x411a3e (facing flipped around it)
+        moveX(o, o.l(0x38));
+        if (o.b(0x5c) != 0 || int8_t(o.hits - 0xf) >= 0) {
+            // Harry 0x50 .. 0x75 px ahead at speed: crouch into the man form
+            int16_t d = int16_t(h.x() - o.x);
+            bool fast = o.w(0x3a) >= 3;
+            if (!fast && o.w(0x3a) < -3) { fast = true; d = int16_t(-d); }
+            if (fast && d >= 0x50 && d < 0x75) {
+                o.script = kAnim2_jagManCrouch; o.l(0x3e) = 0;   // 0x45b404
+                o.sprite = ctx.spr("jgurn2lo");
+                setState(o, kCrouch);
+                return kRestart;
+            }
+        }
+        auto toReverse = [&] { o.sprite = ctx.spr("jgurevrs"); setState(o, kReverse); o.w(0x36) = 0; return kRestart; };
+        if (o.x >= 0x175c) { if (o.facing != 0) return toReverse(); snap(ctx, o); return kDone; }
+        if (o.x < 0x1698) { if (o.facing == 0) return toReverse(); snap(ctx, o); return kDone; }
+        if (o.w(0x3a) >= 4 || o.w(0x3a) < -5) {    // Harry 80 px behind at speed: turn
+            const int16_t d = int16_t(h.x() - o.x);
+            if (o.facing ? d < -0x50 : d >= 0x50) return toReverse();
+        }
+        snap(ctx, o);
+        return kDone;
+    }
+    case kReverse:                                 // 0x41f140
+        if (animStep(ctx, o, o.anim(0x36), kAnim_stoneJagReverse, 4)) {
+            o.facing ^= 1;
+            o.sprite = ctx.spr("jgurun");
+            o.w(0x4c) = 0;
+            setState(o, kRun);
+            o.w(0x36) = 6;
+            if (int8_t(o.hits - 0x19) >= 0 && (ctx.rnd() & 1) == 0) o.b(0x5b) = 0xff;   // (nothing reads it here)
+            return kRestart;
+        }
+        if (int8_t(o.frame - 6) >= 0) {
+            if (o.b(0x5c) == 0 && int8_t(o.hits - 0xf) < 0) { toRoar(o); o.facing ^= 1; return kRestart; }
+            jaguar::accelerate(o, 0x3000, ctx.levelNo == 8 ? 6 : 5, o.facing == 0);
+        } else if (o.w(0x3a) != 0) {
+            o.l(0x38) += o.w(0x3a) < 0 ? 0x5000 : -0x5000;
+        }
+        moveX(o, o.l(0x38));
+        snap(ctx, o);
+        return kDone;
+    case kCrouch:                                  // 0x41e80c: slows down into the man form
+        if (o.w(0x3a) == 0) o.l(0x38) = 0;
+        else o.l(0x38) += o.w(0x3a) < 0 ? 0x6000 : -0x6000;
+        moveX(o, o.l(0x38));
+        if (!anim2Step(ctx, o, 0x3e, 5)) {
+            if (o.b(0x42) == 0 && o.l(0x3e) == 0x20) o.flags = 0x4000;   // (0x45b424: the Genesis palette line)
+            return kDone;
+        }
+        toReady(ctx, o, kReady);
+        o.l(0x54) = 0;
+        next = kReady;
+        return kJump;
+    case kReady: {                                 // 0x41e8bd: faces Harry, swipes when he comes near
+        anim2Step(ctx, o, 0x50, 8);
+        int16_t d = int16_t(h.x() - o.x);
+        bool turn;
+        if (d < 0) { turn = o.facing != 0; d = int16_t(-d); }
+        else turn = o.facing == 0;
+        if (turn) {
+            o.facing ^= 1;
+            o.w(0x56) = 0;
+        } else if (d >= 0 && d < 0x70) {
+            o.script = kAnim2_jagManSwipe; o.l(0x50) = 0; o.l(0x54) = 0;   // 0x45b440
+            setState(o, kSwipe);
+            o.l(0x56) = 0;
+            o.sprite = ctx.spr("jmzswipe");
+            if (int8_t(h.damage() - (ctx.hard ? 0x63 : 0x95)) >= 0) {
+                if (Obj* c = ctx.spawnFrom(o, true, 4)) {   // FUN_0043546e(4): the claw
+                    o.l(0x56) = int32_t(ctx.pl.addrOf(c));
+                    c->l(0x5a) = int32_t(ctx.pl.addrOf(&o));
+                    c->facing = o.facing;
+                    c->type = 0x9f;
+                    c->sprite = ctx.spr("jmzswipe");
+                    c->flags = 0x4000;
+                }
+            }
+            next = kSwipe;
+            return kJump;
+        }
+        o.w(0x56) += 1;                            // 0x41e9ed
+        if (o.w(0x56) != 0x46) return kDone;
+        changeBack(ctx, o);
+        next = kMorph;                             // (both ways start with the slow change's code)
+        return kJump;
+    }
+    case kWait:                                    // 0x41eaa1: while Harry is finished off
+        anim2Step(ctx, o, 0x50, 8);
+        return kDone;
+    case kSwipe: {                                 // 0x41eac3
+        bool done = false;
+        for (int guard = 0; guard < 4; ++guard) {
+            done = anim2Step(ctx, o, 0x50, 3);
+            // without the claw, straight from the raised paw to the blow (0x45b45c)
+            if (spriteIs(o, "jmzswipe") && o.frame == 3 && o.l(0x56) == 0) { o.l(0x50) = 0x1c; continue; }
+            break;
+        }
+        if (!done) return kDone;
+        if (h.cont() == 0x428dce) { toReady(ctx, o, kWait); next = kWait; return kJump; }
+        if (h.invulnerable() != 0) { changeBack(ctx, o); next = kMorph; return kJump; }
+        toReady(ctx, o, kReady);
+        o.l(0x54) = 0;
+        next = kReady;
+        return kJump;
+    }
+    case kMorph:                                   // 0x41eb76: back to the jaguar
+        moveX(o, o.l(0x38));
+        if (anim2Step(ctx, o, 0x50, 4)) { toRun(ctx, o, 4); return kRestart; }
+        if (o.b(0x54) == 0 && o.l(0x50) == 0x13) o.flags = 0x6000;   // (0x45b489)
+        return kDone;
+    case kCharge: {                                // 0x41ebf4: the same, held in the charge until past Harry
+        moveX(o, o.l(0x38));
+        bool hold = false;
+        if (o.x >= 0x1690 && o.x < 0x1780 && spriteIs(o, "jmzmorf2") && o.frame == 2) {
+            int16_t d = int16_t(h.x() - o.x);
+            if (o.facing) d = int16_t(-d);
+            hold = d < -0x60;
+        }
+        if (!hold && anim2Step(ctx, o, 0x50, 4)) { toRun(ctx, o, 4); return kRestart; }
+        if (o.b(0x54) == 0 && o.l(0x50) == 0x13) o.flags = 0x6000;
+        return kDone;
+    }
+    default:
+        return kDone;
+    }
+}
+} // namespace jagMan
+
+void h_jagMan(ObjCtx& ctx, Obj& o) {
+    using namespace jagMan;
+    Harry& h = ctx.harry;
+    for (int pass = 0; pass < 8; ++pass) {         // `jmp 0x41e462`
+        if (o.b(0x6a) == 0 && o.frame == 0xff) {   // the first run
+            if (h.y() >= 0x163) { ctx.pl.restoreEntry(o); ctx.release(o); return; }
+            o.b(0x5b) = 0;
+            o.b(0x3c) = uint8_t((ctx.rnd() & 3) + 2);
+            o.y += 0x18;
+            o.frame = 0xff;
+            setState(o, kHidden);
+            o.l(0x38) = -0x10000;
+            o.behind = 0xff;
+            o.b(0x6a) = 0xff;
+        }
+        // 0x41e4f3: the weapons (DAT_00466782 marks a hit for this tick)
+        h.b(0x466782) = 0;
+        o.hits = 0;
+        if (weaponHits(ctx, o, 0x1e, nullptr)) {
+            h.b(0x466782) = 0xff;
+            o.w(0x6c) += o.hits;
+            if (!ctx.channel0Busy()) {
+                if (manForm(o)) ctx.sound0(0x13, 0xe);              // FUN_0042633d(0x13, 0x60, 0xe)
+                else if (ctx.rnd() & 1) ctx.sound0(0x2a, 0xe);       // FUN_0042633d(0x2a, 0x60, 0xe)
+            }
+        }
+        const uint16_t hp = uint16_t(uint16_t(o.w(0x6c)) >> 3);
+        o.hits = uint8_t(hp);
+        if (hp >= 0x3e) {
+            ctx.pl.endBoss();                      // DAT_00466507 = 0
+            jaguar::bossDeath(ctx, o);
+            h_bossDeathBurst(ctx, o);              // 0x415b92 runs straight into the 0x51 handler,
+            ctx.pl.strayReturn(0x41e62c);          // so the code after the call runs when the pass ends
+            return;
+        }
+        // 0x41e665: its touch, but while Harry lies dazed or is finished off
+        const uint32_t hc = h.cont();
+        if (hc != 0x428dce && hc != 0x428cdb && h.invulnerable() == 0) {
+            bool touched = false;
+            if (spriteIs(o, "jm0swipe") && o.frame == 3) {   // the blow, 0x80 px ahead to 8 behind
+                int16_t d = int16_t(h.x() - o.x);
+                if (o.facing) d = int16_t(-d);
+                if (d < 8 && d >= -0x80) { ctx.pl.hurtHarry(0x1e); touched = true; }   // FUN_00428233
+            }
+            if (!touched) touched = harryContact(ctx, o, 0x18);
+            if (touched) {
+                // done for (a signed byte test, as the original's)
+                if (int8_t(h.damage() - (ctx.hard ? 0x64 : 0x96)) >= 0) {
+                    if (uint32_t(o.l(0x32)) == kSwipe) {
+                        h.setUl(0x465b55, ctx.pl.addrOf(&o));
+                        ctx.pl.harryCall(0x428d7b);
+                        return;
+                    }
+                    o.b(0x5c) = 0xff;
+                    h.setUl(0x465b55, ctx.pl.addrOf(&o));
+                    ctx.pl.harryCall(0x428cc5);
+                    return;
+                }
+                if (uint32_t(o.l(0x32)) == kCharge) {
+                    h.b(0x465b55) = o.facing;     // shoved the way it charges
+                    ctx.pl.harryCall(0x427167);
+                }
+            }
+        }
+        if (o.x < 0x1660) o.x = 0x1660;            // the arena
+        if (o.x >= 0x17b0) o.x = 0x17b0;
+        uint32_t st = uint32_t(o.l(0x32)), next = 0;
+        Flow f = kJump;
+        for (int hop = 0; hop < 4 && f == kJump; ++hop) { f = body(ctx, o, st, next); st = next; }
+        if (f != kRestart) return;
+    }
+}
+
+// 0x41f24c: type 159, the jaguar man's claw: shown (0x45b514, frames 4..8 of jmzswipe) while the
+// swipe holds its raised paw, gone with the blow.
+void h_jagManClaw(ObjCtx& ctx, Obj& o) {
+    const Obj* boss = ctx.pl.objAt(uint32_t(o.l(0x5a)));
+    if (!boss) return;
+    if (jagMan::spriteIs(*boss, "jm0swipe")) { ctx.release(o); return; }
+    if (!jagMan::spriteIs(*boss, "jmzswipe")) { o.frame = 0xff; return; }
+    if (boss->frame != 3) return;
+    if (animStep(ctx, o, o.anim(0x50), kAnim_jagManSwipeFx, 5)) ctx.release(o);
 }
 
 // ---------------------------------------------------------------- skull warrior (type 66, 0x412fc2)
@@ -7511,6 +7832,8 @@ Handler ObjectSystem::handler(uint8_t type) {
     case 141:  return h_stoneJaguarBase;
     case 153:  return h_jaguarFight;
     case 154:  return h_jaguarRope;
+    case 158:  return h_jagMan;
+    case 159:  return h_jagManClaw;
     case 0:    return nullptr;
     default:   return h_default;
     }

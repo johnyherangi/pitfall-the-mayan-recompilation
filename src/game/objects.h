@@ -278,7 +278,7 @@ extern const uint8_t kAnim_snakeEmerge[], kAnim_snakeMiss[], kAnim_snakeLunge[],
     kAnim_snakeLunge2[], kAnim_spitFly[], kAnim_spitSplat[], kAnim_crocBite[], kAnim_crocDive[], kAnim_priestTurn[], kAnim_fireballDie[],
     kAnim_guardShotLow[], kAnim_guardShotHigh[], kAnim_guardTurn[], kAnim_guardPeel[], kAnim_guardWalk[],
     kAnim_hawkGlide[], kAnim_crocLeap[], kAnim_splashRing2[], kAnim_treeSnakeLimp[], kAnim_cartSpark[], kAnim_floatBob[], kAnim_harrySplash[], kAnim_vaporSpin[],
-    kAnim_leverBack[], kAnim_stoneJagWake[], kAnim_stoneJagReverse[];
+    kAnim_leverBack[], kAnim_stoneJagWake[], kAnim_stoneJagReverse[], kAnim_jagManSwipeFx[];
 extern const uint8_t kData_bungeeScripts[];      // 0x45aaa4: Harry's bungee animation triples (see h_bungee)
 extern const uint8_t kData_firePath[];           // 0x45ad94: the fire pit's 59 keyframes {frame, dx, dy, tailFrame, tailDx, tailDy} (int16)
 extern const uint8_t kData_priestDeath[];        // 0x45a849: the fire priest's collapse (a byte script; its cursor jumps past the first 0xf0)
@@ -296,7 +296,7 @@ extern const uint8_t kAnim2_deathFade[], kAnim2_monkeyToss[], kAnim2_condorDive[
     kAnim2_skullThrow[], kAnim2_skullChop[], kAnim2_boneTumble[], kAnim2_ballSwingA[], kAnim2_ballSwingB[], kAnim2_ballSwingC[],
     kAnim2_crocSwim[], kAnim2_crocSink[], kAnim2_priestRise[], kAnim2_priestMain[], kAnim2_fireball[],
     kAnim2_hawkDive[], kAnim2_stoneJagCrouch[], kAnim2_stoneJagLeap[], kAnim2_stoneJagBigLeap[], kAnim2_stoneJagLand[],
-    kAnim2_stoneJagHop[];
+    kAnim2_stoneJagHop[], kAnim2_jagManCrouch[], kAnim2_jagManReady[], kAnim2_jagManSwipe[], kAnim2_jagManMorph[];
 extern const char* const kAnim2Sprites[];        // names for the relocated 0xf1 opcodes
 // Sparkle offset tables (handlers.cpp), 0x8000-terminated (dx, dy) pairs.
 extern const int16_t kSparkleOffsetsA[], kSparkleOffsetsB[], kSparkleOffsetsC[];

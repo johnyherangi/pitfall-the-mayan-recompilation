@@ -85,6 +85,10 @@ public:
     Obj* bossObject() const { return boss_; }
     bool bossActive() const { return h_.b(0x466507) != 0; }
     void startBossOutro() { h_.b(0x465d49) = 1; }   // DAT_00465d49 (FUN_0043426d)
+    // A handler `call`ed code that never returns (it ends with `jmp 0x405313`): the return
+    // address stays on the stack, and the `ret` that ends the object pass runs the code there
+    // before the pass really returns (see runStrayReturns).
+    void strayReturn(uint32_t addr) { strayReturns_.push_back(addr); }
     void hudAdd(const Obj& o) { hud_.push_back(objects_.indexOf(o)); }   // 0x4150a2: FUN_0043348e places it next tick
     uint32_t& fadeCmd() { return fadeCmd_; }      // DAT_0046b1b0 (0xc0: the big stone's white flash)
     // [DAT_004504e4] + off: the Genesis variables the PC keeps in the .als buffer past the level's
@@ -184,6 +188,7 @@ private:
     // ---- play_logic.cpp ----
     void hudPlacement();                        // FUN_0043348e
     void runObjects(Game& g);
+    void runStrayReturns();                     // the code at the return addresses left by strayReturn
     void timers();                              // FUN_00433a09
     void displayList(Game& g);                  // FUN_00434f6c
 
@@ -206,6 +211,7 @@ private:
     int altIdle_ = 0;                // DAT_0046d04c: F10 was pressed (the special idle animation)
     uint32_t fadeCmd_ = 0;           // DAT_0046b1b0
     uint8_t trgRam_[0x200] = {};     // [DAT_00450510] + 0x1f4 ..
+    std::vector<uint32_t> strayReturns_;   // return addresses left on the stack during the object pass
 };
 
 // Item handler (type 2, 0x405328) effect table at 0x45a8d4: sprite -> effect.

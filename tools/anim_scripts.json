@@ -87,7 +87,8 @@
   "vaporSpin": "0x45be78",
   "leverBack": "0x45bab2",
   "stoneJagWake": "0x45bb24",
-  "stoneJagReverse": "0x45bb38"
+  "stoneJagReverse": "0x45bb38",
+  "jagManSwipeFx": "0x45b514"
  },
  "anim2": {
   "monkeyToss": "0x45ab81",
@@ -115,7 +116,11 @@
   "stoneJagLeap": "0x45b35a",
   "stoneJagBigLeap": "0x45b370",
   "stoneJagLand": "0x45b3a2",
-  "stoneJagHop": "0x45b3c6"
+  "stoneJagHop": "0x45b3c6",
+  "jagManCrouch": "0x45b404",
+  "jagManReady": "0x45b428",
+  "jagManSwipe": "0x45b440",
+  "jagManMorph": "0x45b476"
  },
  "raw": {
   "bungeeScripts": "0x45aaa4+0xc3",

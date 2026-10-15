@@ -736,6 +736,25 @@ void PlayLogic::runObjects(Game& g) {
     ctx.camX = h_.w(0x4658b4); ctx.camY = h_.w(0x4658b6);   // DAT_004658b4 / b6
     ctx.hard = g.stats().difficulty != 0;
     objects_.tick(ctx);
+    runStrayReturns();
+}
+
+void PlayLogic::runStrayReturns() {
+    // The pass's `ret` (0x4052f8) pops the addresses last-pushed first; the code at each ends
+    // with `jmp 0x405313`, which finds the list done and comes back to the `ret`.
+    while (!strayReturns_.empty()) {
+        const uint32_t a = strayReturns_.back();
+        strayReturns_.pop_back();
+        switch (a) {
+        case 0x410e6a:   // the Ceiba Jungle jaguar (type 55) died: the walk-out (DAT_00465d49)
+            startBossOutro();
+            break;
+        case 0x41e62c:   // the level-8 jaguar (type 158) died: Harry, dazed by its swipe, stands up
+            if (h_.spriteIs("hyidazed") || h_.cont() == 0x428dce || h_.cont() == 0x428cdb) h428dfa();
+            break;
+        default: break;
+        }
+    }
 }
 
 void PlayLogic::displayList(Game& g) {

@@ -89,7 +89,7 @@ int main(int argc, char** argv) {
 // ---- gameplay smoke tests (appended) --------------------------------------
 namespace { int jaguarTest(const std::string& dir); int bungeeTest(const std::string& dir); int stoneTest(const std::string& dir);
             int vortexTest(const std::string& dir); int deathTest(const std::string& dir); int vaultTest(const std::string& dir);
-            int stoneJaguarTest(const std::string& dir); }
+            int stoneJaguarTest(const std::string& dir); int jaguarManTest(const std::string& dir); }
 namespace {
 int gameplayTests(const std::string& dir) {
     int fails = 0;
@@ -123,6 +123,7 @@ int gameplayTests(const std::string& dir) {
     fails += deathTest(dir);
     fails += vaultTest(dir);
     fails += stoneJaguarTest(dir);
+    fails += jaguarManTest(dir);
     return fails;
 }
 }
@@ -505,6 +506,66 @@ int stoneJaguarTest(const std::string& dir) {
     if (outAt < 0 || g.levelNumber() != 4) { std::printf("FAIL: Harry did not leave the level by the rope (level %d)\n", g.levelNumber()); ++fails; }
     std::printf("stone jaguars: fight at tick %d, both awake at %d, ledge at %d, dead at %d, rope at %d, top at %d, level 4 at %d\n",
                 fightAt, bothAwakeAt, ledgeAt, deadAt, ropeAt, climbedAt, outAt);
+    return fails;
+}
+}
+
+// The jaguar man of level 8 (types 158 / 159): Harry flies down beside its arena (its .als entry
+// is met by the camera coming down) and back up, where it shows itself and walks him in; he
+// whips whatever comes near while staying healed.  It must change into its man form and swipe
+// (with the claw: an unhurt Harry's damage byte tests high), and die; then the stone face's
+// tongue (type 91) throws Harry up to the walkway and the exit.
+namespace {
+int jaguarManTest(const std::string& dir) {
+    int fails = 0;
+    engine::Options opts; opts.allowCheat = true;
+    game::Game g(dir, opts);
+    g.startLevel(8); g.setMode(game::Mode::Playing);
+    game::PlayLogic* pl = game::g_debugLogic;
+    if (!pl) { std::printf("FAIL: no play logic for level 8\n"); return 1; }
+    const int legs[2][2] = {{5800, 280}, {5800, 150}};
+    for (const auto& leg : legs) {
+        for (int i = 0; i < 3000; ++i) {
+            const game::Harry& h = pl->harry();
+            if (std::abs(h.x() - leg[0]) <= 7 && std::abs(h.y() - leg[1]) <= 7) break;
+            engine::HostInput fly; fly.ctrlDown = true;
+            fly.keyDown[h.x() < leg[0] ? 0x27 : 0x25] = std::abs(h.x() - leg[0]) > 7;
+            fly.keyDown[h.y() < leg[1] ? 0x28 : 0x26] = std::abs(h.y() - leg[1]) > 7;
+            g.tick(fly);
+        }
+    }
+    int shownAt = -1, manAt = -1, clawAt = -1, deadAt = -1, outAt = -1;
+    for (int t = 0; t < 16000 && g.levelNumber() == 8; ++t) {
+        game::Harry& h = pl->harry();
+        engine::HostInput in;
+        bool boss = false;
+        for (game::Obj* o : pl->objectSystem().list()) {
+            if (o->type == 0x9e) {
+                boss = true;
+                const uint32_t st = uint32_t(o->l(0x32));
+                if (st != 0x41ecc3 && shownAt < 0) shownAt = t;
+                if (st == 0x41eac3 && manAt < 0) manAt = t;
+                if (st != 0x41ecc3 && std::abs(o->x - h.x()) < 70 && t % 3 == 0) in.keyDown['Q'] = true;
+            }
+            if (o->type == 0x9f && clawAt < 0) clawAt = t;
+        }
+        if (shownAt >= 0 && !boss && deadAt < 0) deadAt = t;
+        if (deadAt >= 0) {                                         // into the stone face's mouth, then right
+            in = engine::HostInput{};
+            if (h.y() < 200) in.keyDown[0x27] = true;
+            else if (std::abs(h.x() - 6008) > 4) in.keyDown[h.x() < 6008 ? 0x27 : 0x25] = true;
+            else if (t % 30 < 4) in.keyDown['W'] = true;
+        }
+        pl->healHarry();
+        g.tick(in);
+        if (g.levelNumber() != 8) outAt = t;
+    }
+    if (shownAt < 0) { std::printf("FAIL: the jaguar man never showed itself\n"); ++fails; }
+    if (manAt < 0) { std::printf("FAIL: the jaguar man never swiped in its man form\n"); ++fails; }
+    if (clawAt < 0) { std::printf("FAIL: no claw with the swipe\n"); ++fails; }
+    if (deadAt < 0) { std::printf("FAIL: the jaguar man did not die\n"); ++fails; }
+    if (outAt < 0 || g.levelNumber() != 9) { std::printf("FAIL: Harry did not leave level 8 by the tongue (level %d)\n", g.levelNumber()); ++fails; }
+    std::printf("jaguar man: shown at tick %d, swipe at %d, claw at %d, dead at %d, level 9 at %d\n", shownAt, manAt, clawAt, deadAt, outAt);
     return fails;
 }
 }
