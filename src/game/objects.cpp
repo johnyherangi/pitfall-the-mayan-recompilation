@@ -430,13 +430,14 @@ void debrisPuff(ObjCtx& ctx, Obj& at) {
     ctx.sparkleBurst(at, (ctx.rnd() & 1) ? kSparkleOffsetsB : kSparkleOffsetsA);
 }
 
-bool weaponHits(ObjCtx& ctx, Obj& o, int hitPoints, bool* killed) {
+WeaponHit weaponHit(ObjCtx& ctx, Obj& o, int hitPoints) {
     // 0x424171 (d5 = hitPoints): a stone in flight (DAT_00466808, five slots), else the
     // boomerang (DAT_0046681c), else the whip box hits the object; each adds to o.hits (+0xa).
-    // Returns d1 (something hit); *killed is d0, what the callers' je tests: hits + 1 > d5.
+    // d1: something hit; d0: hits + 1 > d5 (killed); z: the flag a caller's je tests (= !d0 but
+    // for the big stone, which leaves d0 = 1 and the flag of its type compare).
     Harry& h = ctx.harry;
     h.uw(0x466788) = 0;
-    auto done = [&](bool hit, bool k) { if (killed) *killed = k; return hit; };
+    auto done = [&](bool hit, bool k) { WeaponHit r; r.d1 = hit; r.d0 = k; r.z = !k; return r; };
     auto killTest = [&] {                                       // 0x424682
         if (int16_t(hitPoints - (int(o.hits) + 1)) >= 0) {     // 0x4246c7: a hit that does not kill
             ctx.sound1(o.type == 0x42 ? 0x8c : 0xcd, 9);
@@ -452,7 +453,8 @@ bool weaponHits(ObjCtx& ctx, Obj& o, int hitPoints, bool* killed) {
             // flags of the type compare (je taken) and d1 left by FUN_00424af1 (the top of o's box).
             st->b(0x37) = 0xff;
             const ph::SpriteHitbox* b = boxOf(o);
-            return done(b && uint8_t(o.y + b->dy) != 0, false);
+            WeaponHit r; r.d0 = true; r.z = true; r.d1 = b && uint8_t(o.y + b->dy) != 0;
+            return r;
         }
         h.setUl(a, 0);
         if (st->b(0x54) != 0) {                                 // a power shot (d3 = 0xff)

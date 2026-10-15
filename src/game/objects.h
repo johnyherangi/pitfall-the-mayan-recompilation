@@ -197,9 +197,17 @@ void animPeek(ObjCtx& ctx, Obj& o, AnimCursor& cur, const uint8_t* script);
 bool anim2Step(ObjCtx& ctx, Obj& o, int pcOff, int ticksPerFrame);
 bool anim2Step(ObjCtx& ctx, Obj& o, const uint8_t* script, int pcOff, int ticksPerFrame);   // a second script on the same object
 
-// 0x424171: hits from Harry's stones, the boomerang or the whip accumulate in o.hits;
-// returns d1 (something hit this tick), *killed = d0 (hits + 1 > hitPoints; the callers' je).
-bool weaponHits(ObjCtx& ctx, Obj& o, int hitPoints, bool* killed);
+// 0x424171: hits from Harry's stones, the boomerang or the whip accumulate in o.hits.
+// d1: something hit this tick; d0: hits + 1 > hitPoints; z: the flag the callers that branch
+// straight after the call test (z == !d0, but when the big stone passes through: d0 = 1, z set).
+struct WeaponHit { bool d0 = false, d1 = false, z = true; };
+WeaponHit weaponHit(ObjCtx& ctx, Obj& o, int hitPoints);
+// The callers that test d1 (the return) and d0 (*killed).
+inline bool weaponHits(ObjCtx& ctx, Obj& o, int hitPoints, bool* killed) {
+    const WeaponHit r = weaponHit(ctx, o, hitPoints);
+    if (killed) *killed = r.d0;
+    return r.d1;
+}
 // 0x42401c: Harry's sling stones bounce off the object (the bosses while they cannot be hurt).
 bool deflectStones(ObjCtx& ctx, Obj& o);
 // 0x424733: the webs' reaction to the whip and to stones (see h_web / h_verticalWeb).
