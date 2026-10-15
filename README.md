@@ -15,7 +15,7 @@ tools/           phtool.py asset extractor, table generators, genesis_dis.py, Gh
 docs/            FORMATS.md, ENGINE_MAP.md, RECONSTRUCTION_LEDGER.md
 src/ph/          .PH parsers: sprites, backgrounds, levels, palette, sounds
 src/engine/      software renderer, input, options, audio mixer
-src/game/        game driver, camera/parallax, HUD, attract-mode demos
+src/game/        game driver, camera/parallax, HUD, title, attract-mode demos, the game logic
 src/app/         Win32/GDI front end (default) and SDL2 front end (optional)
 src/tools/       phdump command-line tool
 tests/           asset round-trip and gameplay tests
@@ -72,13 +72,11 @@ original's two CD options (the ambient track plays when both are on); without
 the files the game is silent where the CD would play, as the original is
 without its disc.
 
-The **Level** menu loads any of the 25 levels.  Gameplay levels run the
-reconstructed Harry physics on the original collision data (run, jump, fall,
-whip, treasure, exits, deaths) with the original object system: snakes,
-monkeys, condors, flies, bats, rats, spiders, scorpions, boars, tar pits, webs,
-crumbling rocks, branches and checkpoints behave as their decompiled handlers,
-and Ceiba Jungle ends with the jaguar boss fight; screens without collision
-data open in a free-camera explorer mode.
+The game starts as the original: the intro, the title, and while nobody
+presses a key the three attract demos and the intro again with the credits.
+The **Level** menu loads any of the 25 levels directly, the cutscenes (21 the
+intro, 22 the reunion, 23 the end and its credits) and Earthworm Jim's secret
+level 24 included.
 
 ## Tools
 
@@ -107,10 +105,11 @@ sound, CD audio, the level transitions with their fades, the HUD, the
 attract-mode demos) and most of the Genesis-derived game logic are
 reconstructed: Harry's whole state machine, the object system with 140
 behaviour types, the camera and spawner, the triggers and level scripts, every
-boss, the Loltun vaults, the continue screen, the map screen and the Atari 2600
-level.  Still to do: the intro, title animation, credits, ending and reunion
-room logic (levels 15, 21 .. 24), the typed cheat codes and the per-level
-water effects.  See `docs/RECONSTRUCTION_LEDGER.md` for the exact status.
+boss, the Loltun vaults, the continue screen, the map screen, the Atari 2600
+level, the title, the intro, the reunion, the end and its credits.  Still to
+do: the typed cheat codes, the per-level water effects and the original's
+menus and options sheet.  See `docs/RECONSTRUCTION_LEDGER.md` for the exact
+status.
 
 ## Legal
 

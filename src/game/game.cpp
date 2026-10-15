@@ -80,6 +80,7 @@ Game::Game(std::string dataDir, engine::Options& options)
     mixer_.setEnabled(options_.soundEnabled);
     cd_ = engine::CdTracks(dataDir_);                                               // FUN_00441cf0
     setCdVolume(options_.cdVolume);
+    cutData_ = cutsceneInitialData();
     startLevel(kIntro);                                                             // WinMain: FUN_004460e0(0x15)
 }
 
@@ -144,6 +145,9 @@ void Game::startLevel(int level) {
     effectSaved_ = false;
     level_ = std::make_unique<ph::LevelData>(ph::loadLevel(level, dataDir_, palette_));
     fs_ = FrameState{};
+    fs_.mainLayer = level_->hasBg;                       // DAT_00450fcc
+    fs_.parallaxLayer = level_->hasParallax;             // DAT_00450514
+    cloudDrift_ = 0;                                     // FUN_00442410: DAT_00450f94 = 0
     deferred_.clear();
     if (level_->hasBg) {
         // DAT_00450fb8 = (w/2 - 20) * 16, DAT_00450fbc = (h/2 - 14) * 16
@@ -167,9 +171,12 @@ void Game::startLevel(int level) {
         mode_ = Mode::Playing;
     }
     if (autoLogic_) {
-        // Levels with collision data get the playable logic, the rest the explorer; the 2600
-        // level has its own code in the game logic (FUN_00435fc0's 0x401e00).
-        if (!level_->collision.empty() || level == kAtari2600Level || level == kMapScreen) logic_ = std::make_unique<PlayLogic>();
+        // The game logic (FUN_00435fc0) runs every level but the title: the levels with collision
+        // data, and the map, the 2600 level and the cutscenes with their own code.  (The explorer,
+        // a free camera, is left for a level without either; none of the shipped ones.)
+        if (level == kTitleScreen) logic_.reset();          // (FUN_00442410 starts no logic on the title)
+        else if (!level_->collision.empty() || level == kAtari2600Level || level == kMapScreen || (level >= kIntro && level <= kCredits))
+            logic_ = std::make_unique<PlayLogic>();
         else logic_ = std::make_unique<ExplorerLogic>();
     }
     // The level's CD tracks (0x470470 / 0x4704d8; the intro after the demos plays track 5).
@@ -179,6 +186,7 @@ void Game::startLevel(int level) {
     cdPlayTracks();
     cdVolumeCmd_ = 0;
     startKey_ = 0;                                       // FUN_00442410: DAT_0046fb88 = 0
+    if (level == kTitleScreen) titleSetup();
     if (logic_) logic_->enter(*this);
     preTicks(1 + preTickCount(level));                   // FUN_004460e0's end (on the title: no logic, the counters and the pan)
     // Then the first frame (FUN_00443c90) and, but on levels 21 .. 23, the fade in (FUN_0043e810).
@@ -237,6 +245,7 @@ void Game::engineTick() {
     if (levelNo_ != kTitleScreen && logic_) logic_->tick(*this);
     if (exitPending()) fs_.displayList.clear();          // engineExit empties the list (0x43650d)
     computeParallax();
+    titleTick();
 }
 
 void Game::preTicks(int n) {
@@ -535,6 +544,7 @@ void Game::newGame() {
 void Game::tickAttract() {
     // FUN_00443c90's tail after the switch: the title's start key and the attract sequence.
     if (levelNo_ == kTitleScreen) {
+        titleFrame();                                    // (what the frame's composition does first)
         if (fs_.frame < kTitleAcceptInputAfter) {
             fs_.joypad = 0;
             startKey_ = 0;
@@ -558,9 +568,6 @@ void Game::tickAttract() {
             newGame();
             loadLevel(demoScript(demoIndex_).level);
         }
-    } else if (levelNo_ == kIntro && fs_.frame > kTitleAttractFrames) {
-        command("*8");                                   // (a stand-in for the intro's own logic, FUN_00401071)
-        beginCommand();
     }
 }
 
@@ -635,31 +642,55 @@ void Game::composeFrame() {
     deferred_.clear();
 
     if (levelNo_ >= kLoltunVault2 && levelNo_ <= kLoltunVault1) { renderVault(); return; }
-    // Parallax layer first (FUN_00436534).
-    if (level_->hasParallax) {
-        if (levelNo_ == kCeibaJungle || levelNo_ == kLakamulRainForest)
+    const bool cut = snap_.cutscene;                               // DAT_0046fb90: the cutscenes' actors
+    const ph::Background* deferredMap = nullptr;                   // the map of the high-priority tiles kept (DAT_0046b1f8)
+    // FUN_00436534: the parallax map (DAT_00450514).
+    if (snap_.parallaxLayer && level_->hasParallax) {
+        if (levelNo_ == kCeibaJungle || levelNo_ == kLakamulRainForest) {
             renderer_.drawParallaxLinear(level_->parallaxLinear, snap_.parX, snap_.parY,
                                          snap_.lineScroll.empty() ? nullptr : snap_.lineScroll.data(),
                                          int(snap_.lineScroll.size()));
-        else
+        } else if (levelNo_ == kIntro) {
+            // 0x4365e2: the intro's scene is its parallax map, drawn at the main camera (whole rows)
+            // with its high-priority tiles kept for after the actors (FUN_0043731c)
+            const int fine = snap_.scrollX & 7;
+            renderer_.drawWrappedLayer(level_->parallax, snap_.scrollX, snap_.scrollY & ~7, fine, fine, &deferred_);
+            deferredMap = &level_->parallax;
+        } else {
             renderer_.drawParallaxTiles(level_->parallax, snap_.parX, snap_.parY, snap_.scrollX & 7);
+        }
     } else {
         renderer_.clearView(snap_.scrollX);
     }
-    // Main tile layer (FUN_00436fb4).
-    if (levelNo_ == kAtari2600Level && level_->hasBg) renderAtari2600();
-    else if (levelNo_ == kMapScreen && level_->hasBg)                // 0x43718c: the map wraps both ways, no priority list
-        renderer_.drawWrappedLayer(level_->bg, snap_.scrollX, snap_.scrollY, snap_.scrollX & 7, snap_.scrollX & 7, nullptr);
-    else if (level_->hasBg) renderer_.drawTileLayer(level_->bg, view, deferred_);
-    // Sprites, back to front (FUN_004426e0 walks the list from the end).
-    for (auto it = snap_.displayList.rbegin(); it != snap_.displayList.rend(); ++it)
-        if (!(it->flags & engine::kSprFront)) renderer_.drawSprite(*it, view);
-    // High-priority tiles over the sprites, then the "front" sprites (FUN_00442dc0).
-    if (level_->hasBg) renderer_.drawDeferredTiles(level_->bg, deferred_);
-    for (auto it = snap_.displayList.rbegin(); it != snap_.displayList.rend(); ++it)
-        if (it->flags & engine::kSprFront) renderer_.drawSprite(*it, view);
-
+    // FUN_004012d8: the scrolling lines of level 23 (level 21 draws its own later).
+    if (cut && levelNo_ != kIntro) renderScrollText();
+    // FUN_00436fb4: the main map (level 21 draws it last); without one (DAT_00450fcc) the view is cleared.
+    if (levelNo_ != kIntro) {
+        // level 22's second room is the map at DAT_004504f0 (room2_extra)
+        const ph::Background& bg = levelNo_ == kSimonRoom && snap_.reunion && level_->hasExtra ? level_->extra : level_->bg;
+        if (!snap_.mainLayer || !level_->hasBg) renderer_.clearView(snap_.scrollX);
+        else if (levelNo_ == kAtari2600Level) renderAtari2600();
+        else if (levelNo_ == kMapScreen)                           // 0x43718c: the map wraps both ways, no priority list
+            renderer_.drawWrappedLayer(bg, snap_.scrollX, snap_.scrollY, snap_.scrollX & 7, snap_.scrollX & 7, nullptr);
+        else { renderer_.drawTileLayer(bg, view, deferred_); deferredMap = &bg; }
+    }
+    // (FUN_00437ba0, the water of levels 6 and 18, is not ported.)
+    // FUN_004426e0: the title's logo, or the sprites behind, back to front (from the list's end).
     if (levelNo_ == kTitleScreen) renderTitle();
+    else
+        for (auto it = snap_.displayList.rbegin(); it != snap_.displayList.rend(); ++it)
+            if (!(it->flags & engine::kSprFront)) renderer_.drawSprite(*it, view);
+    if (levelNo_ == kTitleScreen) renderTitleRunner();            // FUN_00442bf0
+    if (cut) renderActors(false);                                  // FUN_00401346
+    if (deferredMap) renderer_.drawDeferredTiles(*deferredMap, deferred_);   // FUN_00436b00
+    if (cut && levelNo_ == kIntro) renderScrollText();             // FUN_004012d8 on level 21
+    for (auto it = snap_.displayList.rbegin(); it != snap_.displayList.rend(); ++it)   // FUN_00442dc0: the front sprites
+        if (it->flags & engine::kSprFront) renderer_.drawSprite(*it, view);
+    if (cut) renderActors(true);                                   // FUN_004013f8
+    // FUN_00436fb4 last on level 21 (0x43702c): its vines in front of everything, at the parallax
+    // camera, wrapping (0x4371a5).
+    if (levelNo_ == kIntro && level_->hasBg)
+        renderer_.drawWrappedLayer(level_->bg, snap_.parX, snap_.parY, snap_.parX & 7, snap_.scrollX & 7, nullptr);
     renderHud();                                                   // FUN_00442fa0
     if (paused_ && (timerTicks_ & 0x60) != 0) renderer_.drawText(assets_->font, 0x82, 0x60, "PAUSED", snap_.scrollX);   // TextOutA in the original
 }

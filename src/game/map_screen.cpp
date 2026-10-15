@@ -2,8 +2,8 @@
 // level in DAT_0046b1ac) loads it; FUN_00435fc0 starts it as any level, and the end of the restart
 // (0x432cd6) runs its set-up (0x431c99); FUN_0043628c then runs the joypad and FUN_00432038 in
 // place of the usual tick.  The camera pans along the path from the level left to the next one,
-// a peg every 16 ticks, then the next level's name rises from the bottom; a button (after the
-// first 30 ticks) or 180 ticks at the end go on ("*1", the level DAT_0045050c).
+// a peg every 16 ticks, then the next level's name rises from the bottom; a button or a key
+// (after the first 30 ticks) or 180 ticks at the end go on ("*1", the level DAT_0045050c).
 //
 // The tables: 0x46aa34 the path by the level left, 0x46aa4e the next level by the path, 0x461c44
 // the paths ({x, y, frame | 0x8000 h-flip | 0x4000 v-flip} words, -1 ending one), 0x46a88e the
@@ -184,12 +184,13 @@ void PlayLogic::mapTick() {
     h_.w(0x466550) = 2;
     listAll();                                                // FUN_0043524d, FUN_00435174
     h_.b(0x466554) = 0xff;
-    // the buttons count after 30 ticks (the ones held then are forgotten)
+    // the buttons and the keys (DAT_0046fb88) count after 30 ticks (the ones held then are forgotten)
     if (mapKeysOff_ != 0) {
         if (--mapKeysOff_ != 0) return;
         h_.b(0x466761) = 0; h_.b(0x466762) = 0; h_.b(0x466763) = 0; h_.b(0x466764) = 0;
+        game_->startKey() = 0;
     }
-    if (h_.b(0x466761) || h_.b(0x466762) || h_.b(0x466763) || h_.b(0x466764)) mapExit();
+    if (game_->startKey() || h_.b(0x466761) || h_.b(0x466762) || h_.b(0x466763) || h_.b(0x466764)) mapExit();
 }
 
 void PlayLogic::mapArrived() {

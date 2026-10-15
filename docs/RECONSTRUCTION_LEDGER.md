@@ -31,6 +31,9 @@ decompiled code by a test or a rendered image.
 | Level names, string resources, original icon | PE resources |
 | Per-level parallax camera ratios | `FUN_00443370` switch |
 | Title → demo → intro sequencing, Start handling | `FUN_00443c90` tail |
+| The title (level 15): its set-up and camera (`FUN_00442410`), the runner's frames and the pan (`FUN_00443370`), the logo dropping in, its dust, the stones cracking and breaking away, the blinking prompt, its sounds (`FUN_004426e0`), the runner and the jaguar (`FUN_00442bf0`), no start key before tick 0x3d nor while the stones break | rendered frames; `tests/ph_tests.cpp` (title: the pan from tick 58 to 217, no start at ticks 0x30 and 0x150) |
+| The cutscenes (levels 21 .. 23): the scene code `0x401000 .. 0x401dff` with its scripts, actors, frame scripts and texts from the data section (kept across levels as the original's), the skip key, the credits (twice as fast after an attract, `DAT_0046fb84`), and their drawing (`FUN_00401346`, `FUN_004012d8`, `FUN_004013f8`, level 21's scene drawn as its parallax map with its vines over everything, level 22's second room, level 23's lines behind the jungle) in `FUN_00443c90`'s order | rendered frames of all three; `tests/ph_tests.cpp` (cutscene: the intro's texts, 1-up, camera, shakes and `*8` at their ticks, a key skipping it, the reunion to `*9`, the end's words by the difficulty and the letters, the hand, "[THE END]", a key skipping the credits) |
+| Level 24's Earthworm Jim (the TNT crate's `ew_ready` variant) and the 200-tick countdown to `*6` (`DAT_0046b1b4`) | `tests/ph_tests.cpp` (earthworm: whipped, `*6` 200 ticks later, back to level 3) |
 | `.det`/`.dt2`/`.als`/`.trg` column-list layout, collision shape table | parsed for all levels; the `^` start trigger lands Harry on a `.det` surface |
 | Object template table (als id → sprite, offsets, snap) | `0x4678c4`; pouches/items render on the ground in levels 0/1/3 |
 | Harry run / jump / fall constants and probe offsets | `FUN_00428dfa`, `FUN_00425455`; scripted run clears Ceiba Jungle end to end |
@@ -40,10 +43,10 @@ decompiled code by a test or a rendered image.
 
 | item | what differs |
 |------|--------------|
-| Tile-based parallax for non-forest levels | generic wrapping tile draw at `(parX, parY)`; the original has per-level special cases (waterfall line animation `DAT_00450028..`, level 6/18 water reflection `FUN_00437ba0`, title-screen double layer) |
+| Tile-based parallax for non-forest levels | generic wrapping tile draw at `(parX, parY)`; the original has per-level special cases (the waterfalls' columns of levels 1 / 6 / 18, `0x4366ca` with `DAT_00450028..`, level 7's `0x4366a8`, level 6/18 water reflection `FUN_00437ba0`) and draws the others in whole 8-px rows (but level 9) leaving their see-through pixels as they were (the vaults' and level 21's scene layers are ported as the original) |
 | Forest leaf line-scroll band | 32-entry wave table reproduced by shape, not copied from `DAT_00455010` |
-| Title screen animation | final composition + blink only; the seven logo pieces drop in on frames 0xd2–0x163 (`FUN_004426e0`) |
 | Engine exits inside the logic tick | `engineExit` unwinds the tick at once; the port runs the tick out and skips only its end (`0x4363bd`) |
+| The logic's memory | Harry and the logic's globals (`0x465800 .. 0x4668ff`) start at zero with each level here; the original keeps what the last level left.  The title's jungle sounds (`FUN_00431a67`, whose countdown `DAT_00465b04` and checks of `DAT_00465b72` / `DAT_0046652f` / `DAT_0046652b` are the logic's) keep their own countdown |
 | "PAUSED" | drawn with `TextOutA` in the original, in the 8×8 font here |
 | Audio | software mixer instead of Miles (the samples at Option_WavVolume % of 0x7f, the logic's two channels and their priorities, `FUN_004262d9` / `FUN_004261e2`); the CD's tracks are files ripped from the disc (`TrackNN.wav` / `.ogg`) instead of the disc through MCI, mixed in at the CD volume, with the original's choice of track by level and option, its replay at the end, the stop on a pause, the two-second fade at a level load and the stop-watch's quarter volume; the disc check by track lengths has no equivalent |
 | Options UI | the original property sheet (`PropertySheetA`, "System / Sound / Difficulty / Joystick / Keyboard / Language") is replaced by a menu; settings persist in `pitfall.ini` instead of the registry |
@@ -68,21 +71,21 @@ decompiled code by a test or a rendered image.
 | Weapons | the whip (box table `0x4612e0`), sling stones (type 5) with the power shot's sparkle trail, the big stone (type 4) and its screen-clearing blast (types 0x89 / 0x8a), and the boomerang (types 6 / 0x87: flight path, homing, bounce cells, the return, riding it), each from its handler, the blast's white flash (`DAT_0046b1b0`) included |
 | Triggers | start, exit, plane switch, water, priority 0x30/0x31, invisible walls, lever / door / chute / one-way door scripts, piston phases, pot contents; vaults and swing anchors ignored. The object template's byte 8 is a Genesis sound-channel class (`FUN_004263a6`, a stub in the PC build), not a spawn sound. Trigger id 2 is a wall for objects only (class 3 during each handler, cleared by thrown things) and id 3 a wall for Harry only while he is on the ground, as the original sets them per tick |
 | Death | falling out of the level, water, or the damage meter (enemy contact).  `FUN_00430eb6` as the original: every object goes, the `.als` working copy takes the level's entries back but for the treasures and letters (ids 0x58..0x5c, 0xf0..0xf6), the lever flags 0x466510..21 are cleared, and `*3` starts the logic again in place at the checkpoint (`FUN_00432615`, the level is not loaded again); with the lives out `*0` the continue screen (level 14: the sign, "continues N", the letters found, Harry's match, yes / no) and a continue loads the level again from its start (`*1`), or `*2` the game-over screen for 3 s and the title |
-| Level flow | exit (`0x430912`: the level kept in `DAT_0046b1ac`, `*4`) → the map screen (level 19) → the next level (`*1`), in the original's order 0, 1, 2, 3, 4, 5, 6, 16, 17, 7, 18, 8, 9, 10, and after level 10 the reunion room (22); the vortices lead to the vaults and back (`*51`..`*53`, `*7`) with the level saved and restored as `FUN_004288ec` / `FUN_0043256f` do, and on level 3 to the 2600 level (`*50`, `*6`) |
-| Map screen | level 19 as the original: the set-up at the end of the restart (`0x431c99`: the path by the level left, the pegs of up to three paths before it, the next level), the camera's pan along the path a peg every 16 ticks with its plinks, the jungle sounds (`FUN_00431a67`), the next level's name in `ltr_lg` letters rising at the end, the buttons (after 30 ticks) or 180 ticks going on (`*1`), and its map drawn wrapping both ways (`0x43718c`) |
-| Atari 2600 level | level 20 as the original: its start, screens and their 255 descriptors, the object pass (crocodiles, rolling logs, the scorpion, the vine, pits, swamps, fires, cobras, the 32 treasures), Harry's running, jumping, ladders, walls, holes and the vine, the deaths and the pause after them (`*3`), the clock, the game over and `*6`, the HUD and the copyright line in `chrs2600`, and the screen drawn from the two strips of the map (`0x437078`).  `DAT_0046fb88` (the engine's own start key, which also leaves the game over) is not kept; the pits' palette flags (0x2000 / 0x4000) select Genesis palette lines, which the PC ignores as well |
+| Level flow | exit (`0x430912`: the level kept in `DAT_0046b1ac`, `*4`) → the map screen (level 19) → the next level (`*1`), in the original's order 0, 1, 2, 3, 4, 5, 6, 16, 17, 7, 18, 8, 9, 10, and after level 10 the reunion room (22), the end and its credits (23) and the title; the vortices lead to the vaults and back (`*51`..`*53`, `*7`) with the level saved and restored as `FUN_004288ec` / `FUN_0043256f` do, and on level 3 to the 2600 level (`*50`, `*6`) |
+| Map screen | level 19 as the original: the set-up at the end of the restart (`0x431c99`: the path by the level left, the pegs of up to three paths before it, the next level), the camera's pan along the path a peg every 16 ticks with its plinks, the jungle sounds (`FUN_00431a67`), the next level's name in `ltr_lg` letters rising at the end, the buttons or a key (after 30 ticks) or 180 ticks going on (`*1`), and its map drawn wrapping both ways (`0x43718c`) |
+| Atari 2600 level | level 20 as the original: its start, screens and their 255 descriptors, the object pass (crocodiles, rolling logs, the scorpion, the vine, pits, swamps, fires, cobras, the 32 treasures), Harry's running, jumping, ladders, walls, holes and the vine, the deaths and the pause after them (`*3`), the clock, the game over and `*6`, the HUD and the copyright line in `chrs2600`, and the screen drawn from the two strips of the map (`0x437078`), a button or a key leaving the game over; the pits' palette flags (0x2000 / 0x4000) select Genesis palette lines, which the PC ignores as well |
 
 ## Not ported yet — the rest of the Genesis-derived game logic
 
 The machine-translated 68000 half of the binary (`0x401000–0x437fff`) is ported routine by routine: Harry's
 states, the object system and 140 of its behaviour types, the camera and spawner, the triggers and level
-scripts, the map screen, the 2600 level, the continue screen, the engine's transitions and CD audio.  What is
-left: the intro, title, credits, ending and reunion room logic (levels 15, 21 .. 24; the title's own sounds 0x25 /
-0x29 and its jungle sounds), the typed cheat codes (`0x439868`, e.g. the invincibility of `DAT_0046d054`), the
-per-level water effects of `FUN_00443370` / `FUN_00437ba0`, the window's status bar with the level's name
-(`FUN_00440bc0`), the "loading" dialog of a windowed level load, the original's options property sheet, the real
-disc through MCI in the Win32 front end, and a build with MSVC itself (the Windows build is checked with clang /
-llvm-mingw).
+scripts, the map screen, the 2600 level, the continue screen, the title, the cutscenes, level 24, the engine's
+transitions and CD audio.  What is left: the typed cheat codes (`0x439868`, e.g. the invincibility of
+`DAT_0046d054`), the per-level water effects of `FUN_00443370` / `FUN_00437ba0`, the window's status bar with the
+level's name (`FUN_00440bc0`), the "loading" dialog of a windowed level load, the original's menu (`FUN_0043b920`: a
+new game, the levels to start at, the intro — which clears `DAT_0046fb84` —, the vaults and the 2600 level, help) and
+options property sheet, the real disc through MCI in the Win32 front end, and a build with MSVC itself (the Windows
+build is checked with clang / llvm-mingw).
 
 The Genesis half's own palette fades (`DAT_0046655e` .. `DAT_00466568`: the death colours, the continue screen's
 match, a boss's) are written but never read on the PC (`FUN_004263e3`, the Genesis routine that ran them, is a
@@ -95,5 +98,3 @@ games (the demos advance it too).
 
 * `.trg` ids other than those listed above; `kTriggerClass` semantics.
 * `.als` object *type* handlers for the types listed as not ported.
-* Levels 22/23 have special renderers in `FUN_00436fb4` (levels 19 and 20's are ported: the wrapped map and
-  `Game::renderAtari2600`).

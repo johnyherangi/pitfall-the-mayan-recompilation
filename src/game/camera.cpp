@@ -87,12 +87,6 @@ void Game::computeParallax() {
         break;
     }
     s.scrollY = sy + bob;                            // the shake moves the main layer and the sprites too
-    // Title screen: the camera pans right for the first 0xe6 ticks (FUN_00443370 tail).
-    if (levelNo_ == kTitleScreen && s.frame < 0xe6) {
-        titlePan_ += 4;
-        if (titlePan_ > 0x1e) s.scrollX += 2;
-        if (s.scrollX > s.maxScrollX) s.scrollX = s.maxScrollX;
-    }
 }
 
 } // namespace game

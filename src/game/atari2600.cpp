@@ -45,8 +45,9 @@ const uint8_t* PlayLogic::a26Room() const {
 }
 
 void PlayLogic::a26ClearButtons() {
-    // (and DAT_0046fb88, the engine's own start key, which the port does not keep)
+    // (and DAT_0046fb88, the engine's start key)
     h_.b(0x466761) = 0; h_.b(0x466762) = 0; h_.b(0x466763) = 0; h_.b(0x466764) = 0;
+    game_->startKey() = 0;
 }
 
 void PlayLogic::a26Exit(const char* cmd) {
@@ -218,12 +219,12 @@ void PlayLogic::a26Populate() {
 void PlayLogic::a26Tick() {
     // 0x4020d1
     if (a26End_ != 0) {
-        // 0x4020dd: the game is over; after DAT_00457410 ticks a button goes back ("*6")
+        // 0x4020dd: the game is over; after DAT_00457410 ticks a button or any key goes back ("*6")
         a26Show();
         a26Copyright();
         if (--a26End_ != 0) return;
         a26End_ = 1;
-        if (h_.b(0x466761) == 0 && h_.b(0x466762) == 0 && h_.b(0x466763) == 0 && h_.b(0x466764) == 0) return;
+        if (h_.b(0x466761) == 0 && h_.b(0x466762) == 0 && h_.b(0x466763) == 0 && h_.b(0x466764) == 0 && game_->startKey() == 0) return;
         a26Exit("*6");
         return;
     }

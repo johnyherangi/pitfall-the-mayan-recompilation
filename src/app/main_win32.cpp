@@ -259,7 +259,7 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         if (id == kMenuAbout) {
             MessageBoxW(hwnd, L"Pitfall: The Mayan Adventure\nReconstruction from PITFALL.EXE (Kinesoft / Activision, 1995).\n\n"
                               L"Arrows: move   W: jump   Q: whip   E: shoot   Space: select   Pause: pause\n"
-                              L"Level menu: load any level in explorer mode.", kTitle, MB_OK | MB_ICONINFORMATION);
+                              L"Level menu: load any level.", kTitle, MB_OK | MB_ICONINFORMATION);
             return 0;
         }
         if (id >= kMenuLevelBase && id < kMenuLevelBase + UINT(ph::kLevelCount)) {

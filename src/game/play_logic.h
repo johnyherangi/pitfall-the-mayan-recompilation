@@ -223,6 +223,27 @@ private:
     void epilogue(Game& g);                     // 0x4363bd: the end every path of FUN_0043628c shares
     void meterLive(Game& g);                    // FUN_00435c4e's reads of the logic at the HUD's draw
 
+    // ---- cutscene.cpp: levels 21 .. 23, the intro, the reunion and the end (0x401000 .. 0x401dff) ----
+    void cutFrame(Game& g, int entry);          // levels 21 .. 23 in FUN_0043628c (0) / FUN_004360e9 (1) / FUN_00435fc0 (2)
+    void cutTick();                             // FUN_00401071 / FUN_00401176 / FUN_00401215
+    void cutStart(uint32_t script);             // what the three set-ups share
+    bool cutSkip();                             // FUN_00401000: a key skips the scene
+    void cutScript();                           // the script's opcode, and those it goes on into
+    void cutRoutine(uint32_t a);                // the routine of the actor at a ([a + 0x1c])
+    void cutAnim(uint32_t a);                   // 0x401dbc: the actor's frame script
+    void cutReady(uint32_t a);                  // the runner stands (hyiready), flag 0 up
+    uint32_t cutClear(uint32_t i);              // 0x4015b6: actor i cleared, its address
+    void cutClearAll();
+    uint32_t cutLen(uint32_t va);               // strlen
+    bool afterDemos() const;                    // DAT_0046fb84
+    // The scenes' data at its original addresses (0x456000 .. 0x4569df, 0x4699a4 .. 0x46a859),
+    // little-endian; Game::cutsceneData keeps it.
+    uint8_t& cb(uint32_t va);
+    uint32_t cl(uint32_t va);
+    void setCl(uint32_t va, uint32_t v);
+    uint16_t cw(uint32_t va);
+    void setCw(uint32_t va, uint16_t v);
+
     // ---- map_screen.cpp: level 19 (0x431c99, FUN_00432038) ----
     void mapSetup();                            // 0x431c99, the end of the restart on level 19
     void mapTick();                             // FUN_00432038
@@ -259,7 +280,11 @@ private:
     bool specialExited_ = false;     // engineExit was taken this tick (the 2600 level, the map screen)
     int32_t mapEnd_ = 0;             // DAT_004601c0: the ticks the map waits at the end of its path
     uint32_t mapNamed_ = 0;          // DAT_0046a87c: the next level's name is up
-    uint32_t mapKeysOff_ = 0;        // DAT_0046a88a: the ticks before the buttons count
+    uint32_t mapKeysOff_ = 0;        // DAT_0046a88a: the ticks before the buttons count (the map, the cutscenes)
+    bool cutExited_ = false;         // a cutscene's actor 9 took engineExit this tick
+    uint32_t endTimer_ = 0;          // DAT_0046b1b4: level 24's countdown to "*6" (ew_ready was hit)
+public:
+    void startEnding() { endTimer_ = 200; }   // 0x40e1d7
 };
 
 // Item handler (type 2, 0x405328) effect table at 0x45a8d4: sprite -> effect.

@@ -18,6 +18,7 @@
 #include "ph/level.h"
 #include "ph/palette.h"
 
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -56,8 +57,17 @@ struct FrameState {
     // DAT_00451914 (the score, at most 999999), DAT_00451804 (the lives less one), DAT_00451a28
     // (the treasures), DAT_00451938 (the weapon), DAT_00451908 (its ammunition, at most 99).
     int hudScore = 0, hudLives = 0, hudTreasures = 0, hudWeapon = 0, hudAmmo = 0;
+    int camX = 0, camY = 0;              // DAT_004658b4 / b6: the logic's camera (scrollY has the shake added)
     int frame = 0;                       // DAT_0045190c (ticks since level start)
     int globalFrame = 0;                 // DAT_0046fb74
+    // The layers the level has (FUN_004460e0); the cutscenes' 0x40160e turns both off.
+    bool mainLayer = true;               // DAT_00450fcc: FUN_00436fb4 draws the map, else clears the view
+    bool parallaxLayer = true;           // DAT_00450514: FUN_00436534 draws the parallax map
+    // The cutscenes (levels 21 .. 23, game/cutscene.cpp): their ten actors of 0x40 bytes at
+    // 0x45623f, which FUN_00443c90 copies to 0x4564bf for the frame while DAT_0046fb90 is set.
+    bool cutscene = false;               // DAT_0046fb90
+    std::array<uint8_t, 0x280> cutActors{};
+    bool reunion = false;                // DAT_00456049: level 22's second room (its map at DAT_004504f0)
 };
 
 struct PlayerStats {
@@ -181,6 +191,13 @@ public:
     // 0x41ff20: the collected 1-up reaches the lives (type 0xaa): mi_life's 1-up animation.
     void lifeIconOneUp() { hudAnim_.oneUp = true; hudAnim_.oneUpStart = logicTicks_; }
     bool invincible() const { return invincible_; }   // DAT_0046d054: the typed cheat (0x439868) clears the damage each tick
+    uint8_t& startKey() { return startKey_; }         // DAT_0046fb88: a key went down (WM_KEYDOWN, a held key repeats)
+    // DAT_0046fb84: the attract loaded the intro (track 5, the credits after it); only the menu's
+    // new game (0x9c64) clears it, so the end's credits scroll twice as fast after an attract.
+    bool introAfterDemos() const { return introAfterDemos_; }
+    // 0x456000 .. 0x4569df and 0x4699a4 .. 0x46a859: the cutscenes' scripts, texts and state
+    // (game/cutscene.cpp), kept across levels as the original's data section.
+    std::vector<uint8_t>& cutsceneData() { return cutData_; }
 
 private:
     void computeParallax();            // FUN_00443370 per-level switch
@@ -188,7 +205,15 @@ private:
     void composeFrame();               // FUN_00443c90's drawing
     void renderHud();                  // FUN_00442fa0
     void hudMeter(engine::SpriteInstance& croc, engine::SpriteInstance& life, int top);   // FUN_00435d45
-    void renderTitle();                // FUN_004426e0 title animation
+    void titleFrame();                 // FUN_004426e0's title branch and FUN_00442bf0 before they draw
+    void renderTitle();                // FUN_004426e0's title branch: the logo, its dust and stones
+    void renderTitleRunner();          // FUN_00442bf0: Harry runs in, later the jaguar runs out
+    void titleSetup();                 // FUN_00442410 on the title
+    void titleTick();                  // FUN_00443370's tail: the runner's frames and the camera's pan
+    void titleAmbient();               // FUN_00431a67 as the title calls it (the logic does not run there)
+    void renderActors(bool front);     // FUN_00401346 (the actors behind) / FUN_004013f8 (texts, actors in front)
+    void renderScrollText();           // FUN_004012d8: the scrolling lines (levels 21 and 23)
+    void drawBigText(int y, const char* s);   // FUN_00431bfb: ltr_lg letters centred on x 0xa0, y of the screen
     void renderVault();                // FUN_00443c90's layer order on the Loltun vaults
     void renderAtari2600();            // FUN_00436fb4 at 0x437078: the 2600 level's screen
     void renderGameOver();             // "*2": 0x44426b
@@ -226,7 +251,22 @@ private:
     uint32_t demoButtons_ = 0;         // DAT_0046fb94
     int cloudDrift_ = 0;               // DAT_00450f94 accumulator for drifting layers
     int ruinsCounter_ = 0;             // DAT_004517e0
-    int titlePan_ = 0;                 // DAT_00451a10
+    // The title (FUN_00442410 / FUN_00443370 / FUN_004426e0 / FUN_00442bf0): records of
+    // {x, y, sprite, frame, flags} at 0x451810 (the logo), 0x451830 / 0x451850 (its dust),
+    // 0x451870 .. 0x4518d0 (the four stones under it) and 0x451a10 (the runner, later the jaguar).
+    struct TitleSprite { int32_t x = 0, y = 0; uint32_t slot = 0; uint32_t frame = 0; uint8_t flags = 0; };
+    TitleSprite titleLogo_[7];
+    TitleSprite titleRunner_;
+    int titleScript_ = 0;              // DAT_00451984: the runner's frame script (0x46fa50), a dword index
+    int32_t titleFrame_ = 0;           // DAT_0046fa80: the runner's frame, every 5 ticks
+    int32_t titleFrameShown_ = 0;      // DAT_0046fa84: ... as the frame took it
+    uint32_t titleSlot_ = 0;           // DAT_00451800: the runner's sprite (the script's -2 changes it)
+    uint32_t titleSlotShown_ = 0;      // DAT_00451934
+    int titleCount_ = 0;               // DAT_0046fa7c: ticks since the last frame (counted on every level)
+    bool titleShine_ = false;          // DAT_0046fa3c: the stones' last frame is up
+    bool titleSoundA_ = false;         // DAT_0046fa40: the logo's sound 0x25 (later the jaguar's 0x10) played
+    bool titleSoundB_ = false;         // DAT_0046fa44: ... 0x29 (later 0x2a)
+    int16_t titleAmbientWait_ = 0;     // DAT_00465b04, which FUN_00431a67 counts down
     uint32_t logicTicks_ = 0;          // DAT_004601d9
     uint32_t lastLandTick_ = 0;        // DAT_004601d5
     uint32_t timerTicks_ = 0;          // DAT_00450fa8: the 17 ms timer's callbacks (FUN_004448c0), paused or not
@@ -287,8 +327,12 @@ private:
     bool effectSaved_ = false;
     std::array<ph::Rgb, 256> effectBackup_{};
     std::vector<engine::DeferredTile> deferred_;
+    std::vector<uint8_t> cutData_;
     bool quit_ = false;
 };
+
+std::vector<uint8_t> cutsceneInitialData();   // game/cutscene.cpp: the data section's bytes
+const char* cutsceneText(uint32_t va);        // a cutscene's string by its address ("" elsewhere)
 
 // Attract-mode demo scripts recorded in the original (data at 0x46fbc0..).
 struct DemoScript {

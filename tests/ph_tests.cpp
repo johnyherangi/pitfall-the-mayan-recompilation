@@ -96,7 +96,8 @@ namespace { int jaguarTest(const std::string& dir); int bungeeTest(const std::st
             int stoneJaguarTest(const std::string& dir); int jaguarManTest(const std::string& dir);
             int warriorSpiritTest(const std::string& dir); int atari2600Test(const std::string& dir);
             int mapScreenTest(const std::string& dir); int continueTest(const std::string& dir);
-            int transitionTest(const std::string& dir); int musicTest(const std::string& dir); }
+            int transitionTest(const std::string& dir); int musicTest(const std::string& dir);
+            int cutsceneTest(const std::string& dir); int titleTest(const std::string& dir); int earthwormTest(const std::string& dir); }
 namespace {
 // The engine's blocking parts run out: a command's fades and waits, a level load's fade in.
 int settle(game::Game& g, int cap = 1000) {
@@ -155,6 +156,9 @@ int gameplayTests(const std::string& dir) {
     fails += continueTest(dir);
     fails += transitionTest(dir);
     fails += musicTest(dir);
+    fails += cutsceneTest(dir);
+    fails += titleTest(dir);
+    fails += earthwormTest(dir);
     return fails;
 }
 }
@@ -1057,6 +1061,186 @@ int musicTest(const std::string& dir) {
     }
     std::printf("music: track 5 at the load, the map at %d after a fade of %d steps\n", mapAt, quieter);
     std::filesystem::remove_all(tmp);
+    return fails;
+}
+}
+
+// The cutscenes (levels 21 .. 23, game/cutscene.cpp).  The boot's intro runs its script to "*8":
+// its texts, Harry Jr. running in with the camera after him, the 1-up, the shadow's stamps shaking
+// the screen, "DAAAD!" and his run off to the left; a key once the first 30 ticks and the fade in
+// are over skips to its end.  The reunion runs to "*9" through its second room; the end's words
+// (by the difficulty and the letters found) wait for a key, then the hand rises and the credits
+// scroll ("[THE END]" first), which a key skips.
+namespace {
+std::string actorText(game::Game& g, int i) {
+    const uint8_t* a = g.state().cutActors.data() + i * 0x40;
+    uint32_t r, s;
+    std::memcpy(&r, a + 0x1c, 4);
+    std::memcpy(&s, a + 0x24, 4);
+    return r == 0x4014e4 || r == 0x40157f ? game::cutsceneText(s) : "";
+}
+uint32_t actorLong(game::Game& g, int i, int off) {
+    uint32_t v;
+    std::memcpy(&v, g.state().cutActors.data() + i * 0x40 + off, 4);
+    return v;
+}
+int cutsceneTest(const std::string& dir) {
+    int fails = 0;
+    engine::HostInput idle, key;
+    key.keyDown[' '] = true;
+    {
+        engine::Options opts;
+        game::Game g(dir, opts);                          // WinMain loads the intro
+        int deep = -1, temple = -1, oneUp = -1, dad = -1, shake = -1, daaad = -1, title = -1, camMax = 0, shakes = 0;
+        for (int t = 0; t < 2000 && title < 0; ++t) {
+            g.tick(idle);
+            if (deep < 0 && actorText(g, 0) == "DEEP IN THE MAYAN JUNGLE") deep = t;
+            if (temple < 0 && actorText(g, 1) == "OF UAXACTUN") temple = t;
+            if (oneUp < 0 && actorLong(g, 1, 8) == 0x470248) oneUp = t;
+            if (dad < 0 && actorText(g, 2) == "DAD, CHECK IT OUT") dad = t;
+            if (g.state().bob != 0) { if (shake < 0) shake = t; ++shakes; }
+            if (daaad < 0 && actorText(g, 2) == "DAAAD!") daaad = t;
+            camMax = std::max(camMax, g.state().camX);
+            if (g.levelNumber() == 15) title = t;
+        }
+        // (the script: 1 + 32 ticks of fade in, wait 100, the jungle's sounds, then the first text)
+        if (deep != 133 || temple != 355 || oneUp != 667 || dad != 768 || camMax != 63 || shakes != 32 || shake < 1000 || daaad < shake ||
+            title < 1420 || title > 1432) {
+            std::printf("FAIL: intro: texts at %d / %d / %d / %d, 1-up at %d, camera to %d, %d shakes from %d, title at %d\n",
+                        deep, temple, dad, daaad, oneUp, camMax, shakes, shake, title);
+            ++fails;
+        }
+        std::printf("intro: texts at %d / %d / %d / %d, 1-up at %d, camera to %d, %d shakes from %d, title at %d\n",
+                    deep, temple, dad, daaad, oneUp, camMax, shakes, shake, title);
+    }
+    {
+        engine::Options opts;
+        game::Game g(dir, opts);
+        for (int t = 0; t < 40; ++t) g.tick(idle);
+        g.tick(key);
+        int title = -1;
+        for (int t = 0; t < 20 && title < 0; ++t) { g.tick(idle); if (g.levelNumber() == 15) title = t; }
+        if (title != 0) { std::printf("FAIL: intro: a key at tick 43 skipped it to the title at %d\n", title); ++fails; }
+    }
+    {
+        engine::Options opts;
+        game::Game g(dir, opts);
+        g.setMode(game::Mode::Playing);
+        g.startLevel(22);
+        int dad = -1, reunion = -1, son = -1, credits = -1, camMax = 0;
+        for (int t = 0; t < 2000 && credits < 0; ++t) {
+            g.tick(idle);
+            if (dad < 0 && actorText(g, 1) == "DAD!") dad = t;
+            if (reunion < 0 && g.state().reunion) reunion = t;
+            if (son < 0 && actorText(g, 1) == "SON, WHAT TOOK YOU") son = t;
+            camMax = std::max(camMax, g.state().camX);
+            if (g.levelNumber() == 23) credits = t;
+        }
+        if (dad < 385 || dad > 400 || reunion <= dad || son <= reunion || credits - son != 302 || camMax != 440) {
+            std::printf("FAIL: reunion: \"DAD!\" at %d, the second room at %d, \"SON\" at %d, credits at %d, camera to %d\n", dad, reunion, son, credits, camMax);
+            ++fails;
+        }
+        std::printf("reunion: \"DAD!\" at %d, the second room at %d, \"SON\" at %d, credits at %d\n", dad, reunion, son, credits);
+    }
+    {
+        engine::Options opts;
+        opts.difficulty = 1;
+        game::Game g(dir, opts);
+        g.setMode(game::Mode::Playing);
+        g.stats().letters = 0x7f;
+        g.startLevel(23);
+        for (int t = 0; t < 400; ++t) g.tick(idle);
+        int letters = 0;
+        for (int i = 3; i < 10; ++i) letters += actorLong(g, i, 8) == 0x470270;
+        if (actorText(g, 0) != "you have survived hard mode..." || actorText(g, 1) != "time for a photo to" ||
+            actorText(g, 2) != "document your triumph." || letters != 7 || g.levelNumber() != 23 || g.state().camY != 0x20) {
+            std::printf("FAIL: end: \"%s\" / \"%s\" / \"%s\", %d letters, level %d, camera y %d\n", actorText(g, 0).c_str(), actorText(g, 1).c_str(),
+                        actorText(g, 2).c_str(), letters, g.levelNumber(), g.state().camY);
+            ++fails;
+        }
+        g.tick(key);
+        int handUp = -1, handCam = -1, theEnd = -1, title = -1;
+        for (int t = 0; t < 2000 && title < 0; ++t) {
+            g.tick(t == 700 ? key : idle);
+            if (handUp < 0 && g.cutsceneData()[0x22f] == 1) { handUp = t; handCam = g.state().camY; }
+            for (int i = 0; i < 10; ++i) if (theEnd < 0 && actorText(g, i) == "[THE END]") theEnd = t;
+            if (g.levelNumber() == 15) title = t;
+        }
+        // (clear all, wait 30, the hand rises 0.375 px a tick for 200 ticks, the camera 0.125 px)
+        if (handUp != 229 || handCam != 7 || theEnd != 291 || title != 701) {
+            std::printf("FAIL: end: the hand up at %d (camera y %d), \"[THE END]\" at %d, skipped to the title at %d\n", handUp, handCam, theEnd, title);
+            ++fails;
+        }
+        std::printf("end: the words and the letters, the hand up at %d, \"[THE END]\" at %d, skipped at %d\n", handUp, theEnd, title);
+    }
+    return fails;
+}
+
+// The title (level 15): the camera starts at (0, 0x10) and pans 2 px a tick from the runner's x
+// 0x1f to the map's edge; the logo drops in at its tick 0xd3; no key counts before tick 0x3d, nor
+// while the stones break away (0x146 .. 0x162); the jaguar runs at 0x1f5.
+int titleTest(const std::string& dir) {
+    int fails = 0;
+    engine::Options opts;
+    game::Game g(dir, opts);
+    g.setMode(game::Mode::Playing);
+    g.startLevel(15);
+    settle(g);
+    engine::HostInput idle, key;
+    key.keyDown[' '] = true;
+    int panStart = -1, panEnd = -1, started = -1;
+    const int y0 = g.state().scrollY;
+    for (int t = 0; t < 0x200 && started < 0; ++t) {
+        const int f = g.state().frame + 1;
+        const bool press = f == 0x30 || f == 0x150;   // too early, and during the stones
+        const int x = g.state().scrollX;
+        g.tick(press ? key : idle);
+        if (g.transitionActive()) { started = f; break; }
+        g.render();
+        if (panStart < 0 && g.state().scrollX != x) panStart = g.state().frame;
+        if (panEnd < 0 && g.state().scrollX == g.state().maxScrollX) panEnd = g.state().frame;
+    }
+    g.tick(key);
+    const bool startsAfter = g.transitionActive();
+    if (y0 != 0x10 || panStart != 58 || panEnd != 217 || started != -1 || !startsAfter) {
+        std::printf("FAIL: title: camera y %d, pans from tick %d to %d, started by a key at %d, a key later starts %d\n", y0, panStart, panEnd, started, startsAfter);
+        ++fails;
+    }
+    std::printf("title: the camera pans from tick %d to %d; no start at ticks 0x30 and 0x150\n", panStart, panEnd);
+    return fails;
+}
+
+// Level 24, the secret level "*50" leads to with the cheat: its crate is Earthworm Jim (ew_ready,
+// 0x40e18d).  Whipped from his right he blows up like a crate (999 points, Harry thrown right,
+// still on the ledge) and 200 ticks later FUN_0043628c leaves with "*6": back to the Lost City
+// of Copan as from the 2600 level.
+int earthwormTest(const std::string& dir) {
+    int fails = 0;
+    engine::Options opts; opts.allowCheat = true;
+    game::Game g(dir, opts);
+    g.setMode(game::Mode::Playing);
+    g.newGame();
+    g.warp().returnLevel = 0xb;                           // as "*50" leaves it
+    g.startLevel(24);
+    settle(g);
+    game::PlayLogic* pl = game::g_debugLogic;
+    flyTo(g, pl, 1390, 862);
+    engine::HostInput idle, left, whip;
+    left.keyDown[0x25] = true; whip.keyDown['Q'] = true;
+    for (int t = 0; t < 33; ++t) g.tick(t < 30 ? idle : left);   // land, face left
+    const int score0 = g.stats().score;
+    int hit = -1, left24 = -1;
+    for (int t = 0; t < 400 && left24 < 0; ++t) {
+        g.tick(hit < 0 && t % 20 < 2 ? whip : idle);
+        if (hit < 0 && g.stats().score == score0 + 999) hit = t;
+        if (left24 < 0 && g.exitPending()) left24 = t;
+    }
+    settle(g);
+    if (hit < 0 || left24 - hit != 200 || g.levelNumber() != 3 || g.stats().lives != 4) {
+        std::printf("FAIL: earthworm: hit at %d, left at %d, level %d, lives %d\n", hit, left24, g.levelNumber(), g.stats().lives);
+        ++fails;
+    }
+    std::printf("earthworm: whipped at %d, \"*6\" at %d, back to level %d\n", hit, left24, g.levelNumber());
     return fails;
 }
 }

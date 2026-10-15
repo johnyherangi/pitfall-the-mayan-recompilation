@@ -1,6 +1,4 @@
-// Heads-up display and title overlay.
-//   renderHud   - port of FUN_00442fa0 (score, lives, weapon, ammo)
-//   renderTitle - simplified FUN_004426e0 title animation
+// Heads-up display: FUN_00442fa0 (score, lives, weapon, ammo) and its meter FUN_00435d45.
 #include "game/game.h"
 
 #include <algorithm>
@@ -115,23 +113,6 @@ void Game::renderHud() {
         std::snprintf(fps, sizeof fps, "%3d", snap_.frame);
         renderer_.drawText(assets_->font, 0x78, 0x10, fps, sx);
     }
-}
-
-void Game::renderTitle() {
-    // FUN_004426e0 (level 0xf branch): the logo sprites drop in, then the
-    // "PRESS ANY KEY TO START" prompt blinks.  Only the final composition is
-    // reproduced here; the drop-in timings are listed in the ledger.
-    const int t = snap_.frame;
-    engine::View view{snap_.scrollX, snap_.scrollY};
-    if (t > 0xd2) {
-        engine::SpriteInstance logo;
-        logo.sprite = findSprite("pitfall");
-        logo.x = snap_.scrollX + 0xa0;
-        logo.y = (t < 0xe1) ? t * 8 - 0x698 : snap_.scrollY + 0x68;
-        logo.flags = engine::kSprVisible;
-        renderer_.drawSprite(logo, view);
-    }
-    if (t > 0x172 && (t & 0x20)) renderer_.drawText(assets_->font, 0x48, 0xbe, "PRESS ANY KEY TO START", snap_.scrollX);
 }
 
 } // namespace game

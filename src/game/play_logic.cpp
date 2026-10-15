@@ -48,6 +48,9 @@ void PlayLogic::enter(Game& g) {
     boss_ = nullptr;
     std::memset(trgRam_, 0, sizeof trgRam_);
     h_.l(0x466535) = level_;
+    endTimer_ = 0;                                             // DAT_0046b1b4
+    g.state().displayList.clear();                             // DAT_0046aa90 = 0x46aa94
+    if (level_ >= kIntro && level_ <= kCredits) { cutFrame(g, 2); return; }   // FUN_00435fc0: 0x401071 / 0x401176 / 0x401215
     if (level_ == kAtari2600Level) { a26Frame(g, 2); return; }   // FUN_00435fc0: 0x401e00
     if (g.warp().fromAtari) h_.b(0x465b39) = 0xff;            // (before the level start: the checkpoint stays)
     levelStart();                                              // FUN_0043256f
@@ -61,6 +64,9 @@ void PlayLogic::restart(Game& g) {
     // FUN_004360e9 ("*3"): the level logic starts again at the checkpoint; the level is not
     // loaded again, so the .als working copy keeps what FUN_00430eb6 left in it.
     game_ = &g;
+    endTimer_ = 0;                                             // DAT_0046b1b4
+    g.state().displayList.clear();                             // DAT_0046aa90 = 0x46aa94
+    if (g.levelNumber() >= kIntro && g.levelNumber() <= kCredits) { cutFrame(g, 1); return; }
     if (g.levelNumber() == kAtari2600Level) { a26Frame(g, 1); return; }   // 0x401f3c
     deathTimer_ = 0;
     restartAtCheckpoint();                                     // FUN_00432615
@@ -318,6 +324,16 @@ void PlayLogic::tick(Game& g) {
     h_.w(0x4667a8) = int16_t(fs.hudSlide);                 // 0x4362ad: the slide as the engine has it (the pre-ticks put it back)
     if (fs.joypad == 0xff) { g.command("*2"); return; }    // 0x4362cd: a demo ended (a key, or its script)
     if (level_ == kAtari2600Level) { a26Frame(g, 0); return; }   // 0x436224: FUN_004263f3, 0x4020d1
+    if (level_ >= kIntro && level_ <= kCredits) {              // 0x436233 ..: FUN_004263f3, then the scene
+        fs.displayList.clear();
+        cutFrame(g, 0);
+        return;
+    }
+    if (level_ == kEnding && endTimer_ != 0 && --endTimer_ == 0) {   // 0x436260: ew_ready was hit 200 ticks ago
+        fs.displayList.clear();
+        g.command("*6");
+        return;
+    }
     if (level_ == kMapScreen) {                            // 0x436215: FUN_004263f3, FUN_00432038
         fs.displayList.clear();
         specialExited_ = false;
@@ -360,6 +376,8 @@ void PlayLogic::epilogue(Game& g) {
     FrameState& fs = g.state();
     fs.scrollX = h_.w(0x4658b4);
     fs.scrollY = h_.w(0x4658b6);
+    fs.camX = fs.scrollX;
+    fs.camY = fs.scrollY;
     fs.bob = h_.w(0x465b02);
     ++g.logicTicks();                                      // DAT_004601d9
     if (g.invincible()) h_.damage() = 0;                   // DAT_0046d054

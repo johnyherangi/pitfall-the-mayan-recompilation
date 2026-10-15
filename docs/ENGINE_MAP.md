@@ -37,12 +37,16 @@ function boundaries are unreliable there; the full decompilation is kept in
 | `0x447190`   | per-level sprite load order                            | `ph::levelSprites()`                  |
 | `0x43ce10`   | WAIL32 (Miles) init + sound bank load                  | `ph::loadInit` (sounds), `engine::Mixer` |
 | `0x43cc10`   | play sound id                                          | `Game::playSound`                     |
-| `0x436fb4`   | tile layer renderer (41×29 tiles, deferred hi-priority) | `Renderer::drawTileLayer`            |
+| `0x436fb4`   | tile layer renderer (41×29 tiles, deferred hi-priority); without a map (`DAT_00450fcc`) it clears the view; level 22's second room is the map at `DAT_004504f0` (`room2_extra`); level 21 draws its map last, wrapping, at the parallax camera | `Renderer::drawTileLayer`, `Game::composeFrame` |
 | `0x436b00` / `0x436b2c` | deferred tile drain / one tile (flips, see-through) | `Renderer::drawDeferredTiles`, `Renderer::drawTile` |
 | `0x437078` / `0x437128` | `FUN_00436fb4` on level 20: the 2600 screen, two 40-tile strips of the map picked by the screen's descriptor | `Game::renderAtari2600`, `Renderer::drawTileStrip` |
-| `0x436534`   | parallax renderer (line-scrolled bitmap / tiles)       | `Renderer::drawParallaxLinear/Tiles`  |
+| `0x436534`   | parallax renderer (line-scrolled bitmap / tiles); the vaults and level 21 draw their scene as the parallax map at the main camera with its priority tiles kept (`FUN_0043731c`) | `Renderer::drawParallaxLinear/Tiles`, `Renderer::drawWrappedLayer` |
 | `0x438140`   | RLE sprite blitter, 4 flip variants                    | `Renderer::drawSprite`                |
-| `0x4426e0`   | display-list walk (+ title animation)                  | `Game::render`, `Game::renderTitle`   |
+| `0x4426e0`   | display-list walk; on the title, the logo, its dust and the stones under it (and their sounds, the start key off while they break) | `Game::composeFrame`, `Game::titleFrame`, `Game::renderTitle` |
+| `0x442410`   | a level's start at the end of its load: the title's records and camera (0, 0x10), else the logic (`FUN_00435fc0`) | `Game::titleSetup`, `Game::startLevel` |
+| `0x442bf0`   | the title's runner (ticks 0x15 .. 0xdb, his steps) and jaguar (0x1f5 .. 0x257, its growls) | `Game::titleFrame`, `Game::renderTitleRunner` |
+| `0x431bfb`   | a line of `ltr_lg` letters centred on x 0xa0 ("[GAME OVER]", the credits' headings) | `Game::drawBigText`, `Game::renderGameOver` |
+| `0x401346` / `0x4012d8` / `0x4013f8` | the cutscenes' passes: the actors behind, the scrolling lines, the texts and the actors in front | `Game::renderActors`, `Game::renderScrollText` |
 | `0x442dc0`   | "front" sprites after hi-priority tiles                | `Game::render` second pass            |
 | `0x4387c0`   | raw cell draw (font / digits)                          | `Renderer::drawCell`                  |
 | `0x442600`   | text drawing                                           | `Renderer::drawText`                  |
@@ -81,12 +85,16 @@ function boundaries are unreliable there; the full decompilation is kept in
 | `0x462694`   | hard, set each tick from `DAT_0046fb78` (normal while a demo plays) | `Game::hardMode()` |
 | `0x46fb74`   | global tick counter                      | `FrameState::globalFrame`    |
 | `0x46fbbc` / `0x46fb8c` | demo index / demo position     | `Game::demoIndex_/demoPos_`  |
-| `0x46d050`   | paused                                   | `Mode::Paused`               |
+| `0x46d050`   | paused                                   | `Game::paused_`              |
 | `0x46b1a8`   | pending "*n" level-transition command string | `Game::exitCmd_` (`Game::command`) |
 | `0x46b1b0`   | the logic's palette brightness (0xc0 the big stone's flash; 0x10 back to 0 a tick) | `Game::brightness_` |
 | `0x452770` / `0x452768` / `0x45276c` / `0x46dc2c` | the brightness as the frame took it / as applied / the colours kept / their copy | `Game::shownBrightness_ / appliedBrightness_ / effectSaved_ / effectBackup_` |
 | `0x46d41c` / `0x452c58` | the LOGPALETTE / DIB colour table: what the screen shows (the fades write them alone) | `ph::Palette::shown` |
-| `0x46fb88`   | a key went down (`WM_KEYDOWN`, any but F1, Esc, Pause): the title's start | `Game::startKey_` |
+| `0x46fb88`   | a key went down (`WM_KEYDOWN`, any but F1, Esc, Pause): the title's start, the cutscenes' skip and key, the map's and the 2600 end's way on | `Game::startKey()` |
+| `0x46fb84`   | the attract loaded the intro (track 5, the credits after it at twice the speed); only the menu's intro (0x9c64) clears it | `Game::introAfterDemos_` |
+| `0x450fcc` / `0x450514` | the level has a map / a parallax map (`FUN_004460e0`; the cutscenes' `0x40160e` clears both) | `FrameState::mainLayer / parallaxLayer` |
+| `0x456000` .. `0x4569df` | the cutscenes' data: the script's cursor, the wait's count (`0x456004`), the exit's string (`0x456008`), flags, texts, frame scripts, the ten actors (`0x45623f`, the frame's copy at `0x4564bf`), the scripts (`0x456753` ..) | `Game::cutsceneData`, `PlayLogic::cb` |
+| `0x46fb90`   | the cutscenes' actors are drawn | `FrameState::cutscene` |
 | `0x453080`   | palette entry flags                      | `ph::Palette::flags_`        |
 | `0x4503c0`   | local→global colour remap table          | `ph::Palette::remap_`        |
 | `0x46d3e8`   | 448×256 DIB bits                         | `engine::Framebuffer`        |
@@ -118,6 +126,14 @@ from where the logic's start left it (0x2d) whatever they did.
 Title → attract: after 0x5a0 ticks play demo 0 (level 0), demo 1 (level 1),
 demo 2 (level 20 — the Atari 2600 easter-egg level), then the intro (21); `DAT_0046fbbc` (the demo index) is -1 in
 the data section, so the first demo is demo 0, and each demo starts a new game (`FUN_004324c6`, 0x44484d).
+
+`FUN_00443c90` composes a frame in this order: the parallax map (`DAT_00450514`; levels 0 / 5 line-scrolled, the vaults
+and level 21 as their scene at the main camera with priority tiles), the cutscenes' scrolling lines on level 23, the
+map (not on the vaults nor level 21; cleared without one), the water of levels 6 / 18, the display list's sprites
+behind (on the title: its logo, dust and stones instead), the title's runner, the cutscenes' actors behind, the
+priority tiles, the scrolling lines on level 21, the sprites in front, the cutscenes' texts and actors in front, the
+map last on the vaults (their ceiling) and level 21 (its vines), the HUD, "PAUSED".  Then come the command switch and
+the title's start key and attract (`0x44476e`), so the stones' clearing of the start key comes before its test.
 
 ## Genesis half — symbols decoded so far
 
@@ -228,6 +244,70 @@ pops the return address and jumps to `0x401f3c`, so the next screen starts and r
 old screen's display entries stay first in the list for that frame); and a jump's start jumps back to `0x4036fc`, so
 Harry's code runs twice that tick.  `DAT_00465b02` is 0x10 throughout, which `FUN_00434eef` takes off the y: the
 sprites sit at their y.
+
+## The title (level 15, `src/game/title.cpp`)
+
+The title runs no logic.  `FUN_00442410` sets its records ({x, y, sprite, frame, flags}): the logo (`Pitfall`, hidden),
+two dust clouds (`fxrdust2` at x 0x170 / 0x24f), four stones (`fx_logo` at x 0x1a4 .. 0x219, y 0x92; the second and the
+fourth upside down) and the runner (`hyirun` at x -200), and the camera at (0, 0x10).  `FUN_00443370` gives the runner
+the next frame of `0x46fa50` every fifth tick and, for the first 0xe6 ticks, moves him 4 px a tick and the camera 2 px
+from his x 0x1f to the map's edge.  As it draws, `FUN_004426e0` (from tick 0x3d) plays the logo's sounds 0x25 / 0x29
+on channel 1 (once: `DAT_0046fa40` / `44` are only cleared again by the jaguar, which sets them again with its own),
+drops the logo in from tick 0xd3 (8 px a tick to y 0x68 below the camera), shows the dust from 0xe1 to 0x103, cracks
+the stones one after another (frames 0 .. 4, a frame every 4 ticks from 0xff, 0x10e, 0x11d and 0x12c), then breaks
+them away (frames 5 .. 9, a frame every 6 ticks from 0x146, each 26 px lower) to show the words under them, the start
+key cleared meanwhile; "PRESS ANY KEY TO START" blinks from 0x173 and from 0x245 the jungle's sounds play
+(`FUN_00431a67`).  `FUN_00442bf0` draws the runner from tick 0x15 to 0xdb (his steps 9 / 0xa on channel 0) and from
+0x1f5 to 0x257 a jaguar running back (`jgurun`, growls 0x10 / 0x2a on channel 1).  The title's third map
+(`logo_extra.bg`) is loaded but never drawn, and the scrolls `DAT_004504e8` / `DAT_00450fac` written for it are never
+read.
+
+## The cutscenes (levels 21 .. 23, `src/game/cutscene.cpp`)
+
+The intro (21), the reunion (22, after the Warrior Spirit) and the end (23) are the PC build's own code
+(0x401000 .. 0x401dff).  `FUN_00435fc0` / `FUN_004360e9` set the script's cursor `DAT_00456000` to 0 and run the level's
+routine (`FUN_00401071` / `FUN_00401176` / `FUN_00401215`), which `FUN_0043628c` runs after the joypad; the routine
+starts its scene when the cursor is 0 (the keys' wait `DAT_0046a88a` = 30, `DAT_0046fb90` = 1, the actors cleared, the
+camera at 0 — on level 23 at y 0x20), lets a key jump to the script's exit (`FUN_00401000`: not in the first 30 ticks,
+nor while the brightness is off 0, nor on level 23 while it waits for its key), runs one opcode and the ten actors'
+routines (on level 21 then the jungle's sounds once the script turned them on).  An opcode is the address of its
+code followed by its arguments; one that ends with `lods eax; jmp eax` goes on into the next in the same tick, one that
+backs `esi` up runs again next tick.  An actor is 0x40 bytes: x / y (16.16; the texts' whole), the sprite slot, the
+frame, the flags, its frame script's cursor and start (bytes: frames, 0xf0 back to the start, 0xfe and a sound), its
+routine, a value, its text, the script's speed and count.
+
+| opcode | role |
+|--------|------|
+| `0x4014aa` | a text in an actor: centred (x 0xa0 - 4 × length; y 0x4d moves it 32 px right) at y; goes on |
+| `0x4014e5` | the credits: every `DAT_0045604e` half-pixels (a pixel after an attract) the next line in a free actor at y 240, rising like it; the byte after its NUL is the gap to the next, 0xff the last |
+| `0x4015a5` | the jungle's sounds from now on (level 21) |
+| `0x4015ad` | an actor off; goes on |
+| `0x4015cc` | the exit: actor 9 leaves with `*d` when its routine runs (`DAT_0046fb90` = 0) |
+| `0x40160e` | no maps any more (`DAT_00450fcc`, `DAT_00450514`) |
+| `0x401623` / `0x40162a` / `0x401644` | the brightness set / down 8 a tick below -0x100 / up 8 a tick to 0 |
+| `0x401667` / `0x401686` | wait n + 1 ticks (`DAT_00456004`, kept if a key skips the scene) / wait for flag 0 or 1 (`0x45622f`) and go on |
+| `0x401693` | level 22's second room (`DAT_00456049`), the camera at 0 |
+| `0x4016b6` / `0x4016e9` | Harry Sr. (`hy_sr_g` at 160, 140) / his second frame; go on |
+| `0x4016fd` | wait for a key (or the joystick when it is on), then 30 ticks without keys |
+| `0x401767` | every actor off |
+| `0x401776` .. `0x4017c0` | the end's words by the difficulty (`DAT_0046fb78`) and the letters (all seven: "time for a photo to document your triumph."), and the letters found in `mi_ptfal` at y 0x52 |
+| `0x40181b` .. `0x401a09` | Harry Jr. runs in (camera after him from x 0x50 to 0x10e), looks up (holds the last frame), stands, runs off left; on level 22 runs into the room (up and down its steps, the camera 2 px a tick to x 0x294) |
+| `0x401a48` | the hand with the photograph rises 0.375 px a tick to y 0xd2 (and stops on its first frame), the camera 0.125 px a tick up from 0x20 |
+| `0x401c06` | the 1-up (sound 0x16) rises to y 0x7e, then sparkles at random (`fx_sprk2` in actor 3) |
+| `0x401ced` | the shadow: its steps (sounds 0xb / 0xc) off the screen for 80 ticks, then it stamps at x 123, each stamp's sound shaking the screen 6 or 7 px (`DAT_00465b02`), flag 1 on its last |
+
+The scripts: the intro (0x456753) — "DEEP IN THE MAYAN JUNGLE", "THE LEGENDARY TEMPLE OF UAXACTUN", Harry Jr. runs in
+and the 1-up appears, "DAD, CHECK IT OUT", the shadow, "DAAAD!", he runs off, `*8`; after the demos (0x45688b) the
+credits from "[PITFALL]" to before "[TO BE CONTINUED]" (`DAT_0046a844`, the last line's gap, is 0xff then), `*8`; the
+reunion (0x4568bf) — "DAD!", the second room, Harry Sr., "SON, WHAT TOOK YOU SO LONG", `*9`; the end (0x45697f) — the
+words, a key, the hand, the credits from "[THE END]" to "[TO BE CONTINUED]", `*8`.  The credits' lines starting with
+'[' are drawn in `ltr_lg` letters (`FUN_00431bfb`, '[' and ']' the ends of a stone plaque), the others in the font;
+a line whose y went below 0 is not drawn (its y is taken unsigned), and an actor left of 0 is far to the right.  On
+level 23 the lines are drawn before the map, behind the jungle.
+
+Level 24, the secret level `*50` leads to with the `DAT_0046d05c` cheat, is a usual level whose TNT crate (0x40e18d)
+is Earthworm Jim (`ew_ready`, a frame every 7 ticks): a hit blows him up as a crate and sets `DAT_0046b1b4` to 200,
+which `FUN_0043628c` counts down to `*6` (back to the Lost City of Copan).
 
 ## Object system (ported in `src/game/objects.*`, `src/game/handlers.cpp`)
 

@@ -3504,22 +3504,34 @@ void h_ceilingRock(ObjCtx& ctx, Obj& o) {
 // ---------------------------------------------------------------- TNT crate (types 34 / 50)
 
 void h_tnt(ObjCtx& ctx, Obj& o) {
-    // 0x40e18d.  (The ew_ready variant of engine stage 0x18, DAT_00451a2c, is not ported.)
+    // 0x40e18d
     Harry& h = ctx.harry;
-    if (!ctx.pl.harryOnPlatform() && !ctx.pl.harryBusy() && h.w(0x465baa) >= 0 && harryOnBox(ctx, o, -15, 15, -32, -16)) {
-        // 0x40e21a: Harry stands on the crate (box 0x45ba6e); no landing
-        h.y() = int16_t(o.y - 0x18);
-        h.vy() = 0;
-        h.b(0x465b73) = 0xff;
+    if (ctx.levelNo == 0x18) {
+        // On level 24 the crate is ew_ready, facing left, a frame every 7 ticks (0 .. 5); a hit
+        // blows it up as a crate (without the passages of level 2) and starts DAT_0046b1b4: 200
+        // ticks later FUN_0043628c leaves with "*6".
+        o.setSprite(ctx.spr("ew_ready"));
+        o.facing = 1;
+        o.b(0x36) += 1;
+        if (o.b(0x36) >= 7) { o.b(0x36) = 0; if (++o.frame >= 6) o.frame = 0; }
+        if (weaponHit(ctx, o, 0).z) { exitDespawnFar(ctx, o); return; }
+        ctx.pl.startEnding();
+    } else {
+        if (!ctx.pl.harryOnPlatform() && !ctx.pl.harryBusy() && h.w(0x465baa) >= 0 && harryOnBox(ctx, o, -15, 15, -32, -16)) {
+            // 0x40e21a: Harry stands on the crate (box 0x45ba6e); no landing
+            h.y() = int16_t(o.y - 0x18);
+            h.vy() = 0;
+            h.b(0x465b73) = 0xff;
+        }
+        if (weaponHit(ctx, o, 0).z) { exitDespawnFar(ctx, o); return; }
+        o.y -= 0xa;
+        // The two crates of level 2 that open passages (DAT_00466524 / 25, kept across deaths).
+        if (o.x != 0x6b8) {
+            if (int16_t(o.x - 0x11b0) >= 0) { ctx.g.levelFlags()[0x15] = 0xff; ctx.pl.clearTriggerClass(0x5d); }
+            else { ctx.g.levelFlags()[0x14] = 0xff; ctx.pl.clearTriggerClass(0x51); }
+        }
     }
-    if (weaponHit(ctx, o, 0).z) { exitDespawnFar(ctx, o); return; }
-    o.y -= 0xa;
-    // The two crates of level 2 that open passages (DAT_00466524 / 25, kept across deaths).
-    if (o.x != 0x6b8) {
-        if (int16_t(o.x - 0x11b0) >= 0) { ctx.g.levelFlags()[0x15] = 0xff; ctx.pl.clearTriggerClass(0x5d); }
-        else { ctx.g.levelFlags()[0x14] = 0xff; ctx.pl.clearTriggerClass(0x51); }
-    }
-    ctx.g.stats().score += scoreForType(o.type);              // 0x4081ae
+    ctx.g.stats().score += scoreForType(o.type);              // 0x40e28f: 0x4081ae
     o.link = nullptr;
     ctx.release(o);
     Obj* e = ctx.spawnFrom(o, true);                           // FUN_0043546e(7): the crate's own record, x / y kept
