@@ -77,7 +77,10 @@
   "guardTurn": "0x45bb61",
   "guardPeel": "0x45bb68",
   "guardWalk": "0x45bb78",
-  "hawkGlide": "0x45b179"
+  "hawkGlide": "0x45b179",
+  "crocLeap": "0x45bc66",
+  "splashRing2": "0x45bd02",
+  "treeSnakeLimp": "0x45bc8e"
  },
  "anim2": {
   "monkeyToss": "0x45ab81",

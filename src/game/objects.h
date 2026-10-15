@@ -275,7 +275,7 @@ extern const uint8_t kAnim_snakeEmerge[], kAnim_snakeMiss[], kAnim_snakeLunge[],
     kAnim_skullMorph[], kAnim_skullWalk[], kAnim_skullDie[], kAnim_ballDrop[], kAnim_splashRing[], kAnim_rippleRing[], kAnim_spearThrust[],
     kAnim_snakeLunge2[], kAnim_spitFly[], kAnim_spitSplat[], kAnim_crocBite[], kAnim_crocDive[], kAnim_priestTurn[], kAnim_fireballDie[],
     kAnim_guardShotLow[], kAnim_guardShotHigh[], kAnim_guardTurn[], kAnim_guardPeel[], kAnim_guardWalk[],
-    kAnim_hawkGlide[];
+    kAnim_hawkGlide[], kAnim_crocLeap[], kAnim_splashRing2[], kAnim_treeSnakeLimp[];
 extern const uint8_t kData_bungeeScripts[];      // 0x45aaa4: Harry's bungee animation triples (see h_bungee)
 extern const uint8_t kData_firePath[];           // 0x45ad94: the fire pit's 59 keyframes {frame, dx, dy, tailFrame, tailDx, tailDy} (int16)
 extern const uint8_t kData_priestDeath[];        // 0x45a849: the fire priest's collapse (a byte script; its cursor jumps past the first 0xf0)

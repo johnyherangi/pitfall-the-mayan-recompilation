@@ -2188,6 +2188,124 @@ void h_treeSnake(ObjCtx& ctx, Obj& o) {
     leave();
 }
 
+// 0x416f48: type 88, a tree snake that a hit (or the stop-watch, or the big stone's blast) leaves
+// hanging limp (b38; w42 counts up to 0x68), so that Harry can hang on it (tszlimp; his hang
+// states 0x42d781 / 0x42cc7a / 0x42de4f / 0x42dd7e take it as a vine through DAT_00466508).
+// When it comes to, a Harry still on it falls hurt (state 0x42f88c); while it is lively it knocks
+// a hanging Harry off.  Otherwise it is the tree snake of type 172 with a shorter rest (0x20)
+// after a spit, and its body record (type 0x3c, +0x6a).
+void h_limpSnake(ObjCtx& ctx, Obj& o) {
+    Harry& h = ctx.harry;
+    if (o.w(0x32) == 0) {
+        o.w(0x32) = 0x40; o.behind = 0xff;
+        Obj* body = ctx.spawnFrom(o);                             // FUN_004356bc(2)
+        if (!body) { ctx.pl.restoreEntry(o); ctx.release(o); return; }
+        o.link = body;                                            // (+0x6a)
+        body->y = int16_t(body->y - 2); body->flags = 0x6000;
+        body->sprite = ctx.spr("tszbody1"); body->type = 0x3c; body->frame = 0; body->behind = 0xff;
+    }
+    auto hanging = [&]() {
+        const uint32_t c = h.cont();
+        return c == 0x42d781 || c == 0x42cc7a || c == 0x42de4f || c == 0x42dd7e;
+    };
+    auto onIt = [&]() {                                           // Harry right under it
+        const int16_t dx = int16_t(h.x() - o.x), dy = int16_t(h.y() - o.y);
+        return int16_t(dx - 0x20) < 0 && int16_t(dx + 0x20) >= 0 && int16_t(dy - 6) >= 0 && int16_t(dy - 0x88) < 0;
+    };
+    auto hangTest = [&]() {                                       // the box test as tszlimp against hyihang
+        const uint32_t hs = h.spriteSlot();
+        const ph::Sprite* os = o.sprite;
+        o.sprite = ctx.spr("tszlimp"); h.setSprite("hyihang");
+        const bool r = ctx.touchesHarry(o);
+        o.sprite = os; h.setSpriteSlot(hs);
+        return r;
+    };
+    auto knockOff = [&]() {
+        h.setCont(0x42f88c); h.w(0x465b47) = 0;
+        h.b(0x465b77) = 0x1e; h.w(0x4658bc) = h.x();
+    };
+    if (!weaponHit(ctx, o, 0x14).z) { o.b(0x38) = 0xff; o.w(0x50) = 0; o.b(0x43) = 0xff; }
+    if (h.b(0x46652f) != 0 || o.b(0x38) != 0) {
+        // 0x41700c: limp
+        o.w(0x64) = 0; o.w(0x36) = 0;
+        o.w(0x42) += 1;
+        if (o.w(0x42) == 0x68) {
+            o.b(0x38) = 0; o.hits = 0;
+            if (hangTest()) knockOff();
+        }
+        o.sprite = ctx.spr("tszlimp");
+        animStep(ctx, o, o.anim(0x3a), kAnim_treeSnakeLimp, 5);   // 0x45bc8e
+        bool hold = hanging() && onIt();
+        if (!hold && hangTest()) {
+            if (hanging() || h.b(0x465b77) == 0) hold = true;
+            else {
+                // just knocked off: not again within 0x30 px of that place
+                const int16_t d = int16_t(h.w(0x4658bc) - h.x());
+                hold = int16_t(d + 0x30) < 0 || int16_t(d - 0x30) >= 0;
+            }
+        }
+        if (hold) { h.w(0x466508) = o.x; o.frame = 3; o.facing = 0; }   // 0x417210
+    } else {
+        // 0x41722c
+        if (hanging() && onIt()) knockOff();
+        // 0x417688 (see h_treeSnake)
+        if (h.spriteIs("tszhang") && o.facing) { o.x += 0x12; harryContact(ctx, o, 10); o.x -= 0x12; }
+        else harryContact(ctx, o, 10);
+        for (;;) {
+            if (o.w(0x36)) {                                      // 0x4172f8: spitting / biting
+                o.sprite = ctx.spr("tszspit");
+                const bool looped = animStep(ctx, o, o.anim(0x36), kAnim_treeSnakeSpit, 5);   // 0x45bc94
+                if (o.frame == 3 && treeSnakeBiteRange(ctx, o)) ctx.hurtHarry(0x14);       // 0x420530
+                if (!looped) {
+                    if (o.w(0x36) == 5) {
+                        if (Obj* st = ctx.spawnFrom(o, true)) {   // FUN_0043546e(1)
+                            st->x = int16_t(o.x + 0x20); st->y = int16_t(st->y + 0x26);
+                            st->sprite = ctx.spr("obrston0"); st->frame = 0; st->b(0x5a) = 0xc; st->type = 0x1d; st->b(0x46) = 0xff;
+                            o.w(0x60) = int16_t((ctx.rnd() & 0x7f) + 8);
+                            st->l(0x32) = 0x58000; st->l(0x36) = 0x8000; st->l(0x3a) = -0x100; st->l(0x3e) = 0x1100;
+                            st->flags = 0x6000;
+                            if (o.facing) { st->l(0x32) = -st->l(0x32); st->l(0x3a) = -st->l(0x3a); st->x -= 0x40; }
+                        }
+                    }
+                    break;
+                }
+                o.w(0x66) = 0x20; o.w(0x64) = 0; o.w(0x34) = 0; o.w(0x36) = 0;
+                o.facing ^= 1;
+            }
+            if (o.w(0x64)) {                                      // 0x417432: rising to look for Harry
+                o.sprite = ctx.spr("tszup");
+                if (!animStep(ctx, o, o.anim(0x64), kAnim_treeSnakeUp, 5)) {   // 0x45bc7a
+                    if (o.frame == 3) {
+                        const int16_t dx = int16_t(h.x() - o.x), dy = int16_t(h.y() - 0x1c - o.y - 0x28);
+                        if (int16_t(dx - 0x90) < 0 && int16_t(dx + 0x90) >= 0 && int16_t(dy - 0x50) < 0 && int16_t(dy + 0x50) >= 0) {
+                            o.w(0x36) = 1; o.facing ^= 1; continue;
+                        }
+                    }
+                    break;
+                }
+                o.w(0x66) = int16_t(0x30 + (ctx.rnd() & 0x3f));
+                o.w(0x64) = 0; o.w(0x36) = 0; o.w(0x34) = 0;
+            }
+            // 0x417543: hanging idle
+            o.sprite = ctx.spr("tszhang");
+            animStep(ctx, o, o.anim(0x34), kAnim_treeSnakeHang, 6);   // 0x45bc74
+            o.w(0x64) = 0; o.w(0x36) = 0; o.w(0x38) = 0;
+            if (o.w(0x66)) { o.w(0x66) -= 1; break; }
+            const int16_t dx = int16_t(h.x() - o.x), dy = int16_t(h.y() - 0x1c - o.y - 0x28);
+            if (int16_t(dx - 0xb0) < 0 && int16_t(dx + 0xb0) >= 0 && int16_t(dy - 0x90) < 0 && int16_t(dy + 0x90) >= 0) {
+                const bool facingHarry = dx >= 0 ? o.facing != 0 : o.facing == 0;
+                if (facingHarry && o.frame == 0) o.w(0x64) = 1;
+            }
+            break;
+        }
+    }
+    if (farFromCamera(ctx, o)) {                                  // 0x424ec4
+        if (o.link) ctx.release(*o.link);
+        ctx.pl.restoreEntry(o);
+        ctx.release(o);
+    }
+}
+
 // 0x412710: type 0x3c, the tree snake's body (static).
 void h_treeSnakeBody(ObjCtx& ctx, Obj& o) { (void)ctx; (void)o; }
 
@@ -5129,6 +5247,112 @@ void h_roamingSnake(ObjCtx& ctx, Obj& o) {
     exitDespawnWide(ctx, o);
 }
 
+// ---------------------------------------------------------------- the leaping crocodile (types 84 / 0x65)
+
+// 0x4188e0: type 0x65, the splash of the leaping crocodile, with its mirrored twin (type 0x4f,
+// l50): hidden for w64 ticks, then the ring (0x45bd02) at 4 ticks; at its end both go, the
+// twin's display entry of this pass cancelled as for the ripples.
+void h_crocSplash(ObjCtx& ctx, Obj& o) {
+    Obj* t = ctx.pl.objAt(uint32_t(o.l(0x50)));
+    if (o.w(0x64)) {
+        o.w(0x64) -= 1;
+        o.frame = 0xff;
+        if (t) t->frame = 0xff;
+        return;
+    }
+    const bool done = animStep(ctx, o, o.anim(0x32), kAnim_splashRing2, 4);
+    if (t) t->frame = o.frame;
+    if (!done) return;
+    ctx.release(o);
+    if (t) {
+        ctx.pl.objectSystem().cancelDisplayAt(uint32_t(t->l(0x6a)));
+        ctx.release(*t);
+    }
+}
+
+// 0x4160b2: type 84, a crocodile that leaps out of the water (crzjump; Yaxchilan Lagoon, Jaina
+// Island Falls).  It waits under water 8..23 ticks (w3c), then comes up somewhere near Harry
+// inside the level's stretch of water (0x98e..0xa9f, 0x3f2..0x5fa in level 18) - right under
+// him while he swings on a vine (state 0x42bda7) - with a splash (type 0x65 and its twin), leaps
+// at -8.25 px a tick (gravity 0x5300 while it rises fast, 0x3000 after) drifting left, and goes
+// back under where it started (w3e / w3a).  At the top of a leap it snatches Harry off his vine
+// (state 0x42939b; the vine in his hands, DAT_00465b53, is freed).  Its second record (+0x5a)
+// shows the jaws (0x45bc66, cursor +0x5e) until their frame 6.
+void h_leapingCroc(ObjCtx& ctx, Obj& o) {
+    halfMinuteTick(o);                                            // 0x4057b0
+    Harry& h = ctx.harry;
+    bool arm = false;
+    if (o.b(0x50) == 0) {
+        o.behind = 0xff; o.w(0x3e) = o.x;
+        o.y += 0x23; o.w(0x3a) = o.y;
+        Obj* a5 = ctx.spawnFrom(o, true, 2);                       // FUN_0043546e(2)
+        if (!a5) return;
+        o.b(0x50) = 0xff;
+        o.l(0x5a) = int32_t(ctx.pl.addrOf(a5));
+        a5->sprite = o.sprite; a5->flags = o.flags;
+        arm = true;
+    }
+    Obj* body = ctx.pl.objAt(uint32_t(o.l(0x5a)));
+    for (;;) {
+        if (arm) { o.w(0x3c) = int16_t((ctx.rnd() & 0xf) + 8); arm = false; }   // 0x416127
+        if (o.w(0x3c) != 0) {                                     // under water
+            if (h.cont() == 0x427528) break;                      // (not while Harry drowns)
+            o.w(0x3c) -= 1;
+            if (o.w(0x3c) != 0) break;
+            // 0x416178: up it comes
+            Obj* a3 = ctx.spawnFrom(o);                           // FUN_004356bc(1)
+            if (!a3) { o.w(0x3c) = 0xa; break; }
+            a3->type = 0x65; a3->w(0x64) = 6; a3->behind = 0xff;
+            a3->sprite = ctx.spr("fxisplsh"); a3->flags = 0xa000;
+            a3->x = o.x; a3->y = int16_t(o.y - 0x54);
+            Obj* a4 = ctx.spawnFrom(o, false, 9);                 // FUN_004356bc(9)
+            if (!a4) { ctx.release(*a3); o.w(0x3c) = 0xa; break; }
+            a3->l(0x50) = int32_t(ctx.pl.addrOf(a4)); a4->l(0x50) = int32_t(ctx.pl.addrOf(a3));
+            a4->type = 0x4f;
+            std::memcpy(a3->s + 0x12, a4->s + 0x12, 2);
+            a3->w(0x26) = 0x6663;
+            a4->behind = 0xff; a4->sprite = ctx.spr("fxisplsh"); a4->flags = 0xa000;
+            a4->x = o.x; a4->y = int16_t(o.y - 0x54); a4->facing = 0xff;
+            o.w(0x38) = 0; o.w(0x40) = 6; o.w(0x4a) = 0x32; o.l(0x46) = int32_t(0xfff7c000);
+            o.frame = 0; o.w(0x5e) = 0;
+            if (body) body->frame = 0xff;
+            const bool l18 = ctx.levelNo == 0x12;
+            const int16_t lo = l18 ? 0x3f2 : 0x98e, hi = l18 ? 0x5fa : 0xa9f;
+            int16_t x = int16_t(int(ctx.rnd() & 0x7f) - 0x40 + h.x());
+            if (int16_t(x - lo) < 0) x = int16_t((ctx.rnd() & 0x7f) + lo);
+            else if (int16_t(x - hi) >= 0) x = int16_t(hi - int(ctx.rnd() & 0x7f));
+            o.x = x;
+            if (h.cont() == 0x42bda7 && int16_t(h.x() - lo) >= 0 && int16_t(h.x() - hi) < 0) o.x = int16_t(h.x() + 0x10);
+            a4->x = int16_t(o.x - 2); a3->x = int16_t(o.x - 2);
+            break;
+        }
+        // 0x416446: in the air
+        if (h.cont() == 0x42bda7 && o.w(0x48) == 0 && ctx.touchesHarry(o)) {
+            if (Obj* v = ctx.pl.objAt(h.ul(0x465b53))) ctx.release(*v);   // the vine in his hands
+            h.setCont(0x42939b);
+            h.w(0x465b47) = 0;
+            h.setUl(0x465b4b, ctx.pl.addrOf(&o));
+            h.vy() = 0;
+            h.y() += 0x26;
+        }
+        moveX(o, -0x3000);
+        if (body) {
+            body->x = o.x; body->y = o.y;
+            if (body->frame != 6) animStep(ctx, *body, o.anim(0x5e), kAnim_crocLeap, 4);   // 0x45bc66
+        }
+        moveY(o, o.l(0x46));
+        o.l(0x46) += int16_t(o.w(0x48) + 1) >= 0 ? 0x3000 : 0x5300;
+        if (int16_t(o.y - o.w(0x3a)) >= 0) { o.y = o.w(0x3a); o.x = o.w(0x3e); arm = true; continue; }
+        break;
+    }
+    if (beyondWide(ctx, o)) {                                     // 0x425051
+        ctx.pl.restoreEntry(o);
+        ctx.release(o);
+        if (body) ctx.release(*body);
+    }
+}
+
+
 // ---------------------------------------------------------------- crocodiles (types 13 / 20)
 
 // 0x4085fe: a crocodile (type 13) that surfaces, swims a stretch and sinks again; Harry can
@@ -5559,6 +5783,9 @@ Handler ObjectSystem::handler(uint8_t type) {
     case 4:    return h_bigStone;
     case 5:    return h_slingStone;
     case 0x89: return h_stonePiece;
+    case 88:   return h_limpSnake;
+    case 84:   return h_leapingCroc;
+    case 0x65: return h_crocSplash;
     case 41:   return h_hollow;
     case 92:   return h_pushLever;
     case 98:   return h_cartSpawner;
