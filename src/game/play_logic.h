@@ -222,6 +222,7 @@ private:
     const uint8_t* a26Room() const;             // [DAT_00465e9e]: the screen's descriptor
     void a26ClearButtons();
     void a26Frame(Game& g, int entry);          // level 20 in FUN_0043628c (0) / FUN_004360e9 (1) / FUN_00435fc0 (2)
+    void logicTick(Game& g, bool& usual);       // FUN_0043628c's body (usual: past the special levels' paths)
     void epilogue(Game& g);                     // 0x4363bd: the end every path of FUN_0043628c shares
     void meterLive(Game& g);                    // FUN_00435c4e's reads of the logic at the HUD's draw
 

@@ -482,8 +482,8 @@ void PlayLogic::cutRoutine(uint32_t a) {
         std::string cmd;
         for (uint32_t va = 0x456008; cb(va) != 0 && cmd.size() < 4; ++va) cmd += char(cb(va));
         game_->state().displayList.clear();
-        game_->command(cmd.c_str());
         cutExited_ = true;
+        game_->command(cmd.c_str());                          // (unwinds out of the tick)
         return;
     }
     case 0x401a9e: {                                          // running in: 3 px a tick, the camera after him from x 0x50

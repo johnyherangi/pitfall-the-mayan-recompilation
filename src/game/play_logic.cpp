@@ -33,47 +33,54 @@ uint32_t PlayLogic::addrOf(const Obj* o) const {
 
 void PlayLogic::enter(Game& g) {
     // FUN_00435fc0, the engine's bridge into the game logic, with FUN_0043256f: a level starts.
+    // An engine exit in its start returns from it (engineExit 0x4361d6); its tick is a bridge of
+    // its own (FUN_0043628c), after which the end runs once more.
     g_debugLogic = this;
     game_ = &g;
     level_ = g.levelNumber();
-    // (the logic's memory keeps what the last level, or the last game, left in it)
-    // [DAT_004504e4]: the .als working copy (0x800 bytes, zero past the data) and the level's
-    // own copy after it ([DAT_004504c4], what a lost life restores from).
-    const std::vector<uint8_t>& als = g.level().als;
-    alsMem_.assign(0x1000, 0);
-    std::copy(als.begin(), als.begin() + std::ptrdiff_t(std::min<size_t>(als.size(), 0x800)), alsMem_.begin());
-    std::copy(alsMem_.begin(), alsMem_.begin() + 0x800, alsMem_.begin() + 0x800);
-    exiting_ = false;
-    deathTimer_ = 0;
-    boss_ = nullptr;
-    std::memset(trgRam_, 0, sizeof trgRam_);
-    h_.l(0x466535) = level_;
-    endTimer_ = 0;                                             // DAT_0046b1b4
-    g.state().displayList.clear();                             // DAT_0046aa90 = 0x46aa94
-    if (level_ >= kIntro && level_ <= kCredits) { cutFrame(g, 2); return; }   // FUN_00435fc0: 0x401071 / 0x401176 / 0x401215
-    if (level_ == kAtari2600Level) { a26Frame(g, 2); return; }   // FUN_00435fc0: 0x401e00
-    if (g.warp().fromAtari) h_.b(0x465b39) = 0xff;            // (before the level start: the checkpoint stays)
-    levelStart();                                              // FUN_0043256f
-    g.warp().fromAtari = g.warp().fromVault = false;           // DAT_004601c4 / DAT_004504cc
-    g.state().hudSlide = h_.uw(0x4667a8);                      // 0x4360d3: DAT_00451940 for the tick
-    tick(g);                                                   // 0x4360df: a logic tick
-    epilogue(g);                                               // 0x4360e4: and its end once more
+    g.bridge([&] {
+        // (the logic's memory keeps what the last level, or the last game, left in it)
+        // [DAT_004504e4]: the .als working copy (0x800 bytes, zero past the data) and the level's
+        // own copy after it ([DAT_004504c4], what a lost life restores from).
+        const std::vector<uint8_t>& als = g.level().als;
+        alsMem_.assign(0x1000, 0);
+        std::copy(als.begin(), als.begin() + std::ptrdiff_t(std::min<size_t>(als.size(), 0x800)), alsMem_.begin());
+        std::copy(alsMem_.begin(), alsMem_.begin() + 0x800, alsMem_.begin() + 0x800);
+        exiting_ = false;
+        deathTimer_ = 0;
+        boss_ = nullptr;
+        std::memset(trgRam_, 0, sizeof trgRam_);
+        h_.l(0x466535) = level_;
+        endTimer_ = 0;                                             // DAT_0046b1b4
+        g.state().displayList.clear();                             // DAT_0046aa90 = 0x46aa94
+        if (level_ >= kIntro && level_ <= kCredits) { cutFrame(g, 2); return; }   // FUN_00435fc0: 0x401071 / 0x401176 / 0x401215
+        if (level_ == kAtari2600Level) { a26Frame(g, 2); return; }   // FUN_00435fc0: 0x401e00
+        if (g.warp().fromAtari) h_.b(0x465b39) = 0xff;            // (before the level start: the checkpoint stays)
+        levelStart();                                              // FUN_0043256f
+        g.warp().fromAtari = g.warp().fromVault = false;           // DAT_004601c4 / DAT_004504cc
+        g.state().hudSlide = h_.uw(0x4667a8);                      // 0x4360d3: DAT_00451940 for the tick
+        tick(g);                                                   // 0x4360df: a logic tick
+        epilogue(g);                                               // 0x4360e4: and its end once more
+    });
 }
 
 void PlayLogic::restart(Game& g) {
     // FUN_004360e9 ("*3"): the level logic starts again at the checkpoint; the level is not
-    // loaded again, so the .als working copy keeps what FUN_00430eb6 left in it.
+    // loaded again, so the .als working copy keeps what FUN_00430eb6 left in it.  A bridge as
+    // FUN_00435fc0.
     game_ = &g;
-    endTimer_ = 0;                                             // DAT_0046b1b4
-    g.state().displayList.clear();                             // DAT_0046aa90 = 0x46aa94
-    if (g.levelNumber() >= kIntro && g.levelNumber() <= kCredits) { cutFrame(g, 1); return; }
-    if (g.levelNumber() == kAtari2600Level) { a26Frame(g, 1); return; }   // 0x401f3c
-    deathTimer_ = 0;
-    restartAtCheckpoint();                                     // FUN_00432615
-    g.warp().fromAtari = g.warp().fromVault = false;
-    g.state().hudSlide = h_.uw(0x4667a8);                      // 0x4361c0
-    tick(g);                                                   // 0x4361cc: a logic tick
-    epilogue(g);                                               // 0x4361d1
+    g.bridge([&] {
+        endTimer_ = 0;                                             // DAT_0046b1b4
+        g.state().displayList.clear();                             // DAT_0046aa90 = 0x46aa94
+        if (g.levelNumber() >= kIntro && g.levelNumber() <= kCredits) { cutFrame(g, 1); return; }
+        if (g.levelNumber() == kAtari2600Level) { a26Frame(g, 1); return; }   // 0x401f3c
+        deathTimer_ = 0;
+        restartAtCheckpoint();                                     // FUN_00432615
+        g.warp().fromAtari = g.warp().fromVault = false;
+        g.state().hudSlide = h_.uw(0x4667a8);                      // 0x4361c0
+        tick(g);                                                   // 0x4361cc: a logic tick
+        epilogue(g);                                               // 0x4361d1
+    });
 }
 
 void PlayLogic::levelStart() {
@@ -318,8 +325,19 @@ void PlayLogic::restartBody() {
 // ---------------------------------------------------------------- the main loop (FUN_0043628c)
 
 void PlayLogic::tick(Game& g) {
+    // FUN_0043628c, a bridge of its own: an engine exit anywhere in the tick returns from it at
+    // once, without the rest of the tick and its end (0x4363bd).
     game_ = &g;
     level_ = g.levelNumber();
+    bool usual = false;
+    g.bridge([&] { logicTick(g, usual); });
+    if (!usual) return;
+    // What the engine reads of the logic as it draws the frame (after the tick, its end or not).
+    g.state().vaultCeiling = int16_t(tw(0x1f4));
+    meterLive(g);
+}
+
+void PlayLogic::logicTick(Game& g, bool& usual) {
     FrameState& fs = g.state();
     h_.w(0x4667a8) = int16_t(fs.hudSlide);                 // 0x4362ad: the slide as the engine has it (the pre-ticks put it back)
     if (fs.joypad == 0xff) { g.command("*2"); return; }    // 0x4362cd: a demo ended (a key, or its script)
@@ -342,6 +360,7 @@ void PlayLogic::tick(Game& g) {
         if (!specialExited_) epilogue(g);                  // (engineExit skips it)
         return;
     }
+    usual = true;
     const bool debug = (fs.joypad & 0x100) != 0;
     readPad();                                             // FUN_004263f3
     camera();                                              // FUN_00404714 (with the spawner)
@@ -363,10 +382,7 @@ void PlayLogic::tick(Game& g) {
         harryDeath();                                      // FUN_00430a69
     }
     if (level_ == 7) displayList(g);
-    fs.vaultCeiling = int16_t(tw(0x1f4));
-    // An exit (engineExit) leaves FUN_0043628c without its end; the port runs the tick out.
-    if (!g.exitPending()) epilogue(g);
-    meterLive(g);
+    epilogue(g);                                           // (an engine exit never gets here)
 }
 
 void PlayLogic::epilogue(Game& g) {
@@ -588,7 +604,7 @@ void PlayLogic::h430eb6() {
     // takes the level's own entries back but for the treasures and the letters, which stay
     // collected, the triggers' working copy is restored (it holds the boss pointer), the lever
     // flags 0x466510 .. 21 are cleared, and "*3" starts the level again at the checkpoint
-    // (the engine exit ends this tick in the original; the port guards against a second call).
+    // (the engine exit ends the tick there).
     if (deathTimer_) return;
     deathTimer_ = 1;
     h_.b(0x465b39) = 0;
@@ -802,6 +818,7 @@ void PlayLogic::hudPlacement() {
 }
 
 void PlayLogic::runObjects(Game& g) {
+    strayReturns_.clear();     // (an engine exit in the last pass left its stack behind)
     h_.w(0x4658a0) = 0;
     h_.w(0x465bac) = 0;
     h_.b(0x465b74) = 0;

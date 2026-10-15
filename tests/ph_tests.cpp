@@ -99,7 +99,7 @@ namespace { int jaguarTest(const std::string& dir); int bungeeTest(const std::st
             int mapScreenTest(const std::string& dir); int continueTest(const std::string& dir);
             int transitionTest(const std::string& dir); int musicTest(const std::string& dir);
             int cutsceneTest(const std::string& dir); int titleTest(const std::string& dir); int earthwormTest(const std::string& dir);
-            int cheatTest(const std::string& dir); int menuTest(const std::string& dir); }
+            int cheatTest(const std::string& dir); int menuTest(const std::string& dir); int exitTest(const std::string& dir); }
 namespace {
 // The engine's blocking parts run out: a command's fades and waits, a level load's fade in.
 int settle(game::Game& g, int cap = 1000) {
@@ -163,6 +163,7 @@ int gameplayTests(const std::string& dir) {
     fails += earthwormTest(dir);
     fails += cheatTest(dir);
     fails += menuTest(dir);
+    fails += exitTest(dir);
     return fails;
 }
 }
@@ -1350,6 +1351,40 @@ int menuTest(const std::string& dir) {
         ++fails;
     } else {
         std::printf("menu: Option_Level's bytes, the question only with points, a new game on the level, its name in the status bar, the loading dialog\n");
+    }
+    return fails;
+}
+
+// An engine exit unwinds the logic's tick at once (engineExit puts the bridge's stack back): the
+// level's exit Harry's triggers take ("*4", 0x430923) leaves that tick's object pass, its timers
+// (FUN_00433a09) and its end (0x4363bd, the tick count) undone.
+int exitTest(const std::string& dir) {
+    int fails = 0;
+    engine::Options opts;
+    game::Game g(dir, opts);
+    g.setMode(game::Mode::Playing);
+    g.startLevel(0);
+    settle(g);
+    engine::HostInput idle;
+    for (int t = 0; t < 30; ++t) g.tick(idle);
+    game::Harry& m = g.logicMemory();
+    uint8_t timer = m.b(0x465d4b);
+    uint32_t ticks = g.logicTicks();
+    g.tick(idle);
+    const bool usual = m.b(0x465d4b) != timer && g.logicTicks() == ticks + 1 && !g.exitPending();
+    timer = m.b(0x465d4b);
+    ticks = g.logicTicks();
+    m.x() = 0xa18;                                               // Harry on the level's exit (trigger 0x5f)
+    m.y() = 0x3c0;
+    g.tick(idle);
+    const bool unwound = m.b(0x465d4b) == timer && g.logicTicks() == ticks && g.transitionActive();
+    settle(g);
+    const bool map = g.levelNumber() == game::kMapScreen;
+    if (!usual || !unwound || !map) {
+        std::printf("FAIL: exit: a usual tick %d, the exit's tick unwound %d, then the map %d (level %d)\n", usual, unwound, map, g.levelNumber());
+        ++fails;
+    } else {
+        std::printf("exit: an engine exit leaves the rest of the tick undone (the objects, the timers, the end)\n");
     }
     return fails;
 }

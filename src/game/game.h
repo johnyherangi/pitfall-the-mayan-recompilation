@@ -96,6 +96,9 @@ struct PlayerStats {
 
 class Game;
 
+// engineExit taken inside one of the logic's bridges (Game::command, Game::bridge).
+struct EngineExit {};
+
 // Hook for the per-level gameplay code.  The default implementation
 // (ExplorerLogic, game.cpp) lets you scroll any level and animate Harry; the
 // original behaviour is to be ported from the decompiled Genesis code
@@ -167,14 +170,23 @@ public:
     void loseLife();                                                  // FUN_00430eb6's tail: "*3", or a continue / game over
     bool exitPending() const { return !exitCmd_.empty(); }           // a command is set (DAT_0046b1a8)
     // The logic's engine exit with a command ("*0" .. "*9"); FUN_00443c90's switch takes it
-    // after the tick, with its fades and waits (transitionActive meanwhile).
+    // after the tick, with its fades and waits (transitionActive meanwhile).  Inside a bridge
+    // it unwinds the logic's call at once (EngineExit), as engineExit restores the stack.
     void command(const char* cmd);
+    // The logic's bridges from the engine (FUN_0043628c, FUN_00435fc0, FUN_004360e9) save the
+    // stack at their entry (DAT_0046b1a0); engineExit (0x43650d / 0x4361d6) puts it back and
+    // returns from the bridge, so nothing more of the call runs: f run as one.
+    template <class F> void bridge(F&& f) {
+        ++bridges_;
+        struct Leave { int& n; ~Leave() { --n; } } leave{bridges_};
+        try { f(); } catch (const EngineExit&) {}
+    }
     bool transitionActive() const { return !stages_.empty(); }
     uint32_t& brightness() { return brightness_; }                   // DAT_0046b1b0: the logic's palette brightness (FUN_0043de70)
     void newGame();                                                   // FUN_004324c6 (and the title's set-up)
     void drawTextWorld(int x, int y, const char* text);               // FUN_00442600
     // What a vortex warp carries from one level to another (FUN_004288ec / 0x4288a2), and the
-    // engine's transition flags.  The game logic's own memory starts afresh with each level.
+    // engine's transition flags.
     struct Warp {
         std::vector<uint8_t> als;      // DAT_004601dd: the level's .als working copy (4 KB)
         uint8_t classes[256] = {};     // DAT_004611dd: its runtime trigger classes (DAT_004658c0)
@@ -378,7 +390,8 @@ private:
     std::deque<Stage> stages_;
     int stageMs_ = 0;                  // the time spent in stages_.front()
     std::string exitCmd_;              // DAT_0046b1a8
-    bool drawPending_ = false;         // a frame to compose while the stages run (the load's first)
+    int bridges_ = 0;                  // the logic's bridges the call is in (bridge)
+    bool drawPending_ = false;        // a frame to compose while the stages run (the load's first)
     uint8_t startKey_ = 0;             // DAT_0046fb88: a key went down (WM_KEYDOWN)
     int audioRem_ = 0;                 // (the game-time audio clock's remainder)
     bool paused_ = false;              // DAT_0046d050

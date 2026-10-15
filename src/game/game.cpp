@@ -544,8 +544,10 @@ void Game::applyBrightness() {
 }
 
 void Game::command(const char* cmd) {
-    // The logic's engine exit with a command string (DAT_0046b1a8); the switch runs after the tick.
+    // The logic's engine exit: the command string (DAT_0046b1a8) for the switch after the tick,
+    // then `jmp [DAT_0046b1a4]` out of the logic's call (bridge).
     if (exitCmd_.empty()) exitCmd_ = cmd;
+    if (bridges_ > 0) throw EngineExit{};
 }
 
 void Game::beginCommand() {

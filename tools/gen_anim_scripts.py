@@ -31,6 +31,17 @@ def rd(va, n):
             o = ro + (va - 0x400000 - sva); return d[o:o + n]
     raise ValueError(hex(va))
 
+def byte_array(name, data, note):
+    """A byte array as source lines: on one line when short, else 24 bytes a line as the
+    blocks above (some tables run to thousands of bytes)."""
+    items = [f'0x{x:02x}' for x in data]
+    if len(items) <= 24:
+        return [f'const uint8_t {name}[] = {{' + ', '.join(items) + f'}};  // {note}']
+    lines = [f'const uint8_t {name}[] = {{  // {note}']
+    for o in range(0, len(items), 24):
+        lines.append('    ' + ', '.join(items[o:o + 24]) + ',')
+    return lines + ['};']
+
 def script_len(addr):
     data = rd(addr, 1024)
     pos = 0
@@ -105,11 +116,11 @@ for name, addr in scripts['anim2'].items():
     else:
         a = int(addr, 16)
         bytes_ = anim2_extract(a, slots, sprites)
-    out.append(f'const uint8_t kAnim2_{name}[] = {{' + ', '.join(f'0x{b:02x}' for b in bytes_) + f'}};  // {addr}')
+    out.extend(byte_array(f'kAnim2_{name}', bytes_, addr))
 out.append('const char* const kAnim2Sprites[] = {' + ', '.join(f'"{n}"' for n in sprites) + ', ""};')
 for name, spec in scripts.get('raw', {}).items():            # "0xaddr+0xlen": copied verbatim
     addr, n = (int(v, 16) for v in spec.split('+'))
-    out.append(f'const uint8_t kData_{name}[] = {{' + ', '.join(f'0x{b:02x}' for b in rd(addr, n)) + f'}};  // {spec}')
+    out.extend(byte_array(f'kData_{name}', rd(addr, n), spec))
 out += ['} // namespace game']
 open(os.path.join(root, 'src', 'game', 'anim_scripts_data.cpp'), 'w').write('\n'.join(out) + '\n')
 print(f'wrote {len(scripts)} scripts')

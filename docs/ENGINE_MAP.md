@@ -198,8 +198,11 @@ for the engine, `DAT_004601d9` + 1, the damage cleared under the `DAT_0046d054` 
 `DAT_00451940` = `DAT_004667a8`.  `FUN_0043628c` starts with the reverse, `DAT_004667a8` = `DAT_00451940`, and
 `FUN_00435fc0` / `FUN_004360e9` set `DAT_00451940` before their tick.  `DAT_004667a8` is 0x30 after `FUN_00432615`
 and the timers take 3 a tick: the HUD's top row is at `DAT_004518e4` = 0x10 - slide, the bottom at `DAT_00451904` =
-0x10 + slide (0x1c / 4 in a 200-line display mode).  An engine exit skips the end (the port runs the tick out but not
-the end).
+0x10 + slide (0x1c / 4 in a 200-line display mode).  An engine exit skips the end: the logic sets its command
+(`DAT_0046b1a8`) and jumps to `DAT_0046b1a4`, which empties the display list and puts back the stack saved at the
+bridge's entry (`DAT_0046b1a0`: `FUN_0043628c`'s, with the exit `0x43650d`, or at a start `FUN_00435fc0`'s /
+`FUN_004360e9`'s, with `0x4361d6`), so the rest of the tick goes undone; a start's tick returns to the start, whose end
+runs once more.  The port throws `EngineExit` from `Game::command` to the bridge (`Game::bridge`).
 
 `FUN_00442fa0` draws on levels 0 .. 10, 14 and 16 .. 18 (on 14 the score alone): the score, "%06d" in `scoline`
 cells; then `FUN_00435d45`: the meter (`FUN_00435c4e`, 1 + 2·damage/22, or /15 on hard, the damage taken as at most

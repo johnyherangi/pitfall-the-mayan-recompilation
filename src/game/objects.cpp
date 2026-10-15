@@ -261,6 +261,7 @@ void ObjectSystem::tick(ObjCtx& ctx) {
     // record is taken before the handler runs (DAT_00465888).
     behindN_ = 0; frontN_ = kFront;
     disp_[0] = -1; disp_[kFront] = -1;                       // 0x405183
+    endPass_ = false;                                        // (an engine exit may have cut the last pass short)
     int guard = 0;
     for (int i = head_; i != -1 && guard < 0x1000; ++guard) {
         Obj& o = recs_[size_t(i)];
