@@ -81,6 +81,13 @@ void Mixer::playChannel(int channel, int soundId, int volume) {
     v.volume = std::clamp(volume, 0, 0x7f); v.loop = false; v.active = true;
 }
 
+void Mixer::setChannelVolume(int channel, int volume) {
+    if (channel < 0 || channel >= kChannels) return;
+    std::lock_guard<std::mutex> lock(mutex_);
+    Voice& v = voices_[kVoices - kChannels + channel];
+    if (v.active) v.volume = std::clamp(volume, 0, 0x7f);
+}
+
 bool Mixer::channelBusy(int channel) const {
     // FUN_0043cbc0: true while the channel's sample plays (and when there is no sound at all).
     if (!enabled_ || channel < 0 || channel >= kChannels) return true;

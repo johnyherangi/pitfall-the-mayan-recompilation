@@ -10,7 +10,7 @@ const char* KeyBindings::registryName(Action a) {
 
 uint32_t Input::poll(const HostInput& host, bool useJoystick, bool allowCheat) const {
     uint32_t bits = 0;
-    auto key = [&](Action a) { return host.keyDown[size_t(bindings.vk[size_t(a)] & 0xff)]; };
+    auto key = [&](Action a) { return host.keyDown[size_t(bindings.key[size_t(a)] & 0xff)]; };
     if (!useJoystick) {
         if (allowCheat && host.ctrlDown) bits |= kJoyDebug;
         if (key(Action::Up)) bits |= kJoyUp;

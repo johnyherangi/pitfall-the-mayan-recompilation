@@ -24,6 +24,7 @@
 #include <string>
 #include <utility>
 #include <deque>
+#include <functional>
 #include <vector>
 
 namespace game {
@@ -129,6 +130,10 @@ public:
     void togglePause();                                   // the Pause key (FUN_00444ee0)
     void setPaused(bool on);
     void setCdOptions(bool music, bool ambient);          // the options dialog's CD settings (0x4410a9)
+    void setSoundEnabled(bool on);                        // the options' Sound Effects (FUN_0043d8e0 / FUN_0043d5d0)
+    void setWavVolume(int pct);                           // FUN_0043cd40: the option and the samples playing
+    void setCdVolume(int pct);                            // FUN_00441c50: auxSetVolume with the option
+    bool cdAvailable() const { return cd_.available(); }  // DAT_0046f0cc: the disc (here its ripped tracks) is there
     engine::Mixer& mixer() { return mixer_; }
     bool quitRequested() const { return quit_; }
 
@@ -208,9 +213,38 @@ public:
     int takeCheatDialog() { const int d = cheatDialog_; cheatDialog_ = 0; return d; }
     // DAT_0046d38c: the menu's level items that are on (FUN_0043a320), a bit a level reached
     // outside the demos (FUN_004460e0) or a cheat; menuChanged() says the menu needs them again.
-    uint32_t menuUnlocks() const { return menuUnlocks_; }
-    void setMenuUnlocks(uint32_t m) { menuUnlocks_ = m; }
+    // They are the options' Option_Level (kept with the other options).
+    uint32_t menuUnlocks() const { return options_.levelBits; }
+    void setMenuUnlocks(uint32_t m) { options_.levelBits = m; menuChanged_ = true; }
     bool menuChanged() { const bool c = menuChanged_; menuChanged_ = false; return c; }
+    // The menu's levels (FUN_0043b920 / FUN_0043a370): a game with points going on (DAT_00451914,
+    // not in a demo nor on the title, the intro, the reunion or the end) is given up only after
+    // "Are you sure ...?"; then menuStart starts a new game on the level.
+    bool menuNeedsConfirm() const;
+    int score() const { return fs_.hudScore; }        // DAT_00451914: the score as the logic's end published it
+    void menuStart(int level);
+    void setIntroAfterDemos(bool on) { introAfterDemos_ = on; }   // the menu's new game clears it first
+    // WM_SYSKEYDOWN / WM_SYSKEYUP / WM_SYSCHAR of F10 or 'y' (0x439c6c): on level 10 sound 0x52
+    // if channel 0 is free, on the title the next demo is the third, else Harry's next idle
+    // is the special one (DAT_0046d04c).
+    void specialKey();
+    bool& specialIdle() { return specialIdle_; }
+    // The status bar's text (FUN_00440bc0): the level's name ("\t..." centres it) as a level
+    // loads, " " on the title, the map and the cutscenes and for the game over.  The serial
+    // changes with each new text.
+    const std::string& statusText() const { return statusText_; }
+    int statusSerial() const { return statusSerial_; }
+    // FUN_004460e0's window business, for the front end: 1 the view was cleared (to be shown) and
+    // "Loading..." goes up while the files load, 2 the view cleared without it (the title),
+    // 0 the files are in (the dialog goes).  The map screen loads without either.
+    std::function<void(int)> loadingHook;
+    // FUN_00443c90's TextOutA texts ("PAUSED", the frame rate / position) for a front end that
+    // draws them with the window's own fonts, as the original (20 px, the Roman family, red, see-
+    // through): when set they are listed for the frame (view coordinates) instead of being drawn
+    // in the 8x8 font.
+    struct HostText { int x = 0, y = 0; std::string text; };
+    void setHostText(bool on) { hostText_ = on; }
+    const std::vector<HostText>& hostTexts() const { return hostTexts_; }
     uint8_t hatman() const { return hatman_; }        // DAT_0046d058: the "hatman" cheat (0 .. 2)
     bool showPosition() const { return showPosition_; }   // DAT_0046e058: "beammeup", the camera's position
     // DAT_0046fb84: the attract loaded the intro (track 5, the credits after it); only the menu's
@@ -222,6 +256,7 @@ public:
 
 private:
     void computeParallax();            // FUN_00443370 per-level switch
+    void setStatusText(const std::string& text);   // FUN_00440bc0
     void tickAttract();                // title / demo sequencing (FUN_00443c90 tail)
     void composeFrame();               // FUN_00443c90's drawing
     void renderHud();                  // FUN_00442fa0
@@ -278,7 +313,7 @@ private:
     // (DAT_0046fb48 / 4c), the six falling phases of the waterfalls (DAT_00450014 / 18 / 1c / 20 /
     // 24, DAT_004500e8), their wobble's place and countdown (DAT_004517f0, DAT_00450010).
     int leafCount_ = 0, leafPhase_ = 0;
-    int32_t water_[6] = {};
+    uint32_t water_[6] = {};
     int waveIndex_ = 0, waterCount_ = 0;
     // The title (FUN_00442410 / FUN_00443370 / FUN_004426e0 / FUN_00442bf0): records of
     // {x, y, sprite, frame, flags} at 0x451810 (the logo), 0x451830 / 0x451850 (its dust),
@@ -346,7 +381,6 @@ private:
     int cdVolumeCmd_ = 0;
     void cdPlay(int track);            // FUN_00441b80
     void cdPlayTracks();
-    void setCdVolume(int pct);         // FUN_00441c50
     // FUN_0043de70's effect: the logic's brightness (DAT_0046b1b0), as the last frame took it
     // (DAT_00452770), as last applied (DAT_00452768), the colours kept meanwhile (DAT_0046dc2c,
     // DAT_0045276c).
@@ -361,8 +395,12 @@ private:
     uint8_t typed_[0x80] = {};         // DAT_004533a0: the last characters typed
     int typedPos_ = 0;                 // DAT_00453384
     int cheatDialog_ = 0;
-    uint32_t menuUnlocks_ = 1;         // DAT_0046d38c (1 when the registry has nothing valid)
-    bool menuChanged_ = true;
+    bool menuChanged_ = true;          // DAT_0046d38c (Options::levelBits) changed: the menu's items again
+    bool specialIdle_ = false;         // DAT_0046d04c: F10 / Alt+Y, Harry's next idle is the special one
+    std::string statusText_ = " ";    // FUN_00440bc0's text
+    bool hostText_ = false;
+    std::vector<HostText> hostTexts_;
+    int statusSerial_ = 0;
     uint8_t hatman_ = 0;               // DAT_0046d058
     bool showPosition_ = false;        // DAT_0046e058
     // The frame rate text: frames composed (DAT_00453390), the time of its last update

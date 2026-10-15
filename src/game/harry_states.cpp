@@ -953,11 +953,11 @@ void PlayLogic::h429498() {
     h_.w(0x465b47) = 0;
     h_.w(0x465b41) = int16_t((random() & 0x1ff) + 0x80);
     auto special = [&] {
-        altIdle_ = 0;                                      // DAT_0046d04c (F10)
+        game_->specialIdle() = false;                      // DAT_0046d04c (F10 / Alt+Y)
         h_.setUl(0x465b4b, 0x429702);
         h_.w(0x465b4f) = 0;
     };
-    if (altIdle_ == 1 || h_.b(0x465b97) == 0x64) { special(); return; }
+    if (game_->specialIdle() || h_.b(0x465b97) == 0x64) { special(); return; }
     auto common = [&] {
         const uint32_t i = random() & 3;
         h_.setUl(0x465b4b, ml(0x4296b0 + i * 4));

@@ -270,7 +270,6 @@ private:
     // Sound channel state (FUN_004262d9 / FUN_004261e2).
     uint8_t ch0Pri_ = 0, ch0Id_ = 0, ch0Hold_ = 0;   // DAT_004627be / DAT_004627bf / DAT_004627c2
     uint8_t ch1Pri_ = 0, ch1Id_ = 0;                 // DAT_004627c0 / DAT_004627c1
-    int altIdle_ = 0;                // DAT_0046d04c: F10 was pressed (the special idle animation)
     uint8_t trgRam_[0x200] = {};     // [DAT_00450510] + 0x1f4 ..
     std::vector<uint32_t> strayReturns_;   // return addresses left on the stack during the object pass
     // The 2600 level's own globals outside Harry's memory.

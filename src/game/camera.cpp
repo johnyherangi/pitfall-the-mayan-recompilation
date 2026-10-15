@@ -50,7 +50,7 @@ void Game::computeParallax() {
         else s.waterColumns.push_back(int32_t(((ux & 0xf0) >> 3) + 2));
         for (uint32_t x = ux & ~0xfu; int32_t(((ux + 0xf) & ~0xfu) - x) != -0x140; x += 0x10) {
             if (levelNo_ == kXibalbaFalls && (x < 0x80 || x >= 0x380)) { s.waterColumns.push_back(-1); continue; }
-            const uint32_t v = uint32_t(int32_t(uint32_t(sy) * 0x8000u) + water_[kBlock[(x >> 4) & 7]]);
+            const uint32_t v = uint32_t(sy) * 0x8000u + water_[kBlock[(x >> 4) & 7]];   // (32 bits round)
             s.waterColumns.push_back(int32_t((v & 0x1ff0000) >> 16));
         }
         s.waterColumns.push_back(-1);

@@ -56,10 +56,10 @@ int main(int argc, char** argv) {
     catch (const std::exception& e) { SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Pitfall", e.what(), nullptr); return 1; }
     if (startLevel >= 0) { g->setMode(game::Mode::Playing); g->startLevel(startLevel); }
 
-    const int scale = options.displayMode == 1 ? 2 : 1;
+    // The window's game area as the options keep it (Window_SizeX / Window_SizeY, 320 x 224 at first).
     SDL_Window* win = SDL_CreateWindow("Pitfall: The Mayan Adventure", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                                       engine::kViewW * scale, engine::kViewH * scale,
-                                       SDL_WINDOW_RESIZABLE | (options.displayMode >= 2 ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0));
+                                       options.windowSizeX > 0 ? options.windowSizeX : engine::kViewW,
+                                       options.windowSizeY > 0 ? options.windowSizeY : engine::kViewH, SDL_WINDOW_RESIZABLE);
     SDL_Renderer* ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
     SDL_RenderSetLogicalSize(ren, engine::kViewW, engine::kViewH);
     SDL_Texture* tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, engine::kViewW, engine::kViewH);
@@ -84,6 +84,25 @@ int main(int argc, char** argv) {
                 for (const char* p = ev.text.text; *p; ++p) g->typeChar(uint8_t(*p));
             if (ev.type == SDL_KEYDOWN) {
                 if (ev.key.keysym.scancode == SDL_SCANCODE_PAUSE && !ev.key.repeat) g->togglePause();   // (any other key ends a pause)
+                // F10 or Alt+Y (WM_SYSKEYDOWN / WM_SYSCHAR, 0x439c6c): Harry's special idle, and the like
+                if (ev.key.keysym.scancode == SDL_SCANCODE_F10 ||
+                    (ev.key.keysym.scancode == SDL_SCANCODE_Y && (ev.key.keysym.mod & KMOD_ALT))) g->specialKey();
+                if (ev.key.keysym.scancode == SDL_SCANCODE_ESCAPE) {
+                    if (SDL_GetWindowFlags(win) & SDL_WINDOW_FULLSCREEN_DESKTOP) {
+                        SDL_SetWindowFullscreen(win, 0);                 // FUN_0043dd80: back to the window
+                    } else {
+                        // the quit dialog (124), paused: OK closes the game
+                        g->setPaused(true);
+                        const SDL_MessageBoxButtonData buttons[] = {{SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT, 1, "OK"},
+                                                                    {SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, 0, "Cancel"}};
+                        const SDL_MessageBoxData box{SDL_MESSAGEBOX_INFORMATION, win, "Pitfall",
+                                                     "Are you sure you want to quit this adventure?", 2, buttons, nullptr};
+                        int pick = 0;
+                        SDL_ShowMessageBox(&box, &pick);
+                        if (pick == 1) running = false;
+                        g->setPaused(false);
+                    }
+                }
                 if (ev.key.keysym.scancode == SDL_SCANCODE_RETURN && (ev.key.keysym.mod & KMOD_ALT)) {
                     const bool fs = (SDL_GetWindowFlags(win) & SDL_WINDOW_FULLSCREEN_DESKTOP) != 0;
                     SDL_SetWindowFullscreen(win, fs ? 0 : SDL_WINDOW_FULLSCREEN_DESKTOP);
@@ -150,6 +169,7 @@ int main(int argc, char** argv) {
     }
     if (dev) SDL_CloseAudioDevice(dev);
     if (joy) SDL_JoystickClose(joy);
+    if (!(SDL_GetWindowFlags(win) & SDL_WINDOW_FULLSCREEN_DESKTOP)) SDL_GetWindowSize(win, &options.windowSizeX, &options.windowSizeY);
     options.save("pitfall.ini");
     SDL_DestroyTexture(tex); SDL_DestroyRenderer(ren); SDL_DestroyWindow(win);
     SDL_Quit();

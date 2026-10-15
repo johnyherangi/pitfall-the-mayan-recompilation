@@ -6,6 +6,7 @@
 #include "ph/level.h"
 #include "ph/manifests.h"
 
+#include <array>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -98,7 +99,7 @@ namespace { int jaguarTest(const std::string& dir); int bungeeTest(const std::st
             int mapScreenTest(const std::string& dir); int continueTest(const std::string& dir);
             int transitionTest(const std::string& dir); int musicTest(const std::string& dir);
             int cutsceneTest(const std::string& dir); int titleTest(const std::string& dir); int earthwormTest(const std::string& dir);
-            int cheatTest(const std::string& dir); }
+            int cheatTest(const std::string& dir); int menuTest(const std::string& dir); }
 namespace {
 // The engine's blocking parts run out: a command's fades and waits, a level load's fade in.
 int settle(game::Game& g, int cap = 1000) {
@@ -161,6 +162,7 @@ int gameplayTests(const std::string& dir) {
     fails += titleTest(dir);
     fails += earthwormTest(dir);
     fails += cheatTest(dir);
+    fails += menuTest(dir);
     return fails;
 }
 }
@@ -1284,7 +1286,8 @@ int cheatTest(const std::string& dir) {
                     boot, partial, on, off, jim, stats, doom, testers, hats[0], hats[1], hats[2], shown, vaults, all);
         ++fails;
     }
-    // a demo's level does not come on in the menu, a level started does
+    // a demo's level does not come on in the menu, a level started does (the bits are the options')
+    opts.levelBits = 1;
     game::Game g2(dir, opts);
     engine::HostInput idle;
     for (int t = 0; t < 7340; ++t) g2.tick(idle);              // the intro, the title, demo 0, the title, demo 1 on level 1
@@ -1296,6 +1299,56 @@ int cheatTest(const std::string& dir) {
         ++fails;
     }
     std::printf("cheats: vampire, earthworm jim, 99s, the two dialogs, hatman, the frame rate and position, the menu's levels\n");
+    return fails;
+}
+
+// The original's menu (FUN_0043b920 / FUN_0043a370), its Option_Level bits (FUN_0043a2b0 /
+// FUN_0043a230), the status bar's text (FUN_00440bc0) and the windowed load's dialog hook.
+int menuTest(const std::string& dir) {
+    int fails = 0;
+    bool codec = true;
+    for (uint32_t bits : {1u, 0x1fu, 0x123457u, 0x3800u | 0x100000u, 0xffffffffu, 0x80000001u})
+        if (engine::levelBitsDecode(engine::levelBitsEncode(bits)) != bits) codec = false;
+    std::array<uint8_t, 64> b = engine::levelBitsEncode(0x1234);
+    b[1] ^= 1;                                                   // a random byte changed
+    const bool tamper = engine::levelBitsDecode(b) == 1;
+    b = engine::levelBitsEncode(0x1234);
+    b[63] ^= 0x80;                                               // the sum wrong
+    const bool sum = engine::levelBitsDecode(b) == 1;
+    engine::Options opts;
+    game::Game g(dir, opts);
+    std::vector<int> hook;
+    g.loadingHook = [&](int phase) { hook.push_back(phase); };
+    const bool bootAsk = g.menuNeedsConfirm();                   // the intro
+    const std::string bootText = g.statusText();
+    g.stats().score = 1234;
+    g.menuStart(3);
+    engine::HostInput idle;
+    const bool fresh = g.levelNumber() == 3 && g.stats().score == 0 && g.mode() == game::Mode::Playing &&
+                       g.statusText() == "\tLost City of Copan" && (g.menuUnlocks() & 1u << 3) && hook == std::vector<int>{1, 0};
+    const bool noPoints = !g.menuNeedsConfirm();
+    g.stats().score = 50;
+    settle(g);
+    for (int t = 0; t < 2; ++t) g.tick(idle);
+    const bool ask = g.menuNeedsConfirm();
+    g.specialKey();
+    const bool idleKey = g.specialIdle();
+    hook.clear();
+    g.startLevel(game::kTitleScreen);
+    const bool titleNoDialog = hook == std::vector<int>{2, 0} && g.statusText() == " " && !g.menuNeedsConfirm();
+    g.menuStart(game::kLoltunVault1);
+    const bool vault = g.statusText() == "\tLoltun Vault 1";
+    g.command("*2");
+    int t = 0;
+    for (; t < 400 && g.mode() != game::Mode::GameOver; ++t) g.tick(idle);
+    const bool over = g.mode() == game::Mode::GameOver && g.statusText() == " ";
+    if (!codec || !tamper || !sum || bootAsk || bootText != " " || !fresh || !noPoints || !ask || !idleKey || !titleNoDialog || !vault || !over) {
+        std::printf("FAIL: menu: codec %d tamper %d sum %d, boot ask %d text '%s', fresh %d, no points %d, ask %d, idle %d, title %d, vault %d, game over %d\n",
+                    codec, tamper, sum, bootAsk, bootText.c_str(), fresh, noPoints, ask, idleKey, titleNoDialog, vault, over);
+        ++fails;
+    } else {
+        std::printf("menu: Option_Level's bytes, the question only with points, a new game on the level, its name in the status bar, the loading dialog\n");
+    }
     return fails;
 }
 }

@@ -119,6 +119,19 @@ void Game::setCdOptions(bool music, bool ambient) {
     if (!music && !ambient) cdPlay(0);
 }
 
+void Game::setSoundEnabled(bool on) {
+    // 0x441094 ..: off closes the sound (FUN_0043d8e0), on opens it again (FUN_0043d5d0).
+    options_.soundEnabled = on;
+    mixer_.setEnabled(on);
+}
+
+void Game::setWavVolume(int pct) {
+    // FUN_0043cd40: the option, and the two channels' samples that play take it at once.
+    options_.wavVolume = pct;
+    if (!options_.soundEnabled) return;
+    for (int ch = 0; ch < engine::Mixer::kChannels; ++ch) mixer_.setChannelVolume(ch, pct * 0x7f / 100);
+}
+
 void Game::setCdVolume(int pct) {
     // FUN_00441c50: auxSetVolume with the option (0 .. 100) times 0x28f a channel.
     mixer_.setMusicVolume(pct * 0x28f);
@@ -138,15 +151,25 @@ void Game::startLevel(int level) {
     titleSoundA_ = titleSoundB_ = false;                 // DAT_0046fa40 / 44 = 0
     // the menu's item for the level comes on, but in a demo (DAT_0046fb8c is 0 when one loads)
     const bool demoLoad = mode_ == Mode::Attract && level != kTitleScreen && level != kIntro && level != kCredits;
-    if (!demoLoad && level >= 0 && level < 32 && !(menuUnlocks_ & (1u << level))) { menuUnlocks_ |= 1u << level; menuChanged_ = true; }
+    if (!demoLoad && level >= 0 && level < 32 && !(options_.levelBits & (1u << level))) { options_.levelBits |= 1u << level; menuChanged_ = true; }
     levelNo_ = level;
     if (level == kTitleScreen) newGame();                // FUN_004324c6
+    // FUN_0043a1c0 (the menu's check mark, the front end's) and FUN_00440bc0: the level's name in
+    // the status bar (the string table's 0x75 + level, " " for the levels without one).
+    setStatusText(level < kIntro && level != kContinueScreen && level != kTitleScreen && level != kMapScreen
+                      ? std::string("\t") + ph::levelName(level) : std::string(" "));
     mixer_.stopAll();                                    // FUN_0043d910: the two channels end, and the CD
     cdPlay(0);
     brightness_ = 0;                                     // DAT_0046b1b0, DAT_00452770
     shownBrightness_ = 0;
     appliedBrightness_ = 0;                              // FUN_004451a0 forgets the effect (without its colours)
     effectSaved_ = false;
+    // But for the map screen the view is cleared and shown, and in a window (but on the title)
+    // "Loading..." stays up while the files load.
+    if (level != kMapScreen) {
+        fb_.clear();
+        if (loadingHook) loadingHook(level == kTitleScreen ? 2 : 1);
+    }
     level_ = std::make_unique<ph::LevelData>(ph::loadLevel(level, dataDir_, palette_));
     fs_ = FrameState{};
     fs_.mainLayer = level_->hasBg;                       // DAT_00450fcc
@@ -191,6 +214,7 @@ void Game::startLevel(int level) {
     cdVolumeCmd_ = 0;
     startKey_ = 0;                                       // FUN_00442410: DAT_0046fb88 = 0
     if (level == kTitleScreen) titleSetup();
+    if (loadingHook) loadingHook(0);                     // (the dialog goes before FUN_00442410)
     if (logic_) logic_->enter(*this);
     preTicks(1 + preTickCount(level));                   // FUN_004460e0's end (on the title: no logic, the counters and the pan)
     // Then the first frame (FUN_00443c90) and, but on levels 21 .. 23, the fade in (FUN_0043e810).
@@ -199,6 +223,36 @@ void Game::startLevel(int level) {
 }
 
 void Game::togglePause() { setPaused(!paused_); }
+
+void Game::setStatusText(const std::string& text) {
+    statusText_ = text;
+    ++statusSerial_;
+}
+
+bool Game::menuNeedsConfirm() const {
+    // FUN_0043a370: DAT_00451914 (the score the logic's end published), no demo, and not on the
+    // title, the intro, the reunion or the end.
+    return fs_.hudScore != 0 && !demoPlaying() && levelNo_ != kTitleScreen && levelNo_ != kIntro &&
+           levelNo_ != kSimonRoom && levelNo_ != kCredits;
+}
+
+void Game::menuStart(int level) {
+    // FUN_0043a370 once the question is answered: the demo off (DAT_0046fb8c = 0x800), a new game
+    // (FUN_004324c6), the pause ended, the CD stopped, and the level loaded (FUN_004460e0).
+    demoPos_ = kDemoNotActive;
+    mode_ = Mode::Playing;
+    newGame();
+    setPaused(false);
+    if (options_.cdMusic || options_.cdAmbient) cdPlay(0);
+    startLevel(level);
+}
+
+void Game::specialKey() {
+    // 0x439c6c: F10 (WM_SYSKEYDOWN / UP) or Alt+Y (WM_SYSCHAR 'y').
+    if (levelNo_ == kWarriorSpirit) { if (!channelBusy(0)) playChannel(0, 0x52); }
+    else if (levelNo_ == kTitleScreen) demoIndex_ = 2;    // DAT_0046fbbc
+    else specialIdle_ = true;                            // DAT_0046d04c
+}
 
 void Game::setPaused(bool on) {
     // FUN_00444ee0: not while a level loads (nor in the switch's waits), nor into a pause in the
@@ -322,7 +376,9 @@ void Game::beginStage() {
         else if (shownBrightness_ != 0 && effectSaved_) endEffect();
         break;
     case Stage::GameOver:
-        // 0x44426b: the sound, "[GAME OVER]" on a cleared screen, every colour set again (FUN_0043ed00).
+        // 0x44426b: the status bar's text " ", the sound, "[GAME OVER]" on a cleared screen, every
+        // colour set again (FUN_0043ed00).
+        setStatusText(" ");
         playChannel(0, 0x20);
         mode_ = Mode::GameOver;
         drawPending_ = true;
@@ -609,6 +665,7 @@ void Game::renderGameOver() {
     // 0x44426b: the whole buffer cleared and "[GAME OVER]" drawn by FUN_00431bfb: ltr_lg letters
     // centred on x 0xa0, at y 0x5f of the screen.
     fb_.clear();
+    hostTexts_.clear();
     const char* text = "[GAME OVER]";
     int total = 0;
     for (const char* c = text; *c; ++c) { int w; bigGlyph(uint8_t(*c), w); total += w; }
@@ -639,6 +696,7 @@ void Game::render() {
 void Game::composeFrame() {
     // ---- FUN_00443c90: snapshot the logic state --------------------------
     snap_ = fs_;
+    hostTexts_.clear();
     shownBrightness_ = int32_t(brightness_);                       // DAT_00452770 = DAT_0046b1b0
     if (cdVolumeCmd_ == 1) setCdVolume(options_.cdVolume >> 2);     // DAT_00450500: the stop-watch
     if (cdVolumeCmd_ == 2) setCdVolume(options_.cdVolume);
@@ -756,8 +814,9 @@ void Game::renderVault() {
 void Game::renderPaused() {
     // FUN_00443c90: "PAUSED" with TextOutA at (0x82, 0x60) of the buffer, blinking on the timer's
     // count (here in the 8x8 font, at the view's place: the fine scroll left, 9 lines up).
-    if (paused_ && (timerTicks_ & 0x60) != 0)
-        renderer_.drawText(assets_->font, 0x82 - (snap_.scrollX & 7), 0x60 - 9, "PAUSED", snap_.scrollX);
+    if (!paused_ || (timerTicks_ & 0x60) == 0) return;
+    if (hostText_) hostTexts_.push_back(HostText{0x82 - (snap_.scrollX & 7), 0x60 - 9, "PAUSED"});
+    else renderer_.drawText(assets_->font, 0x82 - (snap_.scrollX & 7), 0x60 - 9, "PAUSED", snap_.scrollX);
 }
 
 void Game::completeLevel() {

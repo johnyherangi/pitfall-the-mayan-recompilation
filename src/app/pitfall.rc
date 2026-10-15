@@ -1,8 +1,194 @@
-// Resources for the Win32 front end.  The icon is the original one from
-// PITFALL.EXE (RT_GROUP_ICON #4216), extracted with tools/phtool.py helpers.
+// Resources for the Win32 front end.  The icon is the original one from PITFALL.EXE
+// (RT_GROUP_ICON #4216); the menu and the dialogs are PITFALL.EXE's English ones (menu 214,
+// dialogs 124, 127, 201, 203 .. 205, 212 .. 214, 256), control for control.  Their pictures
+// (bitmaps 0x7a, 0x7e, 0x80, 0x81, 0xd4 and icons 207 .. 210) are not copied here: the front end
+// takes them from PITFALL.EXE in the data directory when it is there.
 #include <windows.h>
+#include <commctrl.h>
+#include "resource.h"
 
 PITFALL_ICON ICON "pitfall.ico"
+
+IDR_MENU MENU
+BEGIN
+    POPUP "&File"
+    BEGIN
+        MENUITEM "&New Game",               IDM_NEWGAME
+        MENUITEM "&Properties...",          IDM_PROPERTIES
+        MENUITEM SEPARATOR
+        MENUITEM "Ceiba Jungle",            IDM_CEIBA
+        MENUITEM "Xibalba Falls",           IDM_XIBALBA
+        MENUITEM "Tazamul Mines",           IDM_TAZAMUL
+        MENUITEM "Lost City of Copan",      IDM_LOSTCITY
+        MENUITEM "Copan Temple",            IDM_COPANTEMPLE
+        MENUITEM "Lakamul Rain Forest",     IDM_LAKAMUL
+        MENUITEM "Yaxchilan Lagoon",        IDM_YAXCHILAN
+        MENUITEM "Palenque Ruins",          IDM_PALENQUE
+        MENUITEM "Tomb of Palenque",        IDM_TOMB
+        MENUITEM "Balankanche Mine",        IDM_BALANKANCHE
+        MENUITEM "Jaina Island Falls",      IDM_JAINA
+        MENUITEM "Tikal Ruins",             IDM_TIKALRUINS
+        MENUITEM "Temple of Tikal",         IDM_TIKALTEMPLE
+        MENUITEM "Warrior Spirit",          IDM_WARRIOR
+        MENUITEM SEPARATOR
+        MENUITEM "Loltun Vault 1",          IDM_VAULT1
+        MENUITEM "Loltun Vault 2",          IDM_VAULT2
+        MENUITEM "Loltun Vault 3",          IDM_VAULT3
+        MENUITEM "2600 Level",              IDM_ATARI
+        MENUITEM SEPARATOR
+        MENUITEM "E&xit",                   IDM_EXIT
+    END
+    POPUP "&Help"
+    BEGIN
+        MENUITEM "&Contents",               IDM_HELP_CONTENTS
+        MENUITEM "&Search for Help On...",  IDM_HELP_SEARCH
+        MENUITEM "&How to Use Help",        IDM_HELP_HOWTO
+        MENUITEM SEPARATOR
+        MENUITEM "&About Pitfall...",       IDM_ABOUT
+    END
+END
+
+// FUN_004460e0's "Loading..." (a window's level load)
+IDD_LOADING DIALOG 0, 0, 90, 47
+STYLE WS_POPUP | WS_VISIBLE | DS_MODALFRAME
+FONT 8, "MS Sans Serif"
+BEGIN
+    CONTROL "PITFALL_ICON", -1, "Static", SS_ICON, 34, 4, 18, 20
+    CONTROL "Loading...", -1, "Static", SS_LEFT | WS_GROUP, 29, 32, 40, 8
+END
+
+// Esc in a window
+IDD_QUIT DIALOG 0, 0, 144, 89
+STYLE WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU | DS_MODALFRAME
+CAPTION "Pitfall"
+FONT 8, "MS Sans Serif"
+BEGIN
+    CONTROL "OK", IDOK, "Button", BS_DEFPUSHBUTTON | WS_TABSTOP, 16, 67, 50, 14
+    CONTROL "Cancel", IDCANCEL, "Button", BS_PUSHBUTTON | WS_TABSTOP, 77, 67, 50, 14
+    CONTROL "Are you sure you want to quit this adventure?", -1, "Static", SS_CENTER | WS_GROUP, 34, 39, 74, 19
+    CONTROL "PITFALL_ICON", -1, "Static", SS_ICON, 62, 10, 18, 20
+END
+
+IDD_ABOUT DIALOG 22, 17, 130, 148
+STYLE WS_POPUP | DS_MODALFRAME
+FONT 8, "System"
+BEGIN
+    CONTROL "OK", IDOK, "Button", BS_DEFPUSHBUTTON | WS_GROUP | WS_TABSTOP, 49, 129, 32, 14
+    CONTROL "", IDC_PICTURE, "Static", SS_GRAYFRAME, 5, 5, 120, 117
+END
+
+IDD_DOOM DIALOG 7, 7, 221, 178
+STYLE WS_POPUP | WS_VISIBLE | DS_MODALFRAME
+FONT 8, "MS Sans Serif"
+BEGIN
+    CONTROL "Nice try! This isn't Doom!", IDOK, "Button", BS_DEFPUSHBUTTON | WS_TABSTOP, 39, 152, 142, 21
+    CONTROL "", IDC_PICTURE, "Static", SS_BLACKFRAME, 4, 2, 213, 123
+    CONTROL "Tin Guerrero", -1, "Static", SS_LEFT | WS_GROUP, 164, 135, 40, 8
+    CONTROL "Andy Glaister", -1, "Static", SS_LEFT | WS_GROUP, 90, 135, 42, 8
+    CONTROL "Scott Krager", -1, "Static", SS_LEFT | WS_GROUP, 18, 135, 40, 8
+END
+
+IDD_TESTERS DIALOG 5, 5, 221, 178
+STYLE WS_POPUP | WS_VISIBLE | DS_MODALFRAME
+FONT 8, "MS Sans Serif"
+BEGIN
+    CONTROL "What a job, eh?", IDOK, "Button", BS_DEFPUSHBUTTON | WS_TABSTOP, 39, 152, 142, 21
+    CONTROL "", IDC_PICTURE, "Static", SS_BLACKFRAME, 4, 2, 213, 123
+    CONTROL "The Testers!", -1, "Static", SS_LEFT | WS_GROUP, 90, 135, 49, 9
+END
+
+// The property sheet's pages (FUN_00440c00)
+IDD_SYSTEM DIALOG 0, 0, 266, 135
+STYLE WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU | DS_MODALFRAME
+CAPTION "System"
+FONT 8, "MS Sans Serif"
+BEGIN
+    CONTROL "Display", -1, "Button", BS_GROUPBOX, 13, 23, 134, 95
+    CONTROL "", IDC_SCREENSIZE, "ComboBox", CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, 21, 64, 118, 68
+    CONTROL "Screen Size:", -1, "Static", SS_LEFT | WS_GROUP, 21, 50, 46, 11
+    CONTROL "Sync Full Screen to Monitor", IDC_SYNC, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 32, 92, 100, 9
+    CONTROL "Game Priority", -1, "Button", BS_GROUPBOX, 156, 40, 98, 58
+    CONTROL "Generic3", IDC_PRIORITY, TRACKBAR_CLASS, TBS_VERT | TBS_BOTH | TBS_NOTICKS | WS_TABSTOP, 182, 52, 17, 41
+    CONTROL "Real-Time", -1, "Static", SS_LEFT | WS_GROUP, 202, 54, 42, 8
+    CONTROL "Normal", -1, "Static", SS_LEFT | WS_GROUP, 202, 84, 42, 8
+    CONTROL "", IDC_ICON_SYSTEM, "Static", SS_ICON, 115, 36, 18, 20
+    CONTROL "", IDC_RAMP_PRIORITY, "Static", SS_GRAYFRAME | NOT WS_VISIBLE, 169, 55, 12, 35
+    CONTROL "High", -1, "Static", SS_LEFT | WS_GROUP, 202, 69, 42, 8
+END
+
+IDD_SOUND DIALOG 0, 0, 268, 136
+STYLE WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU | DS_MODALFRAME
+CAPTION "Sound"
+FONT 8, "MS Sans Serif"
+BEGIN
+    CONTROL "Sound Effects", IDC_SOUNDFX, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 27, 51, 77, 8
+    CONTROL "Generic1", IDC_WAVVOLUME, TRACKBAR_CLASS, TBS_VERT | TBS_BOTH | TBS_NOTICKS | WS_TABSTOP, 176, 49, 17, 55
+    CONTROL "Generic1", IDC_CDVOLUME, TRACKBAR_CLASS, TBS_VERT | TBS_BOTH | TBS_NOTICKS | WS_TABSTOP, 223, 49, 17, 55
+    CONTROL "Sound", -1, "Button", BS_GROUPBOX, 14, 17, 239, 101
+    CONTROL "CD Audio", -1, "Static", SS_LEFT | WS_GROUP, 208, 39, 32, 9
+    CONTROL "Sound Effects", -1, "Static", SS_LEFT | WS_GROUP, 148, 39, 47, 8
+    CONTROL "", IDC_ICON_SOUND, "Static", SS_ICON, 124, 57, 18, 20
+    CONTROL "CD Music", IDC_CDMUSIC, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 27, 68, 77, 8
+    CONTROL "CD Ambient Sounds", IDC_CDAMBIENT, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 27, 85, 77, 8
+    CONTROL "", IDC_RAMP_WAV, "Static", SS_GRAYFRAME | NOT WS_VISIBLE, 157, 52, 13, 49
+    CONTROL "", IDC_RAMP_CD, "Static", SS_GRAYFRAME | NOT WS_VISIBLE, 203, 52, 13, 49
+END
+
+IDD_DIFFICULTY DIALOG 0, 0, 250, 138
+STYLE WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU | DS_MODALFRAME
+CAPTION "Difficulty"
+FONT 8, "MS Sans Serif"
+BEGIN
+    CONTROL "Difficulty Level", -1, "Button", BS_GROUPBOX, 22, 30, 206, 78
+    CONTROL "   Normal", IDC_DIFF_NORMAL, "Button", BS_AUTORADIOBUTTON | WS_GROUP, 103, 51, 44, 19
+    CONTROL "   Hard", IDC_DIFF_HARD, "Button", BS_AUTORADIOBUTTON, 103, 70, 44, 19
+END
+
+IDD_KEYBOARD DIALOG 22, 17, 270, 138
+STYLE WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU | DS_MODALFRAME
+CAPTION "Keyboard"
+FONT 8, "MS Sans Serif"
+BEGIN
+    CONTROL "", IDC_KEY_UP, "Edit", ES_LEFT | WS_BORDER | WS_TABSTOP, 169, 34, 34, 12
+    CONTROL "", IDC_KEY_DOWN, "Edit", ES_LEFT | WS_BORDER | WS_TABSTOP, 169, 64, 34, 12
+    CONTROL "", IDC_KEY_LEFT, "Edit", ES_LEFT | WS_BORDER | WS_TABSTOP, 149, 49, 34, 12
+    CONTROL "", IDC_KEY_RIGHT, "Edit", ES_LEFT | WS_BORDER | WS_TABSTOP, 188, 49, 34, 12
+    CONTROL "", IDC_KEY_JUMP, "Edit", ES_LEFT | WS_BORDER | WS_TABSTOP, 75, 20, 40, 12
+    CONTROL "", IDC_KEY_SHOOT, "Edit", ES_LEFT | WS_BORDER | WS_TABSTOP, 75, 36, 40, 12
+    CONTROL "", IDC_KEY_WHIP, "Edit", ES_LEFT | WS_BORDER | WS_TABSTOP, 75, 52, 40, 12
+    CONTROL "", IDC_KEY_SELECT, "Edit", ES_LEFT | WS_BORDER | WS_TABSTOP, 75, 68, 40, 12
+    CONTROL "", IDC_ICON_KEYBOARD, "Static", SS_ICON, 143, 94, 18, 20
+    CONTROL "Jump:", -1, "Static", SS_LEFT | WS_GROUP, 15, 22, 21, 8
+    CONTROL "Shoot:", -1, "Static", SS_LEFT | WS_GROUP, 15, 38, 25, 8
+    CONTROL "Whip:", -1, "Static", SS_LEFT | WS_GROUP, 15, 54, 25, 8
+    CONTROL "Select Weapon:", -1, "Static", SS_LEFT | WS_GROUP, 15, 70, 55, 8
+    CONTROL "Up", -1, "Static", SS_CENTER | WS_GROUP, 179, 23, 13, 8
+    CONTROL "Down", -1, "Static", SS_CENTER | WS_GROUP, 175, 79, 20, 8
+    CONTROL "Left", -1, "Static", SS_RIGHT | WS_GROUP, 126, 51, 19, 8
+    CONTROL "Right", -1, "Static", SS_LEFT | WS_GROUP, 226, 51, 25, 8
+    CONTROL "Configure Keys", -1, "Button", BS_GROUPBOX, 4, 8, 253, 116
+    CONTROL " Enable Keyboard", IDC_ENABLE_KEYBOARD, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 180, 99, 69, 10
+    CONTROL "Press the key you want to control the selected action.", -1, "Static", SS_LEFT | WS_GROUP, 15, 95, 109, 19
+END
+
+IDD_JOYSTICK DIALOG 22, 17, 269, 136
+STYLE WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU | DS_MODALFRAME
+CAPTION "JoyStick"
+FONT 8, "MS Sans Serif"
+BEGIN
+    CONTROL "", IDC_JOY_JUMP, "Edit", ES_LEFT | WS_BORDER | WS_TABSTOP, 195, 30, 40, 12
+    CONTROL "", IDC_JOY_SHOOT, "Edit", ES_LEFT | WS_BORDER | WS_TABSTOP, 195, 51, 40, 12
+    CONTROL "", IDC_JOY_WHIP, "Edit", ES_LEFT | WS_BORDER | WS_TABSTOP, 195, 72, 40, 12
+    CONTROL "", IDC_JOY_SELECT, "Edit", ES_LEFT | WS_BORDER | WS_TABSTOP, 195, 93, 40, 12
+    CONTROL "", IDC_ICON_JOYSTICK, "Static", SS_ICON, 126, 57, 18, 20
+    CONTROL "Jump:", -1, "Static", SS_RIGHT | WS_GROUP, 159, 33, 28, 8
+    CONTROL "Shoot:", -1, "Static", SS_RIGHT | WS_GROUP, 161, 53, 26, 8
+    CONTROL "Whip:", -1, "Static", SS_RIGHT | WS_GROUP, 160, 73, 25, 8
+    CONTROL "Select Weapon:", -1, "Static", SS_RIGHT | WS_GROUP, 130, 93, 57, 8
+    CONTROL "Configure Buttons", -1, "Button", BS_GROUPBOX, 15, 14, 238, 107
+    CONTROL "Press the joystick button you want control the selected action.\n\nYou may also assign various actions to the keyboard. ", -1, "Static", SS_LEFT | WS_GROUP, 33, 30, 77, 58
+    CONTROL "  Enable Joystick", IDC_ENABLE_JOYSTICK, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 33, 93, 94, 10
+END
 
 VS_VERSION_INFO VERSIONINFO
  FILEVERSION 1,0,0,0

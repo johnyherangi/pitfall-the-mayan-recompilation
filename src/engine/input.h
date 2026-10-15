@@ -24,13 +24,16 @@ enum JoyBits : uint32_t {
 
 enum class Action { Up, Down, Left, Right, Jump, Shoot, Whip, Select, Count };
 
-// Original default bindings (data at 0x46d08c..): Windows virtual-key codes.
+// Original default bindings (the table at 0x46d058 .., Key_Up .. Key_Select): each key as the
+// options page took it (0x43b000), the WM_KEYDOWN's lParam but its low byte, which is the
+// virtual-key code: the scan code in bits 16 .. 23 (GetKeyNameTextA names it), the code in 0 .. 7.
 struct KeyBindings {
-    std::array<int, size_t(Action::Count)> vk{
-        0x26, 0x28, 0x25, 0x27,     // VK_UP, VK_DOWN, VK_LEFT, VK_RIGHT
-        'W', 'E', 'Q', 0x20         // Key_Jump, Key_Shoot, Key_Whip, Key_Select (space)
+    std::array<int, size_t(Action::Count)> key{
+        0x09480026, 0x09500028, 0x094b0025, 0x094d0027,   // Up, Down, Left, Right (the arrows)
+        0x08110057, 0x08120045, 0x08100051, 0x08390020    // Jump W, Shoot E, Whip Q, Select Space
     };
-    // Joystick buttons for Jump / Shoot / Whip / Select (bit masks of JOYINFO.wButtons).
+    // Joystick buttons for Jump / Shoot / Whip / Select (the table at 0x46d238 .., Joy_Jump ..):
+    // bit masks of JOYINFO.wButtons, or a key as above (the page takes either).
     std::array<int, 4> joyButton{1, 2, 4, 8};
     static const char* registryName(Action a);   // "Key_Up", "Key_Jump", ...
 };

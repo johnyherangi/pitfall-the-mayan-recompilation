@@ -68,10 +68,10 @@ void Game::typeChar(uint8_t c) {
         case kLives: st.lives = 0x63; break;
         case kInvincible: invincible_ = !invincible_; break;
         case kHatman: if (++hatman_ == 3) hatman_ = 0; break;
-        case kUnlockFive: menuUnlocks_ |= 0x1f; menuChanged_ = true; break;
-        case kUnlockAll: menuUnlocks_ = 0xffffffff; menuChanged_ = true; break;
-        case kUnlockVaults: menuUnlocks_ |= 0x3800; menuChanged_ = true; break;
-        case kUnlockAtari: menuUnlocks_ |= 0x100000; menuChanged_ = true; break;
+        case kUnlockFive: options_.levelBits |= 0x1f; menuChanged_ = true; break;
+        case kUnlockAll: options_.levelBits = 0xffffffff; menuChanged_ = true; break;
+        case kUnlockVaults: options_.levelBits |= 0x3800; menuChanged_ = true; break;
+        case kUnlockAtari: options_.levelBits |= 0x100000; menuChanged_ = true; break;
         }
     }
 }
@@ -109,7 +109,8 @@ void Game::renderFrameRate() {
         fs_.globalFrame = 0;                                  // DAT_0046fb74
         fpsTime_ = now;
     }
-    renderer_.drawText(assets_->font, 0x78, 0x10 - 9, fpsText_.c_str(), snap_.scrollX);
+    if (hostText_) hostTexts_.push_back(HostText{0x78, 0x10 - 9, fpsText_});
+    else renderer_.drawText(assets_->font, 0x78, 0x10 - 9, fpsText_.c_str(), snap_.scrollX);
 }
 
 } // namespace game

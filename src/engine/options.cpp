@@ -1,6 +1,7 @@
 #include "engine/options.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <map>
 #include <sstream>
@@ -26,7 +27,38 @@ int geti(const KV& kv, const char* k, int def) {
     auto it = kv.find(k);
     return it == kv.end() ? def : std::atoi(it->second.c_str());
 }
+
+// The Microsoft C library's rand() (FUN_00449853 / FUN_00449860).
+struct CrtRand {
+    uint32_t seed;
+    int next() { seed = seed * 0x343fd + 0x269ec3; return int((seed >> 16) & 0x7fff); }
+};
 } // namespace
+
+std::array<uint8_t, 64> levelBitsEncode(uint32_t bits) {
+    // FUN_0043a2b0
+    std::array<uint8_t, 64> b{};
+    CrtRand r{bits};
+    for (auto& c : b) c = uint8_t(r.next());
+    int32_t d = int32_t(bits);
+    for (int i = 0; i < 64; i += 2, d >>= 1) b[size_t(i)] = uint8_t((b[size_t(i)] & ~0x20) | ((d & 1) << 5));
+    uint8_t sum = 0;
+    for (int i = 0; i < 63; ++i) sum = uint8_t(sum + b[size_t(i)]);
+    b[63] = sum;
+    return b;
+}
+
+uint32_t levelBitsDecode(const std::array<uint8_t, 64>& b) {
+    // FUN_0043a230: the bits back from the even bytes, then the random bytes and the sum checked.
+    uint32_t bits = 0;
+    for (int i = 62; i >= 0; i -= 2) bits = bits * 2 + ((b[size_t(i)] & 0x20) >> 5);
+    CrtRand r{bits};
+    uint32_t out = bits;
+    for (int i = 0; i < 63; ++i) if (((r.next() ^ b[size_t(i)]) & 0xdf) != 0) out = 1;
+    uint8_t sum = 0;
+    for (int i = 0; i < 63; ++i) sum = uint8_t(sum + b[size_t(i)]);
+    return b[63] == sum ? out : 1;
+}
 
 bool Options::load(const std::string& iniPath) {
     const KV kv = readIni(iniPath);
@@ -47,10 +79,17 @@ bool Options::load(const std::string& iniPath) {
     frameRate    = geti(kv, "Option_FrameRate", frameRate) != 0;
     smooth       = geti(kv, "Option_Smooth1", smooth) != 0;
     allowCheat   = geti(kv, "Debug_AllowCheat", allowCheat) != 0;
-    level        = geti(kv, "Option_Level", level);
-    displayMode  = geti(kv, "Option_DisplayMode", displayMode);
+    {                                                   // Option_Level: the 64 bytes in hex
+        auto it = kv.find("Option_Level");
+        levelBits = 1;
+        if (it != kv.end() && it->second.size() >= 128) {
+            std::array<uint8_t, 64> b{};
+            for (size_t i = 0; i < 64; ++i) b[i] = uint8_t(std::strtoul(it->second.substr(i * 2, 2).c_str(), nullptr, 16));
+            levelBits = levelBitsDecode(b);
+        }
+    }
     for (int i = 0; i < int(Action::Count); ++i)
-        keys.vk[size_t(i)] = geti(kv, KeyBindings::registryName(Action(i)), keys.vk[size_t(i)]);
+        keys.key[size_t(i)] = geti(kv, KeyBindings::registryName(Action(i)), keys.key[size_t(i)]);
     static const char* const joyNames[] = {"Joy_Jump", "Joy_Shoot", "Joy_Whip", "Joy_Select"};
     for (int i = 0; i < 4; ++i) keys.joyButton[size_t(i)] = geti(kv, joyNames[i], keys.joyButton[size_t(i)]);
     return true;
@@ -68,9 +107,11 @@ bool Options::save(const std::string& iniPath) const {
     f << "Option_CDAmbient=" << cdAmbient << "\nOption_SoundEnabled=" << soundEnabled << "\n";
     f << "Option_Slow=" << slow << "\nOption_FrameRate=" << frameRate << "\n";
     f << "Option_Smooth1=" << smooth << "\nDebug_AllowCheat=" << allowCheat << "\n";
-    f << "Option_Level=" << level << "\nOption_DisplayMode=" << displayMode << "\n";
+    f << "Option_Level=";
+    for (uint8_t c : levelBitsEncode(levelBits)) { char h[3]; std::snprintf(h, sizeof h, "%02x", c); f << h; }
+    f << "\n";
     for (int i = 0; i < int(Action::Count); ++i)
-        f << KeyBindings::registryName(Action(i)) << "=" << keys.vk[size_t(i)] << "\n";
+        f << KeyBindings::registryName(Action(i)) << "=" << keys.key[size_t(i)] << "\n";
     static const char* const joyNames[] = {"Joy_Jump", "Joy_Shoot", "Joy_Whip", "Joy_Select"};
     for (int i = 0; i < 4; ++i) f << joyNames[i] << "=" << keys.joyButton[size_t(i)] << "\n";
     return true;

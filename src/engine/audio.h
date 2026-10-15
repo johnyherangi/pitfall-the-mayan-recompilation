@@ -37,6 +37,7 @@ public:
     static constexpr int kChannels = 2;
     void playChannel(int channel, int soundId, int volume = 0x7f);
     bool channelBusy(int channel) const;
+    void setChannelVolume(int channel, int volume);   // AIL_set_sample_volume on a playing channel
     void setMasterVolume(int v0to127) { master_ = v0to127; }
     bool enabled() const { return enabled_; }
     void setEnabled(bool e) { enabled_ = e; if (!e) stopAll(); }
