@@ -1,0 +1,149 @@
+{
+ "table": [
+  [
+   "mi_stone",
+   255,
+   "0x40598d"
+  ],
+  [
+   "fxrbmrot",
+   255,
+   "0x4059b8"
+  ],
+  [
+   "mi_pouc2",
+   255,
+   "0x405a22"
+  ],
+  [
+   "mi_chili",
+   0,
+   "0x405a5b"
+  ],
+  [
+   "mi_time",
+   0,
+   "0x405a88"
+  ],
+  [
+   "mi_1up",
+   0,
+   "0x4059ed"
+  ],
+  [
+   "mi_gold",
+   0,
+   "0x4058b7"
+  ],
+  [
+   "mi_silvr",
+   0,
+   "0x4058e2"
+  ],
+  [
+   "mi_ring",
+   0,
+   "0x40588c"
+  ],
+  [
+   "mi_coin",
+   0,
+   "0x40590d"
+  ],
+  [
+   "fx_hrtbt",
+   255,
+   "0x405935"
+  ],
+  [
+   "mi_ptfal",
+   255,
+   "0x405838"
+  ]
+ ],
+ "effects": {
+  "0x405838": {
+   "score": 10000,
+   "treasure": 0,
+   "sounds": [
+    36
+   ]
+  },
+  "0x40588c": {
+   "score": 1000,
+   "treasure": 10,
+   "sounds": [
+    254
+   ]
+  },
+  "0x4058b7": {
+   "score": 500,
+   "treasure": 5,
+   "sounds": [
+    254
+   ]
+  },
+  "0x4058e2": {
+   "score": 200,
+   "treasure": 2,
+   "sounds": [
+    254
+   ]
+  },
+  "0x40590d": {
+   "score": 100,
+   "treasure": 1,
+   "sounds": [
+    253
+   ]
+  },
+  "0x405935": {
+   "score": 500,
+   "treasure": 0,
+   "sounds": [
+    251
+   ],
+   "damage": 0
+  },
+  "0x40598d": {
+   "score": 600,
+   "treasure": 0,
+   "sounds": [
+    75
+   ],
+   "ammo_stone2": 2
+  },
+  "0x4059b8": {
+   "score": 500,
+   "treasure": 0,
+   "sounds": [],
+   "ammo_boomerang": 1
+  },
+  "0x4059ed": {
+   "score": 2000,
+   "treasure": 0,
+   "sounds": []
+  },
+  "0x405a22": {
+   "score": 50,
+   "treasure": 0,
+   "sounds": [
+    252
+   ],
+   "ammo_stones": 10
+  },
+  "0x405a5b": {
+   "score": 600,
+   "treasure": 0,
+   "sounds": [
+    254
+   ],
+   "chili": 896
+  },
+  "0x405a88": {
+   "score": 750,
+   "treasure": 0,
+   "sounds": []
+  }
+ }
+}
