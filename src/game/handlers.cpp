@@ -568,15 +568,17 @@ void h_monkey(ObjCtx& ctx, Obj& o) {
         if (!animStep(ctx, o, o.anim(0x3c), kAnim_turn4, 3)) { exitDespawnWide(ctx, o); return; }
         o.facing ^= 1; o.w(0x36) = 2;
     } else {
-        // Running; faster when Harry is just ahead.
+        // Running; faster when Harry is just ahead.  (Facing left the test at 0x40e76d falls
+        // through into the facing-right one, which then fails: only a monkey facing right speeds up.)
         int32_t speed = 0x12000;
         const int dy = ctx.harry.y() - o.y, dx = ctx.harry.x() - o.x;
-        if (between(dy, -0x18, 0x38)) {
-            if (o.facing ? between(dx, -0xa0, 0) : between(dx, 0, 0x60)) speed = 0x21000;
-        }
+        if (between(dy, -0x18, 0x38) && o.facing == 0 && between(dx, 0, 0x60)) speed = 0x21000;
         if (o.w(0x32) < 0) {
             moveX(o, -speed);
-            if (o.x < 0) { o.w(0x32) = -o.w(0x32); o.facing ^= 1; }
+            if (o.x < 0) {                    // off the left end of the level: turn and step back
+                o.w(0x32) = -o.w(0x32); o.facing ^= 1;
+                moveX(o, speed);
+            }
         } else {
             moveX(o, speed);
         }
@@ -604,7 +606,7 @@ void h_monkey(ObjCtx& ctx, Obj& o) {
     if (ctx.harry.cont() == 0x429fe2) { exitDespawnWide(ctx, o); return; }   // 0x40e9ce: Harry on a bungee vine
     {
         const int dy = ctx.harry.y() - o.y, dx = ctx.harry.x() - o.x;
-        if (between(dy, -0x18, 0x38) && between(dx, -0xa0, 0x60)) { exitDespawnWide(ctx, o); return; }
+        if (between(dy, -0x18, 0x38) && between(dx, -0x60, 0x60)) { exitDespawnWide(ctx, o); return; }
     }
     o.b(0x46) -= 1;
     if (int8_t(o.b(0x46)) >= 0) { exitDespawnWide(ctx, o); return; }
@@ -616,7 +618,7 @@ void h_monkey(ObjCtx& ctx, Obj& o) {
         if (!between(dy, -0x40, 0xa0)) { exitDespawnWide(ctx, o); return; }
         // Wind up a throw.
         o.w(0x64) = int16_t((ctx.rnd() & 0x3f) + 8);
-        o.script = kAnim2_monkeyToss; o.l(0x3e) = 0; o.b(0x42) = 0;
+        o.script = kAnim2_monkeyToss; o.l(0x3e) = 0; o.w(0x42) = 0;
         o.b(0x5e) = 0;
         if (dy >= 0x48) { o.b(0x5e) = 0xff; ctx.sound1((ctx.rnd() & 0x80) ? 0x12 : 0x2b, 4); }
     }
@@ -961,6 +963,35 @@ void h_feather(ObjCtx& ctx, Obj& o) {
 
 // ---------------------------------------------------------------- rat (type 23, 0x40b5d2)
 
+// 0x40b4d6: Harry running into it (states 0x42e297 / 0x42ea8b) stumbles (hyitrip1 with the
+// run script 0x46168e); touching it again once he is 5 frames into the stumble knocks him
+// back.  d0: he started to stumble.
+bool tripHarry(ObjCtx& ctx, Obj& o) {
+    if (!ctx.touchesHarry(o)) return false;
+    Harry& h = ctx.harry;
+    if (h.spriteIs("hyitrip1")) {
+        if (int8_t(uint8_t(h.frame()) - 5) < 0) return false;
+        h.b(0x465b55) = h.facing() != 0 ? 0 : 0xff;
+        ctx.pl.harryCall(0x427167);
+        return false;
+    }
+    if (h.cont() != 0x42e297 && h.cont() != 0x42ea8b) return false;
+    if (h.facing() != 0) { h.setCont(0x42e297); h.vx() = -0x30000; }
+    else { h.setCont(0x42ea8b); h.vx() = 0x30000; }
+    h.w(0x465b47) = 0;
+    h.setSprite("hyitrip1");
+    h.setUl(0x465ba0, 0x46168e);
+    ctx.pl.harryCall(0x42e9b2);
+    return true;
+}
+
+// 0x40b84f: a rat trips Harry when he runs (0x40b4d6), otherwise it bites (5).
+void ratContact(ObjCtx& ctx, Obj& o) {
+    const uint32_t c = ctx.harry.cont();
+    if (c == 0x42e297 || c == 0x42ea8b) tripHarry(ctx, o);
+    else harryContact(ctx, o, 5);
+}
+
 void h_rat(ObjCtx& ctx, Obj& o) {
     if (o.frame == 0xff) {
         o.frame = 0;
@@ -972,7 +1003,7 @@ void h_rat(ObjCtx& ctx, Obj& o) {
     weaponHits(ctx, o, 9, &killed);
     if (killed) { killObject(ctx, o); return; }
     if (ctx.freeze) { freezeSparkle(ctx, o); return; }
-    harryContact(ctx, o, 5);                  // 0x40b84f (the trip states are Harry's)
+    ratContact(ctx, o);                       // 0x40b84f
     if (o.b(0x38)) {
         o.sprite = ctx.spr("rtzturn");
         if (!animStep(ctx, o, o.anim(0x36), kAnim_ratTurn, 3)) { exitDespawnWide(ctx, o); return; }
@@ -1062,7 +1093,7 @@ void h_bat(ObjCtx& ctx, Obj& o) {
     o.sprite = ctx.spr("btzfly");
     animStep(ctx, o, o.anim(0x34), kAnim_batFly, 4);
     const int jitter = int(ctx.rnd() & 0x3f) - 0x20;
-    const bool swinging = ctx.harry.cont() == 0x42aa3b;   // 0x40a8a7: faster beside the mine cart
+    const bool swinging = ctx.harry.cont() == 0x42aa3b;   // 0x40a8a7: a wider speed band while Harry rides (state 0x42aa3b)
     if (o.x - ctx.harry.x() + jitter - 0x14 < 0) {
         if (o.w(0x38) >= (swinging ? -4 : -2)) o.l(0x36) -= 0x3000; else o.l(0x36) += 0x3000;
     } else {
@@ -1814,7 +1845,7 @@ void h_rat2(ObjCtx& ctx, Obj& o) {
     if (killed) { killObject(ctx, o); return; }
     { int y = o.y + 0x17; if (ctx.floorSnap(o.x - 0xc, y)) o.y = int16_t(y - 0x17); }
     if (ctx.freeze) { freezeSparkle(ctx, o); return; }
-    harryContact(ctx, o, 5);
+    ratContact(ctx, o);                       // 0x40b84f
     moveX(o, o.l(0x32));
     auto reverse = [&]() { o.w(0x36) = 0; o.b(0x38) = 0xff; o.l(0x32) = -o.l(0x32); o.facing ^= 1; };
     { int y = o.y + 0x17; if (!ctx.floorSnap(o.x + (o.l(0x32) < 0 ? -0x28 : 0x10), y)) reverse(); }
@@ -2288,11 +2319,15 @@ void h_door(ObjCtx& ctx, Obj& o) {
     if (o.w(0x34) == -1) { ctx.release(o); return; }
     if (o.b(0x6c) == 0) {
         if (o.frame == 0xfc) { o.frame = 0; o.facing = 0xff; }
-        if (!(o.sprite && o.sprite->name() == "ob_door3")) {
-            if (ctx.levelNo == 4 || ctx.levelNo == 9) o.sprite = ctx.spr("ob_door3");
+        if (!(o.sprite && o.sprite->name() == "ob_door3")) {   // (already ob_door3: b6c stays 0)
+            if (ctx.levelNo == 4 || ctx.levelNo == 9) {
+                o.sprite = ctx.spr("ob_door3");
+                o.w(0x26) = 0x6663;                 // FUN_004263c4 / FUN_004263a6(6), which never fails on the PC
+            }
+            o.b(0x6c) = 0xff;
         }
-        o.b(0x6c) = 0xff;
     }
+    halfMinuteTick(o);                              // 0x4057b0
     if (o.w(0x34)) {
         if (o.b(0x67)) {
             if (o.w(0x34) == 0x40) ctx.sound0(0x16, 0x40);   // FUN_0042633d(0x16, 0x60)
@@ -2671,10 +2706,8 @@ Obj* spawnFromTemplate(ObjCtx& ctx, const Obj& at, int templateId) {
 void h_pot(ObjCtx& ctx, Obj& o) {
     if (o.b(0x50) == 0) {
         o.b(0x50) = 0xff;
-        const int tx = o.x - 0x18 + 0x20, ty = o.y + 0x18;
-        if (tx >= 0 && ty >= 0)
-            if (const ph::ColumnEntry* e = ctx.lv.triggers.find(tx >> 4, ty >> 4))
-                if (e->id >= 0x34) o.b(0x51) = uint8_t(e->id - 0x34);
+        const uint8_t id = ctx.trigger(o.x - 0x18, o.y + 0x18).id;
+        if (int8_t(id - 0x34) >= 0) o.b(0x51) = uint8_t(id - 0x34);   // ids 0x34 .. 0xb3
         if (o.frame == 0xff) { o.frame = 0; o.y += 0x14; o.b(0x59) = 0xff; }   // hanging upside down
         else {
             o.y += 7;
@@ -2705,12 +2738,15 @@ void h_pot(ObjCtx& ctx, Obj& o) {
     switch (kind) {
     case 1: popOut(0x40, false); break;                                       // fx_hrtbt item
     case 2: {                                                                 // 0x40ef07: a bomb
+        o.w(0x26) = 0x6663;                           // FUN_004263c4 / FUN_004263a6(7), which never fails on the PC
         ctx.sound0(0x26, 0xf);                        // FUN_0042633d(0x26, 0x60)
         o.type = 0x32; o.l(0x56) = 0; o.flags = 0x6000; o.sprite = ctx.spr("fxzexpl2");
-        o.frame = 0xff; o.l(0x3c) = 0; o.facing = 0; o.b(0x32) = 0;
-        if (Obj* h = ctx.spawnFrom(o, true)) {        // FUN_0043546e
-            o.link = h; h->link = &o;
-            h->behind = 0xff; h->w(0x26) = 0x6663;
+        o.frame = 0xff; o.l(0x3c) = 0; o.facing = 0;
+        if (Obj* h = ctx.spawnFrom(o, true)) {        // FUN_0043546e: the mirrored half (type 0)
+            o.link = h; h->link = &o;                 // +0x54 / +0x50
+            h->behind = 0xff;
+            std::memcpy(h->s + 0x12, o.s + 0x12, 2);
+            h->w(0x26) = 0x6663;
             h->sprite = ctx.spr("fxzexpl2"); h->flags = 0x6000; h->frame = 0xff; h->facing = 0xff;
         }
         return;
@@ -2733,6 +2769,7 @@ void h_pot(ObjCtx& ctx, Obj& o) {
     ctx.sound1(0xba, 0xa);
     if (o.sprite && o.sprite->name() == "fxzpots3") o.vflip = 0xff;
     o.facing = uint8_t(ctx.rnd() & 1);
+    o.w(0x26) = 0x6663;                               // FUN_004263c4 / FUN_004263a6(8)
     o.vflip = o.b(0x59);
     o.b(0x32) = 0xff;
     exitDespawnFar(ctx, o);
@@ -2795,34 +2832,38 @@ void h_floorSkull(ObjCtx& ctx, Obj& o) {
 // back toward where it started; a whip hit or a bite on Harry (30 damage) shatters it
 // into pot shards (the type 0x26 tail at 0x40ee20).
 void h_hoppingSkull(ObjCtx& ctx, Obj& o) {
-    auto driftHome = [&] {                        // 0x41ac1b / 0x41ad3e: maybe 0.75 px/tick toward home
+    auto driftHome = [&](uint32_t r) {            // 0x41ac1b / 0x41ad6a: maybe 0.75 px/tick toward home
         o.l(0x5a) = 0;
-        if (ctx.rnd() & 1) o.l(0x5a) = o.w(0x60) >= o.x ? 0xc000 : -0xc000;
+        if (r & 1) o.l(0x5a) = int16_t(o.w(0x60) - o.x) >= 0 ? 0xc000 : -0xc000;
     };
     if (o.w(0x60) == 0) {
         { int y = o.y + 0xd; ctx.floorSnap(o.x, y); o.y = int16_t(y - 0xd); }
-        o.script = kAnim_skullChatter;
+        o.script = kAnim_skullChatter;            // l50
         o.w(0x60) = o.x;
     }
     if (o.l(0x5a) != 0) o.facing = o.l(0x5a) >= 0 ? 0xff : 0;
+    bool ground = true;
     if (o.b(0x46)) {                              // in the air
         o.sprite = ctx.spr("skiroll");
         animStep(ctx, o, o.anim(0x34), kAnim_skullRoll, 3);
         moveX(o, o.l(0x5a));
         o.l(0x3c) += 0x4000;
         moveY(o, o.l(0x3c));
-        if (o.y >= o.w(0x40)) {                   // landed
+        if (int16_t(o.y - o.w(0x40)) < 0) {
+            ground = false;
+        } else {                                  // landed: the ground code runs this tick too
             ctx.sound0(0x1e, 3);                  // FUN_0042633d(0x1e, 0x60)
             o.y = o.w(0x40);
             o.b(0x46) = 0;
-            driftHome();
+            driftHome(ctx.rnd());
             o.w(0x32) = int16_t((ctx.rnd() & 0x3f) + 0x28);
             o.script = kAnim_skullChatter; o.w(0x34) = 0;
             o.b(0x64) -= 1;
             if (int8_t(o.b(0x64)) < 0) { o.b(0x64) = 2; o.w(0x32) = 6; o.script = kAnim_skullQuiet; }
             else ctx.sound1(0xcf, 2);
         }
-    } else {                                      // 0x41acb7: on the ground
+    }
+    if (ground) {                                 // 0x41acb7: on the ground
         o.sprite = ctx.spr("skijaw");
         animStep(ctx, o, o.anim(0x34), o.script ? o.script : kAnim_skullChatter, 4);
         if (o.frame != 0) moveX(o, o.l(0x5a));
@@ -2831,25 +2872,25 @@ void h_hoppingSkull(ObjCtx& ctx, Obj& o) {
             o.b(0x46) = 0xff;
             o.l(0x3c) = -0x3e000;
             ctx.sound1(0x45, 2);
-            const uint32_t r = ctx.rnd();
-            o.w(0x3e) -= int16_t(r & 3);          // a little higher at random
+            const uint32_t r = ctx.rnd() & 3;
+            o.w(0x3e) -= int16_t(r);              // a little higher at random
             o.w(0x40) = o.y;
-            o.l(0x5a) = 0;
-            if (r & 1) o.l(0x5a) = o.w(0x60) >= o.x ? 0xc000 : -0xc000;
+            driftHome(r);
             o.w(0x34) = 0;
         }
     }
-    // 0x41ada3: a whip hit (100 points) or a bite (30 damage) both end it
-    bool shatter = false;
-    if (!weaponHit(ctx, o, 0).z) { ctx.g.stats().score += 100; shatter = true; }
-    else if (ctx.touchesHarry(o)) { ctx.hurtHarry(0x1e); shatter = true; }
+    // 0x41ada3: a whip hit (100 points) or a bite (30 damage) both shatter it
+    if (!weaponHit(ctx, o, 0).z) ctx.g.stats().score += 100;
+    else if (ctx.touchesHarry(o)) ctx.hurtHarry(0x1e);
     else { exitDespawnFar(ctx, o); return; }
-    if (shatter) {                                // 0x41ade1: becomes a breaking pot (type 0x26)
-        ctx.sound(0x42);
-        o.sprite = ctx.spr("fxzpots2"); o.flags = 0x6000;
-        o.script = kAnim_potShards; o.b(0x46) = 4; o.anim(0x32) = AnimCursor{};
-        o.type = 0x68;
-    }
+    // 0x41ade1: it becomes a breaking pot (type 0x26) and runs the pot handler at once
+    if (ctx.pl.scriptEvent() == 0xcf) { ctx.soundNow(0x89); ctx.pl.scriptEvent() = 0; }   // stop the chatter
+    o.w(0x26) = 0x6663;                           // FUN_004263c4 / FUN_004263a6(8)
+    o.b(0x32) = 0xff; o.b(0x50) = 0xff; o.w(0x36) = 0;
+    o.type = 0x26;
+    o.sprite = ctx.spr("fxzpots2");
+    ctx.sound0(0x42, 0xa);                        // FUN_004262d9
+    h_pot(ctx, o);
 }
 
 // ---------------------------------------------------------------- pouch respawner (type 74, 0x415028)
@@ -3278,13 +3319,13 @@ void h_bossDeathBurst(ObjCtx& ctx, Obj& o) {
     if (o.w(0x34) == 0x16) { ctx.release(o); return; }
     Obj* e = ctx.spawnEffect(o, ctx.spr("fx_stone"), kAnim_turn7, 3);
     if (!e) return;
-    e->flags = 0x6000; e->b(0x55) = 0xff; e->w(0x26) = 0x6663;
+    e->flags = 0x6000; e->b(0x55) = 0xff;
     if (o.b(0x5a) == 0) {
         e->x += int16_t((ctx.rnd() & 0x1f) - 0x10); e->y += int16_t((ctx.rnd() & 0x3f) - 0x20);
     } else {
         e->x += int16_t((ctx.rnd() & 0x3f) - 0x20); e->y += int16_t((ctx.rnd() & 0x1f) - 0x10);
     }
-    ctx.rnd(); ctx.sound(6);                    // FUN_0042633d(6, 0x60, 0x18)
+    ctx.sound0(6, 0x18);                        // FUN_0042633d(6, 0x60, 0x18)
 }
 
 // 0x41018c (+ the screen placement at 0x4335ce): the boss health meter, type 0x30.
@@ -3784,7 +3825,7 @@ void shatterToPot(ObjCtx& ctx, Obj& o) {
     o.w(0x26) = 0x6663;                                                   // FUN_004263c4 / FUN_004263a6(8)
     o.b(0x32) = 0xff; o.b(0x50) = 0xff; o.type = 0x26; o.w(0x36) = 0;
     o.sprite = ctx.spr("fxzpots2"); o.frame = 1;
-    ctx.sound(0x42);
+    ctx.sound0(0x42, 0xa);                                                // FUN_004262d9
     h_pot(ctx, o);                                                        // jmp 0x40ed62: the broken-pot branch
 }
 
@@ -4199,17 +4240,19 @@ void h_stoneBlock(ObjCtx& ctx, Obj& o) {
 
 // ---------------------------------------------------------------- spear trap (type 28, 0x40d322)
 
-// A spear (obzspear) that thrusts out of the wall every 0x10..0x4f ticks; frame 4 of the
-// thrust stabs Harry for 15.
+// A spear (obzspear) that thrusts out of the wall after a wait of 0xf..0x4e ticks; frame 4
+// of the thrust stabs Harry for 15.
 void h_spear(ObjCtx& ctx, Obj& o) {
-    if (o.w(0x32) == 0) { o.w(0x32) = int16_t((ctx.rnd() & 0x3f) + 0x10); o.w(0x3c) = 0; }
+    auto wait = [&] { o.w(0x32) = int16_t((ctx.rnd() & 0x3f) + 0x10); o.w(0x3c) = 0; };   // 0x40d32f
+    if (o.w(0x32) == 0) wait();
     o.w(0x32) -= 1;
     if (o.w(0x32) == 0) {
         o.w(0x32) = 1;
-        if (animStep(ctx, o, o.anim(0x3c), kAnim_spearThrust, 4)) {      // thrust over: a new wait
-            o.w(0x32) = int16_t((ctx.rnd() & 0x3f) + 0x10); o.w(0x3c) = 0;
-        } else if (o.frame == 4 && ctx.touchesHarry(o)) {
-            ctx.hurtHarry(0xf);                                          // 0x407b0f
+        if (animStep(ctx, o, o.anim(0x3c), kAnim_spearThrust, 4)) {      // thrust over: back to 0x40d32f
+            wait();
+            o.w(0x32) -= 1;
+        } else if (o.frame == 4) {
+            harryContactNow(ctx, o, 0xf);                                // 0x407b0f
         }
     }
     exitDespawnFar(ctx, o);

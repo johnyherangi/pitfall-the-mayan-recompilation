@@ -126,7 +126,7 @@ bool ObjCtx::touchesHarry(Obj& o) {
     // FUN_00424af1 with a5 = Harry (DAT_00465b0f), a6 = o: Harry's box from his sprite slot;
     // never while DAT_00465b72 is set (dying / leaving the level).
     const char* hs = harry.sprite();
-    if (!*hs || !o.sprite && !o.rawBox) return false;
+    if (!*hs || (!o.sprite && !o.rawBox)) return false;
     if (!overlap(harry.x(), harry.y(), ph::hitbox(hs), o.x, o.y, boxOf(o))) return false;
     return harry.b(0x465b72) == 0;
 }
@@ -457,6 +457,7 @@ WeaponHit weaponHit(ObjCtx& ctx, Obj& o, int hitPoints) {
             return r;
         }
         h.setUl(a, 0);
+        st->w(0x26) = 0x6663;                                   // FUN_004263a6(2): a stub that never fails
         if (st->b(0x54) != 0) {                                 // a power shot (d3 = 0xff)
             st->w(0x40) = 1;
             o.hits = uint8_t(o.hits + 0x15);
