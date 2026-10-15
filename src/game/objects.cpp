@@ -276,6 +276,7 @@ void ObjectSystem::tick(ObjCtx& ctx) {
             Handler h = handler(o.type);
             if (h) h(ctx, o);
         }
+        if (endPass_) { endPass_ = false; break; }
         i = pending;
     }
 }

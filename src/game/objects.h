@@ -152,6 +152,9 @@ public:
     bool moveToTail(Obj& o);
     // One object pass (0x405170): every object in the list runs its handler.
     void tick(ObjCtx& ctx);
+    // A handler's `ret` (the Warrior Spirit at 0x421ae5): the pass ends after it, the objects
+    // after it in the list neither run nor get a display entry this tick.
+    void endPass() { endPass_ = true; }
     // [DAT_00465b8e] = -2: the running object's display entry is cancelled (not drawn).
     void cancelCurrentDisplay() { if (hasSlot_) disp_[curSlot_] = -2; }
     // `sub.l #4, DAT_00464bf8` / `move.l #-1, (a0)`: the last entry of the front list is taken back.
@@ -191,6 +194,7 @@ private:
     size_t behindN_ = 0, frontN_ = kFront;     // DAT_00464bf4 / DAT_00464bf8: where the next entry goes
     size_t curSlot_ = 0;                       // DAT_00465b8e: the entry of the object that ran last
     bool hasSlot_ = false;
+    bool endPass_ = false;
 };
 
 // --- shared behaviour pieces (objects.cpp) ---
@@ -291,6 +295,11 @@ extern const uint8_t kData_ropeSwing[], kData_ropeSwingHarry[];
 extern const uint8_t kData_rideScript[];
 // 0x46b0d8: the widths of the letter glyphs, {ltr_lg, ltr_md, ltr_sm} a glyph (FUN_00434a30).
 extern const uint8_t kData_glyphWidths[];
+// The Warrior Spirit (type 105): 0x457420 .. 0x45a814, eight pose tables (word offsets by pose,
+// then {dx, dy, frame} words for each of the 16 body parts); 0x460090, its pose scripts (pose
+// numbers, the sound opcodes 0xfc / 0xfd / 0xfb, any other negative byte ends one); 0x45bd28,
+// {behind, flags} words for each body part.
+extern const uint8_t kData_spiritPoses[], kData_spiritScripts[], kData_spiritParts[];
 extern const uint8_t kAnim2_deathFade[], kAnim2_monkeyToss[], kAnim2_condorDive[], kAnim2_jaguarLeap[], kAnim2_jaguarCrouchA[],
     kAnim2_jaguarCrouchB[], kAnim2_jaguarCrouchRoar[], kAnim2_jaguarRoar[], kAnim2_bossCloud[],
     kAnim2_skullThrow[], kAnim2_skullChop[], kAnim2_boneTumble[], kAnim2_ballSwingA[], kAnim2_ballSwingB[], kAnim2_ballSwingC[],

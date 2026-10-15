@@ -202,7 +202,7 @@ vortex `0x414c58`, 72 vineMonkey `0x414dac`, 74 pouchRespawner `0x415028`, 76 fa
 leapingCroc `0x4160b2`, 85 hawk `0x4165f2`, 87 explodingPlant `0x416be0`, 88 limpSnake `0x416f48`, 91 tonguePlant
 `0x417a54`, 92 pushLever `0x417d0e`, 96 ceilingDripper `0x41836e`, 97 ceilingSpikes `0x418474`, 98 cartSpawner
 `0x4185ce`, 99 runawayCart `0x4186c4`, 100 fireJet `0x418834`, 101 crocSplash `0x4188e0`, 102 fly `0x418992`, 103
-vaultLetter `0x418e24`, 104 effect `0x418ec6`, 107 vaultIntro `0x418f00`, 108 textLetter `0x418f98`, 109 snake `0x418fd0`, 110 spider `0x419622`, 111 floatPlatform `0x419d00`, 112 rat2 `0x419ec8`, 113
+vaultLetter `0x418e24`, 104 effect `0x418ec6`, 105 warriorSpirit `0x420bd0`, 106 spiritPart `0x422c7a`, 107 vaultIntro `0x418f00`, 108 textLetter `0x418f98`, 109 snake `0x418fd0`, 110 spider `0x419622`, 111 floatPlatform `0x419d00`, 112 rat2 `0x419ec8`, 113
 hidden1up `0x41a092`, 115 rideDirector `0x41a2ae`, 116 floorSkull `0x41a9fa`, 117 hoppingSkull `0x41aade`, 118
 markerFlame `0x41ae9a`, 119 whipLever `0x41aee0`, 121 rideMarker `0x41b208`, 122 harrySplash `0x41b24e`, 123 branch
 `0x41b2da`, 124 branchTip `0x41b424`, 125 branchPiece `0x41b5d8`, 126 rideLaneLight `0x41b628`, 127 rideCart
@@ -213,7 +213,7 @@ stoneJaguarBase `0x41d47a`, 142 heart `0x41d520`, 147 coin
 153 jaguarFight `0x41ddac`, 154 jaguarRope `0x41e032`, 155 hudGo `0x41e110`, 156 hangingPouch `0x41e132`, 158 jagMan
 `0x41e462`, 159 jagManClaw `0x41f24c`, 160 eyes `0x41f2c2`, 161 dot `0x41f320`, 164 snakeRespawner
 `0x41f5e6`, 166 vaultReward `0x41f6ae`, 169 ropeSpawner `0x41fc1a`, 170 oneUpFly `0x41fd26`, 172 treeSnake `0x420090`, 173 oneWayDoor `0x42068c`,
-174 leanLever `0x4208f8`.
+174 leanLever `0x4208f8`, 176 lastLetter `0x420abf`.
 
 Notes on some of them: the jaguar boss's states are INTRO `0x411391`, GO `0x41124d`, POUNCE `0x411054`, REVERSE
 `0x41190f`, RUN `0x411651`, CROUCH `0x410f1f`, ROAR `0x41119c`, STOP `0x41156b`; the bungee vine drives Harry's state
@@ -257,10 +257,25 @@ touch on a Harry whose damage byte is below 0x16 would count as a fatal one.  It
 (`PlayLogic::strayReturn`): 0x410e6a starts the Ceiba Jungle walk-out, 0x41e62c stands a dazed Harry up.  After
 the fight the stone face's tongue (91) throws Harry up to the walkway that leads to the exit (0x5f).
 
-Still `h_default` (drawn in the template frame, never act): 105 the Warrior Spirit `0x420bd0`, with the objects
-only it spawns, and the types whose templates no level places (58 `0x412282`, 77 `0x4152bc`, 94 `0x41829c`, 157
-`0x41e250`).  The boss meter (48) has all its branches: the type 0x69 boss on level 10, a type 0x8c jaguar at l50,
-the boss at trg+0x1f4 (0x3e hit points on level 8).
+The Warrior Spirit (105) is a controller (never drawn) with a chain of 16 body parts (106, l3c from part to part,
+each l64 the one before it); its pose animator `FUN_00422806` reads a script of pose numbers (0x460090..) with the
+sound opcodes 0xfc / 0xfd / 0xfb, any other negative byte ending it, and sends every part towards its place in the
+pose from one of eight tables (0x457420..0x45a814: word offsets, then {dx, dy, frame} for each part) in 8 steps;
+`FUN_004226e6` moves the body and the places with it.  Its states (l46): INTRO `0x4214d6`, DECIDE `0x42134a`, THROW
+`0x42164e` (fire, type 0x1d), SLAM `0x421ec2`, POUND `0x421800` (Harry stunned, his state 0x427316), SUCK
+`0x42195b` (Harry pulled in by `0x4220f7`, lifted in the hand at `DAT_00465c64` in his state 0x42c2ff and thrown;
+the throw ends with a `ret` that ends the object pass, `ObjectSystem::endPass`), PULL `0x421ff9` / `0x421fb6`, WALK
+`0x422260` / `0x422423`, WALK BACK `0x422359` / `0x422479`, JUMP OFF `0x421b3e` (Harry behind it: up off the screen,
+then RAIN `0x421d88` / `0x421e44`, its parts falling about until they gather where it lands) and IDLE `0x4214a0`;
+`0x42154a` / `0x4217bd` and the despawn at `0x4224b9` are never reached.  The head (the last part with a frame
+below 3) takes the hits (w6a >> 4, 0x30 kill); the decision's long-range path reads d1 without setting it (taken as
+the weapon test's low byte, or 0x60 after a hit's sound).  Dead (`0x421bd3`, 50000 points), the parts fly apart and
+burst, and the last letter (176) falls at x 0xf0: picking it up is the end of the game (0x430912).  It keeps its
+own pointers in the `.als` buffer: +0x1c6 "dead", +0x1ca the pouch of stones it drops (or itself).
+
+Still `h_default` (drawn in the template frame, never act): the types whose templates no level places (58
+`0x412282`, 77 `0x4152bc`, 94 `0x41829c`, 157 `0x41e250`).  The boss meter (48) has all its branches: the type 0x69
+boss on level 10, a type 0x8c jaguar at l50, the boss at trg+0x1f4 (0x3e hit points on level 8).
 
 Every ported handler has been checked against its disassembly, in address order.  Quirks of the original that
 are kept: the boar's grazing test reads a `d1` the contact test may have clobbered; the fire jet's roar count

@@ -46,6 +46,9 @@ public:
     void harryCall(uint32_t addr);
     bool hurtHarry(int d5);                     // FUN_00428233 (true: past its early returns)
     void grabHarry(Obj& bat) { h4285d7(bat); }  // FUN_004285d7 (a5 = the bat)
+    // FUN_00425455 with DAT_00465b70 held at 0xff around it (0x4221f7): the floor under Harry's
+    // feet (y snaps to it); true when there is one.
+    bool harryFeetGrounded() { const uint8_t g = h_.onGround(); h_.onGround() = 0xff; const bool r = feet(); h_.onGround() = g; return r; }
 
     // --- services for the object handlers (game/objects.h) ---
     uint32_t random();                         // FUN_0043387e
@@ -97,6 +100,7 @@ public:
     // saves (0x4288a2).
     uint32_t alsLong(size_t off) const;
     void setAlsLong(size_t off, uint32_t v);
+    void setAlsByte(size_t off, uint8_t v) { if (off < alsMem_.size()) alsMem_[off] = v; }
     // [DAT_00450510] + off, off 0x1f4 .. 0x3f3: Genesis RAM the PC keeps in the trigger buffer
     // (the vaults' ceiling, timers and Harry's squash script; the boss pointer at +0x1f4 is
     // boss_).  The 68000 code reads it big-endian; tln() is the native long FUN_004237a5 reads.

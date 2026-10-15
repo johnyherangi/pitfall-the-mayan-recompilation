@@ -6182,6 +6182,649 @@ void h_jagManClaw(ObjCtx& ctx, Obj& o) {
     if (animStep(ctx, o, o.anim(0x50), kAnim_jagManSwipeFx, 5)) ctx.release(o);
 }
 
+// ---------------------------------------------------------------- the Warrior Spirit (types 105 / 106 / 176)
+//
+// Zakelua, the last boss (level 10): a body of 16 parts (type 106) that a pose animator
+// (FUN_00422806) moves between the poses of eight tables, 8 steps a pose.  The head (the part
+// with a frame below 3, at l64) takes the hits: w6a >> 4, 0x30 kill, three hits within 26 ticks
+// and it hits back (b68).  It turns by jumping off the top of the screen, its parts raining
+// down and gathering again where it lands; it throws fire (type 0x1d), leaps onto Harry, pounds
+// the floor (Harry stunned, Harry's state 0x427316), sucks him in to its hand and throws him
+// (0x42c2ff), walks at him and away, and brushes his stones away from its head.  While Harry
+// is short of stones (fewer than 10), a pouch of them drops in (type 156 from the template at
+// 0x467fe4, its record at [DAT_004504e4] + 0x1ca).  Dead, its parts burst one by one and the
+// last letter of PITFALL (type 176) falls; picking it up ends the game.
+// State: l46 the continuation address (below), b36 / b37 the pose cursor, b33 the pose shown,
+// l3c the first part (each part's l3c the next), l64 the head, w38 the floor y, w3a / b3a the
+// walk's start flag, l40 the walking speed, l4a / b4a a vertical speed or a count, w4e the
+// screen shake, b51 the opening pause, l54 the pull on Harry (w56 its integer part), b68 "hit
+// back", b6d "a pouch is out".  [DAT_004504e4] + 0x1c6: set once it is dead.
+namespace spirit {
+constexpr uint32_t kIntro = 0x4214d6, kIdle = 0x4214a0, kDecide = 0x42134a, kJumpOff = 0x421b3e, kRain = 0x421e44,
+                   kSlam = 0x421ec2, kThrow = 0x42164e, kPound = 0x421800, kSuck = 0x42195b, kPull = 0x421ff9,
+                   kPullHit = 0x421fb6, kWalk = 0x422260, kWalkBack = 0x422359, kWalkEnd = 0x422423,
+                   kWalkBackEnd = 0x422479;
+// The pose tables and scripts by original address.
+constexpr uint32_t kPoses = 0x457420, kScripts = 0x460090;
+enum Flow { kDone, kJump };                         // return / a jump into another state's code
+
+int16_t rdw(const uint8_t* p) { return int16_t(p[0] | p[1] << 8); }
+void setState(Obj& o, uint32_t st) { o.l(0x46) = int32_t(st); }
+void start(Obj& o, uint32_t st) { o.w(0x36) = 0x3f00; setState(o, st); }   // the cursor steps at once
+Obj* part(ObjCtx& ctx, Obj& o) { return ctx.pl.objAt(uint32_t(o.l(0x3c))); }
+
+int32_t fx(const Obj& o) { return int32_t(uint32_t(uint16_t(o.x)) << 16 | o.xFrac); }
+int32_t fy(const Obj& o) { return int32_t(uint32_t(uint16_t(o.y)) << 16 | o.yFrac); }
+// A 16.16 value kept as {int word, frac word}, as x / x.frac are.
+void putFixed(Obj& o, int off, int32_t v) { o.w(off) = int16_t(uint32_t(v) >> 16); o.w(off + 2) = int16_t(v & 0xffff); }
+int32_t getFixed(Obj& o, int off) { return int32_t(uint32_t(uint16_t(o.w(off))) << 16 | uint16_t(o.w(off + 2))); }
+
+// FUN_00422806 (cursor at +0x36): every `ticks` + 1 ticks the next byte of the script: the
+// sound opcodes are played, a pose number is shown (b33) and sends every part towards its
+// place in the pose (8 steps); any other negative byte ends the script, which starts again
+// with its first pose.  True when it ended.
+bool pose(ObjCtx& ctx, Obj& o, uint32_t table, uint32_t script, int ticks) {
+    const uint8_t* s = kData_spiritScripts + (script - kScripts);
+    uint8_t& pos = o.s[0x36];
+    uint8_t& tick = o.s[0x37];
+    tick = uint8_t(tick + 1);
+    if (int8_t(ticks - tick) >= 0) return false;
+    pos = uint8_t(pos + 1);
+    tick = 0;
+    bool ended = false;
+    uint8_t b = 0;
+    for (int guard = 0; guard < 64; ++guard) {
+        b = s[pos];
+        if (int8_t(b) >= 0) break;
+        if (b == 0xfc) { ctx.sound0(s[pos + 1], s[pos + 2]); pos = uint8_t(pos + 3); tick = 0; continue; }   // FUN_004262d9
+        if (b == 0xfd) { ctx.sound1(s[pos + 1], s[pos + 2]); pos = uint8_t(pos + 3); tick = 0; continue; }   // FUN_004261e2
+        if (b == 0xfb) { ctx.rnd(); ctx.sound0(s[pos + 1], s[pos + 5]); pos = uint8_t(pos + 6); tick = 0; continue; }   // FUN_0042633d
+        pos = 0;
+        b = s[0];
+        ended = true;
+        break;
+    }
+    o.b(0x33) = b;
+    const uint8_t* t = kData_spiritPoses + (table - kPoses);
+    const uint8_t* p = t + rdw(t + 2 * b);
+    for (Obj* a5 = part(ctx, o); a5; a5 = part(ctx, *a5)) {
+        // (with no part at all the original stops with the error "U00151_back_mk")
+        if (uint16_t(rdw(p)) == 0x8000) break;
+        a5->b(0x46) = 8;
+        int32_t d = int32_t(uint32_t(uint16_t(rdw(p))) << 16); p += 2;
+        if (o.facing) d = -d;
+        const int32_t tx = fx(o) + d;
+        putFixed(*a5, 0x48, tx);
+        putFixed(*a5, 0x50, (tx - fx(*a5)) >> 3);
+        d = int32_t(uint32_t(uint16_t(rdw(p))) << 16); p += 2;
+        const int32_t ty = fy(o) + d;
+        putFixed(*a5, 0x4c, ty);
+        putFixed(*a5, 0x54, (ty - fy(*a5)) >> 3);
+        a5->b(0x58) = uint8_t(rdw(p)); p += 2;
+    }
+    return ended;
+}
+
+// FUN_004226e6: the body moves by (d0, d1), d0 the way it faces, inside x 0x48 .. 0x198; the
+// parts and their places in the pose with it.
+void move(ObjCtx& ctx, Obj& o, int32_t d0, int32_t d1) {
+    if (o.facing) d0 = -d0;
+    moveX(o, d0);
+    if (o.x < 0x47) o.x = 0x48;
+    if (o.x >= 0x199) o.x = 0x198;
+    moveY(o, d1);
+    for (Obj* a5 = part(ctx, o); a5; a5 = part(ctx, *a5)) {
+        moveX(*a5, d0);
+        putFixed(*a5, 0x48, getFixed(*a5, 0x48) + d0);
+        moveY(*a5, d1);
+        putFixed(*a5, 0x4c, getFixed(*a5, 0x4c) + d1);
+    }
+}
+
+// 0x42251d: a stone or the boomerang of Harry's (not the big stone, not one sent back already)
+// 0x18 .. 0x70 px under the head and within 10 px of it is batted back.
+bool deflect(ObjCtx& ctx, Obj& o) {
+    const Obj* head = ctx.pl.objAt(uint32_t(o.l(0x64)));
+    if (!head) return false;
+    for (uint32_t a = 0x466808; a <= 0x466818; a += 4) {
+        Obj* w = ctx.pl.objAt(ctx.harry.ul(a));
+        if (!w || w->type == 4 || w->b(0x6a) != 0) continue;
+        const int16_t dx = int16_t(head->x - w->x);
+        if (dx < -10 || dx >= 10) continue;
+        const int16_t dy = int16_t(head->y - w->y);
+        if (dy >= -0x18 || dy < -0x70) continue;
+        ctx.sound1(0xce, 0xc);
+        w->l(0x32) = (w->l(0x32) >> 1) + int32_t(ctx.rnd() & 0xffff) - 0x7fff;
+        w->l(0x36) = (w->l(0x36) >> 2) + int32_t(ctx.rnd() & 0x3ffff) - 0x24000;
+        w->l(0x32) = -w->l(0x32);
+        w->l(0x4a) = 0x6000;
+        w->b(0x6a) = 0xff;
+        return true;
+    }
+    return false;
+}
+
+// 0x421ae6: a blow: 16 damage and Harry knocked away from it.
+void blow(ObjCtx& ctx, Obj& o) {
+    Harry& h = ctx.harry;
+    ctx.pl.hurtHarry(0x10);
+    h.facing() = o.facing;
+    h.b(0x465b55) = uint8_t((h.facing() & 1) ^ 1);
+    h.facing() = 0;
+    ctx.pl.harryCall(0x42715b);
+}
+
+// 0x4220f7: Harry sucked towards its hand (0x28 px ahead), faster and faster up to 6 px/tick;
+// true once he is there and on the floor (stunned, his state 0x427316).
+bool suckHarry(ObjCtx& ctx, Obj& o) {
+    Harry& h = ctx.harry;
+    if (!ctx.channel1Busy()) ctx.sound1(0xd0, 3);
+    const int16_t hand = int16_t(o.x + (o.facing ? 0x28 - 0x50 : 0x28));
+    if (o.facing) {
+        if (o.w(0x56) < 6) o.l(0x54) += 0x3800;
+        ctx.pl.carryHarry(o.l(0x54));
+        if (int16_t(hand - h.x()) >= 0) return false;
+    } else {
+        if (o.w(0x56) >= -6) o.l(0x54) -= 0x3800;
+        ctx.pl.carryHarry(o.l(0x54));
+        if (int16_t(hand - h.x()) < 0) return false;
+    }
+    // (0x4221da: tests of DAT_00462695 that change nothing)
+    if (!ctx.pl.harryFeetGrounded()) return false;
+    if (h.cont() != 0x427316) { h.setCont(0x427316); h.w(0x465b47) = 0x702f; h.w(0x465b45) = 0; }
+    return true;
+}
+
+// 0x421d88: off the top of the screen, the parts rain down (w6c 0: they bounce about) and the
+// count to 0x70 starts.
+void rain(ObjCtx& ctx, Obj& o) {
+    start(o, kRain);
+    o.w(0x4a) = 0;
+    ObjectSystem& os = ctx.pl.objectSystem();
+    for (Obj* p = os.first(); p; p = os.nextOf(*p)) {
+        if (p->type != 0x6a) continue;
+        p->b(0x5a) = 0xff;
+        p->y = -0x30;
+        p->l(0x40) = int32_t(ctx.rnd() & 0x7ffff);
+        p->l(0x38) = int32_t(ctx.rnd() & 0x3ffff) - 0x20000;
+        p->x = int16_t(p->x + int16_t((ctx.rnd() & 0x7f) - 0x3f));
+    }
+}
+
+// The code of state `st`; `d1` is what the original's d1 register holds when the decision
+// reads it on one path without having set it (see below).
+Flow body(ObjCtx& ctx, Obj& o, uint32_t st, uint32_t& next, int32_t d1) {
+    Harry& h = ctx.harry;
+    auto go = [&](uint32_t s) { next = s; return kJump; };
+    switch (st) {
+    case kIntro:                                    // 0x4214d6: until Harry comes down
+        pose(ctx, o, 0x457420, 0x4600f4, 8);
+        if (h.y() >= 0xa2) { start(o, kDecide); return go(kDecide); }
+        return kDone;
+    case kIdle:                                     // 0x4214a0: Harry is gone
+        pose(ctx, o, 0x457420, 0x4600f4, 8);
+        return kDone;
+    case kDecide: {                                 // 0x42134a
+        if (h.b(0x465b72)) { start(o, kIdle); return go(kIdle); }
+        o.b(0x3a) = 0;
+        auto jumpOff = [&] { start(o, kJumpOff); o.l(0x4a) = int32_t(0xfffb0000); return go(kJumpOff); };   // 0x42152b
+        auto pull = [&] { start(o, kPull); h.vx() = 0; o.l(0x54) = 0; return go(kPull); };                    // 0x421f90
+        auto suck = [&] { start(o, kSuck); o.l(0x54) = 0; return go(kSuck); };                                // 0x421612
+        auto walkBack = [&] { start(o, kWalkBack); return go(kWalkBack); };                                    // 0x421631
+        int16_t d0 = int16_t(h.x() - o.x);
+        if (d0 < 0) { if (o.facing == 0) return jumpOff(); d0 = int16_t(-d0); }
+        else if (o.facing != 0) return jumpOff();   // Harry behind: over him
+        if (o.b(0x68) != 0) {                       // hit back: away, or over him when cornered
+            o.b(0x68) -= 1;
+            if (o.facing ? o.x < 0x169 : o.x >= 0x77) return walkBack();
+            return jumpOff();
+        }
+        if (d0 >= 0xf0) return pull();
+        bool walkCheck = false;
+        if (d0 >= 0xc0) {
+            if ((ctx.rnd() & 3) == 0) return pull();
+            walkCheck = true;                       // (with d1 as the original's register has it)
+        } else if (d0 < 0x3c) {
+            return suck();
+        } else {
+            d1 = d0;
+        }
+        for (int guard = 0; guard < 0x400; ++guard) {   // 0x421438
+            if (!walkCheck) {
+                const uint32_t r = ctx.rnd() & 0x3f;
+                if (r < 0x1c) walkCheck = true;
+                else if (r < 0x1f) { start(o, kThrow); return go(kThrow); }
+                else if (r < 0x24) { start(o, kSlam); return go(kSlam); }
+                else if (r < 0x29) { if (int8_t(o.hits - 0x5a) >= 0) return jumpOff(); continue; }   // (the body's own hits: always 0)
+                else if (r < 0x2b) { start(o, kPound); o.b(0x4a) = 2; return go(kPound); }
+                else if (r < 0x30) return suck();
+                else continue;
+            }
+            walkCheck = false;                      // 0x4215be: at Harry, given room
+            if (int16_t(d1) < 0x50) continue;
+            if (o.x < 0xe7 && o.facing != 0) continue;
+            if (o.x >= 0xf9 && o.facing == 0) continue;
+            start(o, kWalk);
+            return go(kWalk);
+        }
+        return kDone;
+    }
+    case kJumpOff:                                  // 0x421b3e: up off the top of the screen
+        if (int8_t(o.b(0x33) - 9) >= 0) {
+            o.l(0x4a) -= 0x4800;
+            move(ctx, o, 0, o.l(0x4a));
+            if (o.y < 0x10) {
+                o.x = o.x < 0x100 ? 0xa9 : 0x117;
+                rain(ctx, o);
+                return go(kRain);
+            }
+        }
+        if (o.b(0x33) == 0xa) return kDone;
+        pose(ctx, o, 0x4579fc, 0x46014a, 8);
+        return kDone;
+    case kRain: {                                   // 0x421e44: 0x70 ticks, then the parts gather on it
+        o.w(0x4a) += 1;
+        if (o.w(0x4a) != 0x70) return kDone;
+        ObjectSystem& os = ctx.pl.objectSystem();
+        for (Obj* p = os.first(); p; p = os.nextOf(*p))
+            if (p->type == 0x6a) p->b(0x5a) = 0;
+        o.y = o.w(0x38);
+        o.facing = int16_t(h.x() - o.x) < 0 ? 0xff : 0;
+        start(o, kDecide);
+        return go(kDecide);
+    }
+    case kSlam: {                                   // 0x421ec2: a leap that comes down on Harry
+        if (o.b(0x33) == 9) {
+            o.l(0x4a) += 0x3800;
+            move(ctx, o, 0, o.l(0x4a));
+            if (o.l(0x4a) < 0) return kDone;
+            if (int16_t(o.y - o.w(0x38)) < 0) return kDone;
+            o.y = o.w(0x38);
+            o.b(0x37) = 0x3f;
+            o.w(0x4e) = 0xa;                        // the floor shakes
+            if (h.onGround()) blow(ctx, o);
+        }
+        const bool ended = pose(ctx, o, 0x4579fc, 0x460154, 8);
+        if (o.b(0x33) == 9) o.l(0x4a) = int32_t(0xfff80000);
+        if (ended) { start(o, kDecide); return go(kDecide); }
+        return kDone;
+    }
+    case kThrow: {                                  // 0x42164e: a fireball (type 0x1d)
+        if (pose(ctx, o, 0x45916c, 0x460090, 8)) { start(o, kDecide); return go(kDecide); }
+        if (o.w(0x36) == 0x12) {
+            ctx.sound0(7, 0xa);                     // FUN_0042633d(7, 0x60, 0xa)
+            if (Obj* f = ctx.spawnFrom(o, true, 1)) {   // FUN_0043546e(1)
+                f->x += 0x1e; f->y -= 0x30;
+                f->behind = 0xff;
+                f->sprite = ctx.spr("bosss"); f->frame = 0x19;
+                f->b(0x5a) = 0xc; f->type = 0x1d; f->b(0x48) = 0xff;
+                f->l(0x32) = 0x80000; f->l(0x36) = 0; f->l(0x3a) = 0; f->l(0x3e) = 0;
+                f->flags = 0x4000;
+                f->facing = o.facing;
+                if (f->facing) { f->l(0x32) = -f->l(0x32); f->x -= 0x3c; }
+            }
+            return kDone;
+        }
+        // at the end of the throw, now and then (3 in 8) one more
+        if (o.b(0x37) != 0 || o.b(0x36) != 0x17 || o.b(0x68) != 0) return kDone;
+        if (int8_t((ctx.rnd() & 7) - 5) < 0) return kDone;
+        o.b(0x36) = 0xa; o.b(0x37) = 0x10;
+        pose(ctx, o, 0x45916c, 0x460090, 8);
+        return kDone;
+    }
+    case kPound: {                                  // 0x421800: pounds the floor (b4a times): Harry stunned
+        for (int guard = 0; guard < 4; ++guard) {
+            if (pose(ctx, o, 0x459b94, 0x4600ac, 8)) {
+                if (h.cont() == 0x427316) { start(o, kPull); h.vx() = 0; o.l(0x54) = 0; return go(kPull); }
+                o.b(0x4a) -= 1;
+                if (o.b(0x4a) == 0) { start(o, kDecide); return go(kDecide); }
+                return kDone;
+            }
+            if (o.b(0x37) != 0) return kDone;
+            if (o.b(0x36) == 9) {
+                ctx.sound0(0xbc, 0xa);              // FUN_004262d9
+                o.w(0x4e) = 0xa;
+                if (h.onGround()) { h.setCont(0x427316); h.w(0x465b47) = 0x702f; h.w(0x465b45) = 0; }
+                return kDone;
+            }
+            if (o.b(0x36) == 0xf) { o.b(0x36) = 5; o.b(0x37) = 0xa; continue; }
+            if (o.b(0x36) != 0xb) return kDone;
+            if (o.b(0x68) == 0 && h.cont() != 0x427316 && int8_t((ctx.rnd() & 7) - 5) < 0) return kDone;
+            o.b(0x36) = 0xf; o.b(0x37) = 0xa;
+            pose(ctx, o, 0x459b94, 0x4600ac, 8);
+        }
+        return kDone;
+    }
+    case kSuck: {                                   // 0x42195b: sucks Harry in, lifts him and throws him
+        if (pose(ctx, o, 0x458104, 0x4600be, 8)) {
+            if (o.b(0x68) != 0) { start(o, kDecide); return go(kDecide); }
+            if ((ctx.rnd() & 1) == 0) { start(o, kSlam); return go(kSlam); }
+            start(o, kThrow);
+            return go(kThrow);
+        }
+        bool event = false;
+        if (int8_t(o.b(0x36) - 0x1c) < 0) {
+            if (suckHarry(ctx, o)) {
+                if (o.b(0x33) != 4) return kDone;
+                o.w(0x36) = 0x20;
+                event = true;
+            } else if (o.b(0x33) == 4 && h.w(0x466782) != 0) {
+                o.w(0x36) = 0x1c;
+            }
+        } else {
+            event = true;
+        }
+        if (event && ctx.pl.scriptEvent() == 0xd0) { ctx.soundNow(0x2d); ctx.pl.scriptEvent() = 0; }   // the suction's sound stops
+        if (int8_t(o.b(0x33) - 6) < 0) return kDone;
+        if (int8_t(o.b(0x33) - 0xf) < 0) {          // Harry held in its hand (part 14 at 0x465c64)
+            if (h.cont() != 0x42c2ff) { h.setCont(0x42c2ff); h.w(0x465b47) = 0; }
+            if (const Obj* hand = ctx.pl.objAt(h.ul(0x465c64))) {
+                h.x() = int16_t(hand->x + 0x10);
+                h.y() = int16_t(hand->y + 0x30);
+                if (hand->facing) h.x() -= 0x20;
+            }
+            return kDone;
+        }
+        if (h.cont() != 0x42c2ff) return kDone;
+        o.b(0x68) = 1;                              // thrown
+        ctx.sound0(0xc7, 0x3e);                     // FUN_004262d9
+        blow(ctx, o);
+        h.vy() = 0x90000;
+        ctx.pl.objectSystem().endPass();            // 0x421ae5: a `ret` ends the object pass
+        return kDone;
+    }
+    case kPullHit:                                  // 0x421fb6: hit while pulling: let go
+        if (pose(ctx, o, 0x45899c, 0x4600ea, 8)) { start(o, kDecide); return go(kDecide); }
+        return kDone;
+    case kPull: {                                   // 0x421ff9: pulls Harry in from afar and strikes
+        for (int guard = 0; guard < 4; ++guard) {
+            if (pose(ctx, o, 0x45899c, 0x46011b, 8)) { start(o, kDecide); return go(kDecide); }
+            if (o.b(0x33) == 0xb && o.b(0x37) == 3) {
+                if (h.cont() == 0x427316) h.w(0x465b47) = 0x100;
+                blow(ctx, o);
+                ctx.sound1(0x5a, 9);
+                o.b(0x68) = 1;
+            }
+            if (o.b(0x33) != 4 && o.b(0x33) != 5) return kDone;
+            if (h.b(0x466782) != 0) { start(o, kPullHit); return go(kPullHit); }
+            if (!suckHarry(ctx, o)) return kDone;
+            if (ctx.pl.scriptEvent() == 0xd0) { ctx.soundNow(0x2d); ctx.pl.scriptEvent() = 0; }
+            o.b(0x37) = 0x3f; o.b(0x36) = 0x22;     // on to the strike
+        }
+        return kDone;
+    }
+    case kWalk: {                                   // 0x422260: walks at Harry, until within 0x70 px
+        if (o.b(0x3a) == 0) {
+            if (!pose(ctx, o, 0x457614, 0x4600ee, 8)) return kDone;
+            o.b(0x3a) = 0xff;
+            o.w(0x36) = 0x3f00;
+        }
+        move(ctx, o, o.l(0x40), 0);
+        if (!pose(ctx, o, 0x457614, 0x4600fd, 8)) return kDone;
+        const int16_t d = int16_t(o.x - h.x());
+        if (d >= 0x70 || d < -0x70) return kDone;
+        start(o, kWalkEnd);
+        return go(kWalkEnd);
+    }
+    case kWalkBack:                                 // 0x422359: steps back
+        if (o.b(0x3a) == 0) {
+            if (!pose(ctx, o, 0x457614, 0x4600f1, 8)) return kDone;
+            o.b(0x3a) = 0xff;
+            o.w(0x36) = 0x3f00;
+        }
+        move(ctx, o, -o.l(0x40), 0);
+        if (!pose(ctx, o, 0x457614, 0x46010c, 8)) return kDone;
+        start(o, kWalkBackEnd);
+        return go(kWalkBackEnd);
+    case kWalkEnd:                                  // 0x422423
+        if (!pose(ctx, o, 0x457614, 0x4600f1, 8)) return kDone;
+        start(o, kDecide);
+        return go(kDecide);
+    case kWalkBackEnd:                              // 0x422479
+        if (!pose(ctx, o, 0x457614, 0x4600ee, 8)) return kDone;
+        start(o, kDecide);
+        return go(kDecide);
+    default:                                        // (0x4217bd, set at 0x42154a, is never reached)
+        return kDone;
+    }
+}
+
+// 0x420bd0 (b34 0): the body, the head, the boss meter.
+void setUp(ObjCtx& ctx, Obj& o) {
+    Harry& h = ctx.harry;
+    ctx.pl.setAlsByte(0x1c6, 0);
+    h.b(0x466507) = 0xff;
+    o.facing = 0xff;
+    ctx.pl.setAlsLong(0x1ca, ctx.pl.addrOf(&o));
+    o.w(0x38) = o.y;
+    o.b(0x34) = 0xff;
+    Obj* prev = &o;
+    for (int d7 = 0xf; d7 >= 0; --d7) {
+        Obj* p = ctx.pl.objectSystem().allocHead();   // FUN_00435905
+        if (!p) break;
+        p->w(0x26) = 0x6663;                          // FUN_004263a6
+        p->sprite = ctx.spr("bosss");
+        p->type = 0x6a;
+        p->l(0x64) = int32_t(ctx.pl.addrOf(prev));    // the part before it in the chain
+        p->x = o.x;
+        p->y = int16_t(o.y - 0x10);
+        prev->l(0x3c) = int32_t(ctx.pl.addrOf(p));
+        prev = p;
+        if (d7 == 1) h.setUl(0x465c64, ctx.pl.addrOf(p));   // the hand that holds Harry
+    }
+    prev->w(0x36) = 0x3f00;                           // (meant for the boss: written to the last part)
+    prev->l(0x46) = int32_t(kIntro);
+    o.b(0x51) = 0x60;
+    const uint8_t* t = kData_spiritPoses;
+    const uint8_t* p = t + rdw(t);                     // pose 0 of 0x457420
+    const uint8_t* q = kData_spiritParts;
+    for (Obj* a5 = part(ctx, o); a5; a5 = part(ctx, *a5)) {
+        if (uint16_t(rdw(p)) == 0x8000) break;
+        a5->x = int16_t(o.x - rdw(p)); p += 2;
+        a5->y = int16_t(o.y + rdw(p)); p += 2;
+        putFixed(*a5, 0x48, fx(*a5));
+        putFixed(*a5, 0x4c, fy(*a5));
+        a5->frame = uint8_t(rdw(p)); p += 2;
+        a5->facing = 1;
+        a5->behind = uint8_t(rdw(q)); q += 2;
+        a5->flags = uint16_t(rdw(q)); q += 2;
+        if (int8_t(a5->frame - 3) < 0) o.l(0x64) = int32_t(ctx.pl.addrOf(a5));   // the head
+    }
+    // the boss meter (type 0x30): the head's hits while this is a type 0x69 boss
+    if (Obj* m = ctx.spawnFrom(o, false, 1)) {
+        m->l(0x5a) = o.l(0x64);
+        m->l(0x56) = int32_t(ctx.pl.addrOf(&o));
+        m->sprite = ctx.spr("scoline"); m->flags = 0xe000; m->type = 0x30;
+        Obj** links[3] = {&m->link, &m->link2, &m->link3};
+        for (int i = 0; i < 3; ++i) {
+            Obj* d = ctx.spawnFrom(o, false, 1);
+            if (!d) break;
+            d->sprite = ctx.spr(i == 2 ? "mi_prcnt" : "scoline"); d->flags = 0xe000;
+            *links[i] = d;
+        }
+    }
+    setState(o, kIntro);
+    o.w(0x3a) = 3;
+    o.l(0x40) = 0x11c00;
+}
+
+// 0x421bd3: dead.
+void die(ObjCtx& ctx, Obj& o) {
+    Harry& h = ctx.harry;
+    ctx.sound0(0x51, 0x56);                           // FUN_0042633d(0x51, 0x60, 0x56)
+    ctx.g.stats().score += 25000;
+    if (h.spriteIs("hyidazed") || h.cont() == 0x427316 || h.cont() == 0x42c2ff) ctx.pl.harryCall(0x428dfa);
+    ctx.g.stats().score += 25000;
+    o.w(0x36) = 0x3f00;
+    ctx.pl.setAlsByte(0x1c6, 0xff);
+    o.w(0x4a) = 0;
+    bool odd = false;                                 // the parts fly apart, each to burst a while later
+    ObjectSystem& os = ctx.pl.objectSystem();
+    for (Obj* p = os.first(); p; p = os.nextOf(*p)) {
+        if (p->type != 0x6a) continue;
+        p->b(0x5a) = 0xff;
+        p->w(0x6c) = int16_t((ctx.rnd() & 0x3f) + 0x20);
+        p->l(0x40) = -int32_t((ctx.rnd() & 0x3ffff) + 0x54000);
+        p->l(0x38) = int32_t(ctx.rnd() & 0x3ffff);
+        odd = !odd;
+        if (odd) p->l(0x38) = -p->l(0x38);
+    }
+    h.b(0x466507) = 0;
+    ctx.release(o);
+    if (Obj* l = ctx.spawnFrom(o, true, 2)) {         // FUN_0043546e(2): the last letter falls
+        l->y = -0x10; l->x = 0xf0;
+        l->sprite = ctx.spr("mi_ptfal"); l->frame = 5;
+        l->flags = 0x6000;
+        l->type = 0xb0;
+        return;
+    }
+    ctx.g.stats().letters = uint8_t(ctx.g.stats().letters + 0x40);   // no room for it: had, and the game ends
+    ctx.pl.harryCall(0x430912);
+}
+} // namespace spirit
+
+void h_warriorSpirit(ObjCtx& ctx, Obj& o) {
+    using namespace spirit;
+    Harry& h = ctx.harry;
+    h.w(0x465c58) = o.x;                              // the camera follows it (0x404a21)
+    if (o.b(0x34) == 0) setUp(ctx, o);
+    if (o.b(0x51) != 0) { o.b(0x51) -= 1; return; }   // the opening pause
+    if (o.w(0x4e) != 0) {                             // the floor shakes
+        ctx.pl.setShake(int16_t((ctx.rnd() & 0xf) - 8));
+        o.w(0x4e) -= 1;
+        if (o.w(0x4e) == 0) ctx.pl.setShake(0);
+    }
+    // 0x421077: short of stones, a pouch of them drops in (one at a time)
+    if (int8_t(ctx.g.stats().ammoCount[0] - 0xa) < 0 && o.b(0x6d) == 0) {
+        // FUN_004351c5 with the template 0x467fe4: {type 2, frame 0, flags 0x6000, mi_pouc2, d0 1}
+        if (Obj* p = ctx.spawnFrom(o, true, 1)) {
+            p->type = 2; p->frame = 0; p->flags = 0x6000; p->sprite = ctx.spr("mi_pouc2");
+            o.b(0x6d) = 0xff;
+            p->w(0x68) = 8;
+            ctx.pl.setAlsLong(0x1ca, ctx.pl.addrOf(p));
+            p->b(0x6a) = 0xff;
+            p->type = 0x9c;
+            p->l(0x32) = 1;                           // falling
+            p->x = int16_t(o.x + (o.facing ? 0x20 : -0x20));
+            p->y = 0;
+            if (p->x < 0x5f) p->x = 0x60;
+            if (p->x >= 0x181) p->x = 0x180;
+        }
+    }
+    if (const Obj* p = ctx.pl.objAt(ctx.pl.alsLong(0x1ca)); !p || (p->type != 0x9c && p->type != 2)) o.b(0x6d) = 0;
+    // 0x421173: the weapons, on the head
+    h.b(0x466782) = 0;
+    const uint32_t st0 = uint32_t(o.l(0x46));
+    if (st0 != kJumpOff && st0 != kRain) deflect(ctx, o);
+    int32_t d1 = 0;                                   // the original's d1, as far as it can be known here
+    if (Obj* head = ctx.pl.objAt(uint32_t(o.l(0x64)))) {
+        head->b(0x5c) += 1;
+        if (head->b(0x5c) == 0x1a) head->w(0x5c) = 0;   // three hits within 26 ticks: it hits back
+        // (0x4211c7 compares the head's +0x46, the pose's step count, with two state addresses:
+        // never equal)
+        head->hits = 0;
+        if (weaponHits(ctx, *head, 0x30, nullptr)) {
+            h.b(0x466782) = 0xff;
+            ctx.sound0(0x51, 0xa);                    // FUN_0042633d(0x51, 0x60, 0xa)
+            d1 = 0x60;
+            head->b(0x5c) = 0;
+            head->b(0x5d) += 1;
+            if (head->b(0x5d) == 3) { head->w(0x5c) = 0; h.b(0x466782) = 0x2b; }
+            head->w(0x6a) += head->hits;
+        }
+        const uint16_t hp = uint16_t(uint16_t(head->w(0x6a)) >> 4);
+        head->hits = uint8_t(hp);
+        if (hp >= 0x30) { die(ctx, o); return; }
+    }
+    if (h.b(0x466782) == 0x2b) o.b(0x68) = 1;
+    // 0x4212b2: Harry cannot walk through it
+    const int16_t dy = int16_t(o.y - h.y());
+    if (dy >= -8 && dy < 0x90) {
+        const int16_t dx = int16_t(o.x - h.x());
+        if (dx >= 0) { if (dx < 0x24) h.x() = int16_t(o.x - 0x24); }
+        else if (dx >= -0x24) h.x() = int16_t(o.x + 0x24);
+    }
+    // The decision at 0x4215be reads d1 on its long-range path without setting it: there the
+    // register keeps the low byte the weapon test left (0 or 1) or 0x60 after a hit's sound,
+    // and whatever came before in its upper bytes, taken as 0 here.
+    uint32_t st = uint32_t(o.l(0x46)), next = 0;
+    Flow f = kJump;
+    for (int hop = 0; hop < 8 && f == kJump; ++hop) { f = body(ctx, o, st, next, d1); st = next; }
+}
+
+// 0x422c7a: type 106, a part of the Warrior Spirit's body.  It faces the way the part before
+// it does and steps to its place in the pose (8 steps, the frame at the first); scattered
+// (b5a), it flies under gravity and bounces off the walls and the floor at y 0xc4, bursting
+// into stones when its count w6c runs out (w6c 0: the rain, which goes for Harry).
+void h_spiritPart(ObjCtx& ctx, Obj& o) {
+    if (const Obj* up = ctx.pl.objAt(uint32_t(o.l(0x64)))) o.facing = up->facing;
+    if (o.b(0x5a) == 0) {
+        if (o.b(0x46) != 0) {
+            o.b(0x46) -= 1;
+            moveX(o, spirit::getFixed(o, 0x50));
+            moveY(o, spirit::getFixed(o, 0x54));
+            if (o.b(0x46) == 7) o.frame = o.b(0x58);
+            return;
+        }
+        o.x = o.w(0x48); o.xFrac = uint16_t(o.w(0x4a));
+        o.y = o.w(0x4c); o.yFrac = uint16_t(o.w(0x4e));
+        return;
+    }
+    if (o.w(0x6c) != 0) {
+        o.w(0x6c) -= 1;
+        if (o.w(0x6c) == 0) {
+            ctx.sound0(6, 0x18);                      // FUN_0042633d(6, 0x60, 0x18)
+            ctx.spawnEffect(o, ctx.spr("fx_stone"), kAnim_turn7, 3);   // 0x433914 (script 0x4619c7)
+            ctx.release(o);
+            return;
+        }
+    } else {
+        // (the original compares camY - 0x10 with x: the part goes over Harry when x is that low)
+        if (int16_t(int16_t(ctx.harry.w(0x4658b6) - 0x10) - o.x) >= 0)
+            o.x = int16_t(ctx.harry.x() + int16_t((ctx.rnd() & 0x7f) - 0x40));
+        harryContact(ctx, o, 0);
+    }
+    if (o.w(0x42) != 0xc) o.l(0x40) += 0x4000;        // gravity up to 12 px/tick
+    moveY(o, o.l(0x40));
+    moveX(o, o.l(0x38));
+    if (o.w(0x6c) == 0) {
+        if (o.l(0x38) < 0 ? o.x < 0x47 : o.x >= 0x199) o.l(0x38) = -o.l(0x38);
+    }
+    if (o.y < 0xc4) return;
+    o.l(0x40) = -(o.l(0x40) - 0x40000);
+    o.l(0x38) = o.l(0x38) >> 1;
+    ctx.sound1(int(ctx.rnd() & 1) + 0x5a, 9);
+    o.y = 0xc4;
+}
+
+// 0x420abf: type 176, the last letter of PITFALL: 0x60 ticks, then it falls (gravity 0x3000 up
+// to 8 px/tick) to the floor at y 0xc5; Harry picks it up (10000 points, the letter) and 0x70
+// ticks later the game is won (0x430912).
+void h_lastLetter(ObjCtx& ctx, Obj& o) {
+    if (o.w(0x5a) != 0x60) { o.w(0x5a) += 1; return; }
+    if (o.b(0x3c) != 0) {
+        o.w(0x46) += 1;
+        if (o.w(0x46) == 0x70) ctx.pl.harryCall(0x430912);
+        return;
+    }
+    if (o.b(0x69) == 0) {
+        if (o.w(0x34) != 8) o.l(0x32) += 0x3000;
+        moveY(o, o.l(0x32));
+        if (o.y >= 0xc5) {
+            o.l(0x32) = 0;
+            o.y = 0xc5;
+            ctx.sound0(0x1e, 4);                      // FUN_0042633d(0x1e, 0x60, 4)
+            o.b(0x69) = 0xff;
+        }
+    }
+    if (!ctx.touchesHarry(o)) return;
+    o.b(0x3c) = 0xff;
+    ctx.g.stats().score += 10000;
+    o.frame = 0xff;
+    ctx.g.stats().letters = uint8_t(ctx.g.stats().letters + 0x40);
+    ctx.sound1(0x24, 0x28);
+}
+
 // ---------------------------------------------------------------- skull warrior (type 66, 0x412fc2)
 //
 // The skeleton of the temple levels.  Three variants by the template's initial frame:
@@ -7834,6 +8477,9 @@ Handler ObjectSystem::handler(uint8_t type) {
     case 154:  return h_jaguarRope;
     case 158:  return h_jagMan;
     case 159:  return h_jagManClaw;
+    case 105:  return h_warriorSpirit;
+    case 106:  return h_spiritPart;
+    case 176:  return h_lastLetter;
     case 0:    return nullptr;
     default:   return h_default;
     }

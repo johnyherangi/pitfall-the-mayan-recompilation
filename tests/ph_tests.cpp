@@ -7,6 +7,8 @@
 #include "ph/manifests.h"
 
 #include <cstdio>
+#include <set>
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <string>
@@ -89,7 +91,8 @@ int main(int argc, char** argv) {
 // ---- gameplay smoke tests (appended) --------------------------------------
 namespace { int jaguarTest(const std::string& dir); int bungeeTest(const std::string& dir); int stoneTest(const std::string& dir);
             int vortexTest(const std::string& dir); int deathTest(const std::string& dir); int vaultTest(const std::string& dir);
-            int stoneJaguarTest(const std::string& dir); int jaguarManTest(const std::string& dir); }
+            int stoneJaguarTest(const std::string& dir); int jaguarManTest(const std::string& dir);
+            int warriorSpiritTest(const std::string& dir); }
 namespace {
 int gameplayTests(const std::string& dir) {
     int fails = 0;
@@ -124,6 +127,7 @@ int gameplayTests(const std::string& dir) {
     fails += vaultTest(dir);
     fails += stoneJaguarTest(dir);
     fails += jaguarManTest(dir);
+    fails += warriorSpiritTest(dir);
     return fails;
 }
 }
@@ -566,6 +570,85 @@ int jaguarManTest(const std::string& dir) {
     if (deadAt < 0) { std::printf("FAIL: the jaguar man did not die\n"); ++fails; }
     if (outAt < 0 || g.levelNumber() != 9) { std::printf("FAIL: Harry did not leave level 8 by the tongue (level %d)\n", g.levelNumber()); ++fails; }
     std::printf("jaguar man: shown at tick %d, swipe at %d, claw at %d, dead at %d, level 9 at %d\n", shownAt, manAt, clawAt, deadAt, outAt);
+    return fails;
+}
+}
+
+// The Warrior Spirit of level 10 (types 105 / 106 / 176): Harry whips at it while staying
+// healed; it must go through its attacks (the suction that lifts and throws Harry among them)
+// and turn by leaping off the top of the screen; then its head is given the killing damage, its
+// parts must fly apart and burst, and the last letter of PITFALL must fall for Harry to pick
+// up, which ends the game.
+namespace {
+int warriorSpiritTest(const std::string& dir) {
+    int fails = 0;
+    engine::Options opts;
+    game::Game g(dir, opts);
+    g.startLevel(10); g.setMode(game::Mode::Playing);
+    game::PlayLogic* pl = game::g_debugLogic;
+    if (!pl) { std::printf("FAIL: no play logic for level 10\n"); return 1; }
+    std::set<uint32_t> states;
+    bool thrown = false, behind = false;
+    int t = 0;
+    for (; t < 4000; ++t) {
+        game::Harry& h = pl->harry();
+        engine::HostInput in;
+        for (game::Obj* o : pl->objectSystem().list())
+            if (o->type == 0x69) {
+                states.insert(uint32_t(o->l(0x46)));
+                if (std::abs(o->x - h.x()) < 70 && t % 3 == 0) in.keyDown['Q'] = true;
+                // once, while it walks and Harry stands, Harry is put behind it (as a throw may
+                // leave him) and goes after it: it must leap off the screen and come down facing him
+                if (!behind && t >= 1500 && (o->l(0x46) == 0x422260 || o->l(0x46) == 0x422359) && h.cont() == 0x428e50) {
+                    h.x() = int16_t(std::clamp(o->x + (o->facing ? 0x60 : -0x60), 0x50, 0x190));
+                    behind = true;
+                }
+                if (behind && !states.count(0x421b3e) && std::abs(o->x - h.x()) > 0x40) {
+                    in.keyDown[h.x() < o->x ? 0x27 : 0x25] = true;
+                    in.keyDown['Q'] = false;
+                }
+            }
+        if (h.cont() == 0x42c2ff) thrown = true;
+        pl->healHarry();
+        g.tick(in);
+    }
+    for (uint32_t st : {0x42195bu, 0x421b3eu, 0x421e44u})
+        if (!states.count(st)) { std::printf("FAIL: the Warrior Spirit never went into its state %#x\n", st); ++fails; }
+    if (!thrown) { std::printf("FAIL: the Warrior Spirit never lifted Harry\n"); ++fails; }
+    // the killing blow
+    game::Obj* head = nullptr;
+    for (game::Obj* o : pl->objectSystem().list()) if (o->type == 0x69) head = pl->objAt(uint32_t(o->l(0x64)));
+    if (!head) { std::printf("FAIL: no Warrior Spirit\n"); return fails + 1; }
+    head->w(0x6a) = 0x300;
+    const int score0 = g.stats().score;
+    int burstAt = -1, landedAt = -1, endAt = -1, letterX = -1;
+    for (int i = 0; i < 1500 && g.levelNumber() == 10; ++i, ++t) {
+        game::Harry& h = pl->harry();
+        int parts = 0;
+        const game::Obj* letter = nullptr;
+        for (const game::Obj* o : pl->objectSystem().list()) {
+            if (o->type == 0x6a) ++parts;
+            if (o->type == 0xb0) letter = o;
+        }
+        if (parts == 0 && burstAt < 0) burstAt = i;
+        engine::HostInput in;
+        if (letter) {
+            letterX = letter->x;
+            if (letter->y == 0xc5 && landedAt < 0) landedAt = i;
+            if (landedAt >= 0 && std::abs(h.x() - letter->x) > 4) in.keyDown[h.x() < letter->x ? 0x27 : 0x25] = true;
+        }
+        pl->healHarry();
+        g.tick(in);
+        if (g.levelNumber() != 10) endAt = i;
+    }
+    if (burstAt < 0) { std::printf("FAIL: the Warrior Spirit's parts did not burst\n"); ++fails; }
+    if (landedAt < 0 || letterX != 0xf0) { std::printf("FAIL: the last letter did not fall (x %d)\n", letterX); ++fails; }
+    if (endAt < 0 || !(g.stats().letters & 0x40) || g.stats().score - score0 != 60000) {
+        std::printf("FAIL: the game did not end with the letter (level %d, letters %#x, score +%d)\n", g.levelNumber(), g.stats().letters, g.stats().score - score0);
+        ++fails;
+    }
+    std::printf("warrior spirit: %zu states, thrown %d; dead: parts gone after %d ticks, letter down at %d, game over at %d\n",
+                states.size(), int(thrown), burstAt, landedAt, endAt);
     return fails;
 }
 }
