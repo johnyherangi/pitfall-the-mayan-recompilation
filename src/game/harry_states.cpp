@@ -3771,7 +3771,7 @@ void PlayLogic::h4311bf() {
     // and goes, but the sling stones in flight (type 5).  (The stone / boomerang slots keep
     // pointing at their freed records, as in the original.)
     for (const Killed& k : killed_)
-        if (k.count != 0 && k.als >= 0) als_[size_t(k.als)] = k.id;
+        if (k.count != 0 && k.als >= 0) alsMem_[size_t(k.als) + 1] = k.id;
     for (Obj* p : objects_.list()) {
         Obj& o = *p;
         restoreEntry(o);

@@ -131,10 +131,27 @@ private:
     bool runAttack();                           // 0x42e333 / 0x42eb27
 #include "game/harry_decls.inc"
 
+    // ---- scroll.cpp: the camera and the object spawner ----
+    void camera();                              // FUN_00404714
+    void cameraRideVertical();                  // 0x404cf1
+    void scrollLeft(int16_t d0);                // 0x404dcb
+    void scrollRight(int16_t d0);               // 0x404ea2
+    void scrollUp(int16_t d0);                  // 0x404f75
+    void scrollDown(int16_t d0);                // 0x40503e
+    void spawnLeftColumn();                     // FUN_00403fa0
+    void spawnRightColumn();                    // FUN_00404016
+    void spawnTopRow();                         // FUN_00404269
+    void spawnBottomRow();                      // FUN_004042fe
+    void spawnColumn(uint16_t col);             // 0x40407f
+    void spawnRow(int16_t row);                 // 0x40438e
+    void spawnEntry(Obj& o, size_t entry, const ph::ObjectTemplate& t);   // FUN_0040454e
+    void spawnAll();                            // FUN_00405114
+    void preSpawn();                            // FUN_00433d0b
+    uint16_t alsWord(size_t off) const;         // big-endian, 0 past the data
+    uint8_t alsByte(size_t off) const;          // 0xff past the data
+
     // ---- play_logic.cpp ----
-    void updateCamera(Game& g);
     void hudPlacement();                        // FUN_0043348e
-    void spawnObjects(Game& g);
     void runObjects(Game& g);
     void timers();                              // FUN_00433a09
     void displayList(Game& g);                  // FUN_00434f6c
@@ -144,8 +161,8 @@ private:
     Harry h_;                        // 0x465800 .. 0x4668ff
     ObjectSystem objects_;
     std::vector<int> hud_;           // 0x466874: the records 0x4150a2 listed in the last object pass
-    std::vector<uint8_t> als_;       // the working copy of the .als ids (0 = alive, collected or killed)
-    struct Killed { uint8_t count = 0, id = 0; int als = -1; };
+    std::vector<uint8_t> alsMem_;    // [DAT_004504e4]: the level's .als data as the spawner works on it (an id is 0 while its object lives, or once collected or killed)
+    struct Killed { uint8_t count = 0, id = 0; int als = -1; };   // als: the entry's offset in alsMem_
     Killed killed_[19];              // 0x465a40 .. 0x465ad8
     bool exiting_ = false;
     int deathTimer_ = 0;

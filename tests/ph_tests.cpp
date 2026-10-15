@@ -133,13 +133,20 @@ int jaguarTest(const std::string& dir) {
     g.startLevel(0); g.setMode(game::Mode::Playing);
     game::PlayLogic* pl = game::g_debugLogic;
     if (!pl) { std::printf("FAIL: no play logic for level 0\n"); return 1; }
-    for (int i = 0; i < 3000; ++i) {                      // fly to the arena's right end
-        const game::Harry& h = pl->harry();
-        if (std::abs(h.x() - 3030) <= 7 && std::abs(h.y() - 940) <= 7) break;
-        engine::HostInput fly; fly.ctrlDown = true;
-        fly.keyDown[h.x() < 3030 ? 0x27 : 0x25] = std::abs(h.x() - 3030) > 7;
-        fly.keyDown[h.y() < 940 ? 0x28 : 0x26] = std::abs(h.y() - 940) > 7;
-        g.tick(fly);
+    // Fly over the arena to its right edge, then down along it: the jaguar's .als entry is met
+    // again by the camera's bottom-row scan (FUN_004042fe) only while the camera comes down, and
+    // it wakes only with Harry against the right edge (x >= 0xbce) on the arena floor (the exit
+    // trigger 0x5f to its left ends the level without the fight).
+    const int legs[2][2] = {{3030, 400}, {3030, 980}};
+    for (const auto& leg : legs) {
+        for (int i = 0; i < 3000; ++i) {
+            const game::Harry& h = pl->harry();
+            if (std::abs(h.x() - leg[0]) <= 7 && std::abs(h.y() - leg[1]) <= 7) break;
+            engine::HostInput fly; fly.ctrlDown = true;
+            fly.keyDown[h.x() < leg[0] ? 0x27 : 0x25] = std::abs(h.x() - leg[0]) > 7;
+            fly.keyDown[h.y() < leg[1] ? 0x28 : 0x26] = std::abs(h.y() - leg[1]) > 7;
+            g.tick(fly);
+        }
     }
     bool sawMeter = false, sawBoss = false;
     int ticks = 0;
@@ -206,8 +213,8 @@ int bungeeTest(const std::string& dir) {
 
 
 // A sling stone at the start of Ceiba Jungle: E throws one (type 5, held in one of the five
-// in-flight slots at DAT_00466808); it must fly off the way Harry faces, come down, and break
-// or leave the screen within 200 ticks, freeing its slot and costing one stone.
+// in-flight slots at DAT_00466808); it must fly off the way Harry faces, come down or break (on
+// the snake hole ahead), and be gone within 200 ticks, freeing its slot and costing one stone.
 namespace {
 int stoneTest(const std::string& dir) {
     int fails = 0;
@@ -244,7 +251,7 @@ int stoneTest(const std::string& dir) {
     else {
         if (!slotSet) { std::printf("FAIL: the stone was not in an in-flight slot\n"); ++fails; }
         if (maxDx < 32) { std::printf("FAIL: the stone did not fly (%d px)\n", maxDx); ++fails; }
-        if (!fell) { std::printf("FAIL: the stone did not come down\n"); ++fails; }
+        if (!fell && !broke) { std::printf("FAIL: the stone neither came down nor broke\n"); ++fails; }
         if (gone < 0) { std::printf("FAIL: the stone was still there after 200 ticks\n"); ++fails; }
         if (!slotsFree) { std::printf("FAIL: the stone's slot was not freed\n"); ++fails; }
         if (g.stats().ammoCount[0] != ammo0 - 1) { std::printf("FAIL: stones %d -> %d\n", ammo0, g.stats().ammoCount[0]); ++fails; }

@@ -1910,6 +1910,166 @@ void h_pushCart(ObjCtx& ctx, Obj& o) {
     o.frame = 0;
 }
 
+// ---------------------------------------------------------------- ropes (types 0xa9, 14) and drifting platforms (0x6f)
+
+int16_t ropeWord(const uint8_t* t, size_t off) { return int16_t(t[off] | t[off + 1] << 8); }
+
+// 0x4088ba: type 14, a swinging rope (ropes) and its 13 segments (linked by l32; l40 is the
+// eleventh, the one Harry catches, box 0x45ba66).  Every tick the rope and its segments take
+// their places for the swing phase DAT_00466796 from the tables 0x45dfd0 / 0x45bfde (the second
+// while Harry hangs on it), mirrored by DAT_00466799 and, for a rope on a trigger of raw class
+// 0xf5, by b46.  Harry (DAT_00465b7e = l40, state 0x42a048) takes his place from his entry and
+// the segments after it go behind him; jump lets go (0x42c1ea) with a push along the swing.
+// Its spawner (type 0xa9) dismisses it out of view (b68); the segments go with it.
+void h_rope(ObjCtx& ctx, Obj& o) {
+    Harry& h = ctx.harry;
+    auto part = [&](Obj& p, int off) { return ctx.pl.objAt(uint32_t(p.l(off))); };
+    auto releaseFrom = [&](Obj& a6) {                   // 0x408ed4
+        ctx.pl.restoreEntry(a6);
+        if (Obj* l = part(a6, 0x50)) { ctx.pl.restoreEntry(*l); ctx.release(*l); }
+        for (Obj* p = &a6; p; ) { Obj* next = part(*p, 0x32); ctx.release(*p); p = next; }
+    };
+    if (o.frame == 0xff || o.frame == 0xfe) {
+        o.b(0x44) = 8;
+        if (ctx.trigger(o.x - 0x20, o.y + 8).raw == 0xf5) o.b(0x46) = 1;
+        if (o.frame == 0xfe) o.y -= 0x30;                                  // (template 0x4683b4)
+        o.w(0x36) = o.x; o.w(0x38) = o.y;
+        Obj* a4 = &o;
+        for (int d7 = 0xc; d7 >= 0; --d7) {
+            Obj* a5 = ctx.spawn();                                          // FUN_00435905
+            if (!a5) { releaseFrom(*a4); return; }                          // (the last one made, or the rope)
+            a5->setSprite(ctx.spr("ropes")); a5->flags = 0x4000;
+            a4->l(0x32) = int32_t(ctx.pl.addrOf(a5));
+            a4 = a5;
+            if (d7 == 2) o.l(0x40) = int32_t(ctx.pl.addrOf(a5));
+        }
+        a4->l(0x32) = 0;
+    }
+    if (o.b(0x44) != 0) {
+        o.b(0x44) -= 1;                                                     // just let go
+    } else if (h.l(0x465b7e) == 0 && !h.onGround()) {
+        Obj* seg = part(o, 0x40);
+        if (seg && harryOnBox(ctx, *seg, -24, 24, 36, 80) && h.cont() != 0x42a36f) {   // 0x45ba66
+            h.l(0x465b7e) = o.l(0x40);
+            h.setCont(0x42a048);
+            ctx.sound1(0x44, 7);
+            h.w(0x4658a6) = 0x30;
+            h.w(0x465b49) = 1;
+        }
+    }
+    // 0x408a77: the rope's places for this phase
+    const bool held = h.l(0x465b7e) == o.l(0x40);
+    const uint8_t* tbl = held ? kData_ropeSwingHarry : kData_ropeSwing;
+    size_t a0 = size_t(int16_t(ropeWord(tbl, size_t(h.b(0x466796)) * 2)));
+    const int16_t d4 = o.w(0x36), d5 = o.w(0x38);
+    uint8_t d6 = 0;
+    for (Obj* a4 = &o; a4; ) {
+        if (int8_t((ropeWord(tbl, a0 + 4) & 0x7f) - 0x15) >= 0) {
+            // Harry's entry
+            if (!held) { a0 += 6; continue; }
+            h.x() = d4;
+            const int16_t dx = ropeWord(tbl, a0); a0 += 2;
+            h.facing() = uint8_t(h.b(0x466799) ^ o.b(0x46));
+            if (h.facing()) h.x() -= dx; else h.x() += dx;
+            h.y() = int16_t(d5 + ropeWord(tbl, a0)); a0 += 2;
+            d6 = 1;
+            const int16_t d1 = ropeWord(tbl, a0); a0 += 2;
+            const uint8_t ph = h.b(0x466796);
+            h.frame() = (int8_t(ph - 0x23) >= 0 && int8_t(ph - 0x2b) < 0) ? 0xa : uint8_t((d1 & 0x7f) - 0x15);
+            h.setSprite("hyisvine");
+            if (d1 & 0x80) h.facing() ^= 1;
+            continue;
+        }
+        a4->x = d4;
+        const int16_t dx = ropeWord(tbl, a0); a0 += 2;
+        a4->facing = uint8_t(h.b(0x466799) ^ o.b(0x46));
+        a4->behind = d6;
+        if (a4->facing) a4->x -= dx; else a4->x += dx;
+        a4->y = int16_t(d5 + ropeWord(tbl, a0)); a0 += 2;
+        const int16_t d1 = ropeWord(tbl, a0); a0 += 2;
+        uint8_t f = uint8_t(d1 & 0x7f);
+        if (f == 0x13) f = 0x10;
+        a4->frame = f;
+        if (d1 & 0x80) a4->facing ^= 1;
+        a4 = part(*a4, 0x32);
+    }
+    if (h.l(0x465b7e) == o.l(0x40)) {
+        // the swing's direction for the camera's lead, and jump lets go
+        h.b(0x465b47) = 0;
+        if (o.b(0x46)) h.b(0x465b47) ^= 1;
+        if (h.b(0x466797)) h.b(0x465b47) ^= 1;
+        if (h.b(0x46676d) == 1) {
+            h.b(0x46676d) = 0x80;
+            h.vy() = int32_t(0xfff86000);
+            o.b(0x44) = 0x28;
+            ctx.pl.harryCall(0x42c1ea);
+            h.l(0x465b7e) = 0;
+            h.onGround() = 0;
+            h.b(0x465b6d) = 0xff;
+            h.b(0x465b7b) = 8;
+            ctx.sound0(0x8a, 5);
+            h.vx() = 0x46000; h.facing() = 0;
+            if (o.b(0x46)) { h.facing() ^= 1; h.vx() = -int32_t(h.vx()); }
+            if (h.b(0x466797)) { h.facing() ^= 1; h.w(0x465ba6) = int16_t(-h.w(0x465ba6)); }   // (the integer word only)
+            h.y() += 0x48;
+            return;
+        }
+    }
+    if (o.b(0x68) != 0) releaseFrom(o);
+}
+
+// 0x41fc1a: type 0xa9, where a rope hangs (placed by FUN_00433d0b from the .als ids 0x15 / 0x16;
+// b32 for 0x16, a rope from 0x30 px higher).  The rope (type 14, template 0x4683a4 / 0x4683b4)
+// comes when the spot is within 0x122 x (-0xd2 .. 0x8c) px of the screen's middle and is
+// dismissed (its b68) beyond 0x132 x (-0xe2 .. 0x9c).
+void h_ropeSpawner(ObjCtx& ctx, Obj& o) {
+    const int16_t dx = int16_t(ctx.camX + 0xa0 - o.x), dy = int16_t(ctx.camY - o.y);
+    if (o.l(0x3c) != 0) {
+        if (int16_t(dx - 0x132) < 0 && int16_t(dx + 0x132) >= 0 && int16_t(dy - 0x9c) < 0 && int16_t(dy + 0xe2) >= 0) return;
+        if (Obj* r = ctx.pl.objAt(uint32_t(o.l(0x3c)))) r->b(0x68) = 0xff;
+        o.l(0x3c) = 0;
+        return;
+    }
+    if (int16_t(dx - 0x122) < 0 && int16_t(dx + 0x122) >= 0 && int16_t(dy - 0x8c) < 0 && int16_t(dy + 0xd2) >= 0) {
+        Obj* r = ctx.spawnFrom(o, true, 0);                                 // FUN_004351c5
+        if (!r) return;                                                     // (the original writes through a5 = -1)
+        r->type = 14; r->frame = o.b(0x32) ? 0xfe : 0xff; r->flags = 0x4000;
+        r->setSprite(ctx.spr("ropes"));
+        r->y -= 0x10;
+        o.l(0x3c) = int32_t(ctx.pl.addrOf(r));
+    }
+}
+
+// 0x419d00: type 0x6f, a platform drifting right (ob_float, placed by FUN_00433d0b from the .als
+// id 0xc9): 1 px a tick, from the level's end (w32) back to -0x30, bobbing by the table 0x45bdcd
+// every fourth tick.  Only with the camera at 0x1d7 or lower and the platform within -0x170 .. 0x30
+// px of the camera's left edge is it handled; otherwise its display entry is taken back.  Harry
+// stands on it (box 0x45bded) and goes along unless a wall (trigger class bit 0) is ahead.
+void h_floatPlatform(ObjCtx& ctx, Obj& o) {
+    Harry& h = ctx.harry;
+    static const int16_t kBob[16] = {0, 0, 1, 0, 0, 1, 0, 0, 0, 0, -1, 0, 0, -1, 0, 0};
+    if (int16_t(ctx.camY - 0x1d7) < 0) { ctx.pl.objectSystem().popFrontDisplay(); return; }
+    o.x += 1;
+    if (o.x == o.w(0x32)) o.x = int16_t(0xffd0);
+    const int16_t d0 = int16_t(ctx.camX - o.x);
+    if (int16_t(d0 - 0x30) >= 0 || int16_t(d0 + 0x170) < 0) { ctx.pl.objectSystem().popFrontDisplay(); return; }
+    o.b(0x36) -= 1;
+    if (int8_t(o.b(0x36)) < 0) {
+        o.b(0x36) = 3;
+        o.w(0x34) = int16_t((o.w(0x34) + 2) & 0x1e);
+        o.y += kBob[o.w(0x34) >> 1];
+    }
+    animStep(ctx, o, o.anim(0x5a), kAnim_floatBob, 9);
+    if (h.b(0x465bb3) == 0 && h.b(0x465b73) == 0 && h.l(0x465b7e) == 0 && h.w(0x465baa) >= 0
+        && harryOnBox(ctx, o, -28, 28, -7, 9)) {                            // 0x45bded
+        h.y() = o.y;
+        h.b(0x465b73) = 0xff;
+        h.onGround() = 0xff;
+        if (!(ctx.trigger(h.x() + 0x18, h.y()).cls & 1)) h.x() += 1;
+        h.vy() = 0;
+    }
+}
+
 
 // ---------------------------------------------------------------- rat (type 23, 0x40b5d2)
 
@@ -6234,6 +6394,9 @@ Handler ObjectSystem::handler(uint8_t type) {
     case 15:   return h_mineCart;
     case 0x25: return h_cartSpark;
     case 19:   return h_pushCart;
+    case 14:   return h_rope;
+    case 0xa9: return h_ropeSpawner;
+    case 0x6f: return h_floatPlatform;
     case 6:    return h_boomerang;
     case 0x87: return h_boomerangBack;
     case 0x8a: return h_stoneSpark;

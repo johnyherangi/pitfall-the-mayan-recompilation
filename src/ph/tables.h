@@ -66,6 +66,7 @@ struct ObjectTemplate {
     uint8_t sub;         // initial frame / variant (obj+9), 0xff = hidden until the handler shows it
     uint16_t flags;      // obj+0xc
     uint8_t soundSlot;   // obj template +8: Genesis sound-channel class handed to FUN_004263a6 (a stub in the PC build that marks obj+0x26 = 0x6663); no gameplay effect
+    uint8_t head;        // template +9: the spawner puts the object at the head of the list (FUN_00435905), else at the tail (FUN_00435780)
     int16_t xOff, yOff;  // added to col*16 + 0x18 and row*16 - 0x10
     int16_t snap;        // != 0: snap to the floor probed at y + snap
     const char* sprite;  // sprite name, "" when the type draws nothing itself

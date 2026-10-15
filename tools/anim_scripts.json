@@ -81,7 +81,8 @@
   "crocLeap": "0x45bc66",
   "splashRing2": "0x45bd02",
   "treeSnakeLimp": "0x45bc8e",
-  "cartSpark": "0x45ba7b"
+  "cartSpark": "0x45ba7b",
+  "floatBob": "0x45bdc2"
  },
  "anim2": {
   "monkeyToss": "0x45ab81",
@@ -109,6 +110,8 @@
  "raw": {
   "bungeeScripts": "0x45aaa4+0xc3",
   "firePath": "0x45ad94+0x2c4",
-  "priestDeath": "0x45a849+0x69"
+  "priestDeath": "0x45a849+0x69",
+  "ropeSwing": "0x45dfd0+0x1d3a",
+  "ropeSwingHarry": "0x45bfde+0x1f38"
  }
 }

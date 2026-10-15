@@ -154,6 +154,8 @@ public:
     void tick(ObjCtx& ctx);
     // [DAT_00465b8e] = -2: the running object's display entry is cancelled (not drawn).
     void cancelCurrentDisplay() { if (hasSlot_) disp_[curSlot_] = -2; }
+    // `sub.l #4, DAT_00464bf8` / `move.l #-1, (a0)`: the last entry of the front list is taken back.
+    void popFrontDisplay() { --frontN_; disp_[frontN_] = -1; }
     Obj& record(int i) { return recs_[size_t(i)]; }
     const Obj& record(int i) const { return recs_[size_t(i)]; }
     int indexOf(const Obj& o) const { return int(&o - recs_.data()); }
@@ -275,10 +277,14 @@ extern const uint8_t kAnim_snakeEmerge[], kAnim_snakeMiss[], kAnim_snakeLunge[],
     kAnim_skullMorph[], kAnim_skullWalk[], kAnim_skullDie[], kAnim_ballDrop[], kAnim_splashRing[], kAnim_rippleRing[], kAnim_spearThrust[],
     kAnim_snakeLunge2[], kAnim_spitFly[], kAnim_spitSplat[], kAnim_crocBite[], kAnim_crocDive[], kAnim_priestTurn[], kAnim_fireballDie[],
     kAnim_guardShotLow[], kAnim_guardShotHigh[], kAnim_guardTurn[], kAnim_guardPeel[], kAnim_guardWalk[],
-    kAnim_hawkGlide[], kAnim_crocLeap[], kAnim_splashRing2[], kAnim_treeSnakeLimp[], kAnim_cartSpark[];
+    kAnim_hawkGlide[], kAnim_crocLeap[], kAnim_splashRing2[], kAnim_treeSnakeLimp[], kAnim_cartSpark[], kAnim_floatBob[];
 extern const uint8_t kData_bungeeScripts[];      // 0x45aaa4: Harry's bungee animation triples (see h_bungee)
 extern const uint8_t kData_firePath[];           // 0x45ad94: the fire pit's 59 keyframes {frame, dx, dy, tailFrame, tailDx, tailDy} (int16)
 extern const uint8_t kData_priestDeath[];        // 0x45a849: the fire priest's collapse (a byte script; its cursor jumps past the first 0xf0)
+// 0x45dfd0 / 0x45bfde: the swinging rope's positions by swing phase (DAT_00466796), without and
+// with Harry on it: 0x55 word offsets, then per phase {dx, dy, frame} words for the rope and its
+// 13 segments (a frame of 0x15 or more is Harry's entry, after the segment he holds), -1 ending.
+extern const uint8_t kData_ropeSwing[], kData_ropeSwingHarry[];
 extern const uint8_t kAnim2_deathFade[], kAnim2_monkeyToss[], kAnim2_condorDive[], kAnim2_jaguarLeap[], kAnim2_jaguarCrouchA[],
     kAnim2_jaguarCrouchB[], kAnim2_jaguarCrouchRoar[], kAnim2_jaguarRoar[], kAnim2_bossCloud[],
     kAnim2_skullThrow[], kAnim2_skullChop[], kAnim2_boneTumble[], kAnim2_ballSwingA[], kAnim2_ballSwingB[], kAnim2_ballSwingC[],

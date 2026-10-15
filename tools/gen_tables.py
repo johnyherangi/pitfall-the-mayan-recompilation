@@ -46,9 +46,11 @@ out = ['// GENERATED from PITFALL.EXE data at 0x4678c4 (tools/gen_tables.py): ob
 for i in range(256):
     v = t.get(str(i))
     if v:
-        out.append(f'    {{{v["type"]}, {v["sub"]}, 0x{v["flags"]:04x}, {v["snd"]}, {v["xoff"]}, {v["yoff"]}, {v["snap"]}, "{v["sprite"] or ""}"}},  // 0x{i:02x}')
+        rec = struct.unpack('<I', rd(0x4678c4 + 4 * i, 4))[0]       # the template record: +9 is the head flag
+        head = rd(rec + 9, 1)[0]
+        out.append(f'    {{{v["type"]}, {v["sub"]}, 0x{v["flags"]:04x}, {v["snd"]}, {head}, {v["xoff"]}, {v["yoff"]}, {v["snap"]}, "{v["sprite"] or ""}"}},  // 0x{i:02x}')
     else:
-        out.append('    {0, 0, 0, 0, 0, 0, 0, ""},')
+        out.append('    {0, 0, 0, 0, 0, 0, 0, 0, ""},')
 out += ['};']
 slots = json.load(open(os.path.join(root, 'tools', 'sprite_slots.json')))
 out += ['// 0x468824: collision boxes relative to the object position, looked up by sprite (FUN_00424af1).',

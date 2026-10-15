@@ -37,11 +37,13 @@ void PlayLogic::enter(Game& g) {
     level_ = g.levelNumber();
     const ph::LevelData& lv = g.level();
     h_ = Harry{};
-    als_.assign(lv.objects.size(), 0);
-    for (size_t i = 0; i < als_.size(); ++i) als_[i] = lv.objects.entry(i).id;
-    for (const auto& cr : g.permanentlyGone())                 // collected for good (FUN_00430eb6 keeps them)
-        for (const ph::ColumnEntry& e : lv.objects.column(cr.first))
-            if (e.row == cr.second) als_[lv.objects.indexOf(e)] = 0;
+    alsMem_ = lv.als;                                          // [DAT_004504e4]
+    for (const auto& cr : g.permanentlyGone()) {               // collected for good (FUN_00430eb6 keeps them)
+        const uint16_t off = alsWord(4 + size_t(cr.first) * 2);
+        if (off == 0) continue;
+        for (size_t e = off; alsByte(e) != 0xff; e += 2)
+            if (alsByte(e) == cr.second) alsMem_[e + 1] = 0;
+    }
     for (Killed& k : killed_) k = Killed{};
     exiting_ = false;
     deathTimer_ = 0;
@@ -67,8 +69,9 @@ void PlayLogic::enter(Game& g) {
     levelRestart();
     if (level_ >= 0 && level_ < 19 && !g.checkpoint().valid && ph::kStartFacing[level_]) h_.facing() = 0xff;
     if (g.checkpoint().valid) h_.facing() = g.checkpoint().facingLeft ? 0xff : 0;
-    updateCamera(g);
-    spawnObjects(g);
+    FrameState& fs = g.state();
+    fs.scrollX = h_.w(0x4658b4);
+    fs.scrollY = h_.w(0x4658b6);
     displayList(g);
 }
 
@@ -99,6 +102,7 @@ void PlayLogic::levelRestart() {
     h_.w(0x4658bc) = 0;
     h_.l(0x466868) = 0;
     harryLevelStart();                                     // FUN_00427e30
+    preSpawn();                                            // FUN_00433d0b
     if (h_.cont() == 0x42a217) {
         h42a1a1();
     } else {
@@ -156,6 +160,7 @@ void PlayLogic::levelRestart() {
     if (level_ == 6 && neg(h_.x() - 0x5b)) { h_.y() = 0xb4; h42abee(); }   // the level starts on a zip line
     if (level_ == 10) h_.b(0x465d49) = 1;
     h_.b(0x466794) = 0x3c;
+    spawnAll();                                            // FUN_00405114
     h_.b(0x465b39) = 0;
     h_.b(0x46650c) = 0;
     h_.l(0x466796) = 0;
@@ -171,10 +176,9 @@ void PlayLogic::tick(Game& g) {
     FrameState& fs = g.state();
     const bool debug = (fs.joypad & 0x100) != 0;
     readPad();                                             // FUN_004263f3
-    updateCamera(g);                                       // FUN_00404714
+    camera();                                              // FUN_00404714 (with the spawner)
     harryUpdate();                                         // FUN_00426810
     if (!debug) hudPlacement();                            // FUN_0043348e
-    if (!debug) spawnObjects(g);                           // (FUN_00403fa0 belongs inside FUN_00404714, not ported exactly yet)
     if (level_ != 7) displayList(g);                       // FUN_00434f6c
     runObjects(g);                                         // FUN_00405170
     timers();                                              // FUN_00433a09
@@ -236,7 +240,7 @@ void PlayLogic::timers() {
         for (Killed& k : killed_) {
             if (k.count == 0) continue;
             k.count -= 1;
-            if (k.count == 0 && k.als >= 0) als_[size_t(k.als)] = k.id;
+            if (k.count == 0 && k.als >= 0) alsMem_[size_t(k.als) + 1] = k.id;
         }
     }
     if (h_.b(0x465b01)) h_.b(0x465b01) -= 1;
@@ -429,7 +433,7 @@ void PlayLogic::markCollected(const Obj& o) { (void)o; }   // the working id sim
 
 void PlayLogic::restoreEntry(const Obj& o) {
     // The handler exits write the saved id (+0x20) back into the working .als copy (+0x1c).
-    if (o.als >= 0 && size_t(o.als) < als_.size()) als_[size_t(o.als)] = o.id;
+    if (o.als >= 0 && size_t(o.als) + 1 < alsMem_.size()) alsMem_[size_t(o.als) + 1] = o.id;
 }
 
 void PlayLogic::markKilled(const Obj& o) {
@@ -442,26 +446,6 @@ void PlayLogic::markKilled(const Obj& o) {
 }
 
 // ---------------------------------------------------------------- camera, objects, display
-
-void PlayLogic::updateCamera(Game& g) {
-    // FUN_00404714 is not ported yet: a plain follow inside the camera locks.
-    FrameState& fs = g.state();
-    const int targetX = h_.x() + 0x10 - 160;
-    int sx = h_.w(0x4658b4);
-    if (targetX > sx + 24) sx = targetX - 24;
-    if (targetX < sx - 24) sx = targetX + 24;
-    const int targetY = h_.y() + 0x10 - 128 + h_.w(0x4658a6);
-    int sy = h_.w(0x4658b6);
-    if (targetY > sy + 32) sy = targetY - 32;
-    if (targetY < sy - 32) sy = targetY + 32;
-    const int maxX = std::min<int>(h_.w(0x465b0b), fs.maxScrollX);
-    sx = std::clamp(sx, std::min<int>(h_.w(0x465b09), maxX), std::max(0, maxX));
-    sy = std::clamp(sy, 0, std::max(0, fs.maxScrollY));
-    h_.w(0x4658b4) = int16_t(sx);
-    h_.w(0x4658b6) = int16_t(sy);
-    fs.scrollX = sx;
-    fs.scrollY = sy;
-}
 
 void PlayLogic::hudPlacement() {
     // FUN_0043348e: the objects 0x4150a2 listed in the last object pass follow the camera.
@@ -493,41 +477,6 @@ void PlayLogic::hudPlacement() {
             break;
         }
         default: break;
-        }
-    }
-}
-
-void PlayLogic::spawnObjects(Game& g) {
-    // FUN_00403fa0 / FUN_00404016 / FUN_00404269 / FUN_004042fe: objects whose
-    // .als cell enters a margin around the camera are instantiated from their
-    // template (FUN_0040454e); the entry's id is cleared while the object lives
-    // and restored by the handler's despawn exit.
-    const ph::LevelData& lv = g.level();
-    const FrameState& fs = g.state();
-    const int camX = fs.scrollX, camY = fs.scrollY;
-    const int c0 = std::max(0, (camX - 0x40) >> 4), c1 = std::min(lv.objects.columns() - 1, (camX + 320 + 0x40) >> 4);
-    const int r0 = std::max(0, (camY >> 4) - 3), r1 = (camY >> 4) + 16;
-    for (int c = c0; c <= c1; ++c) {
-        for (const ph::ColumnEntry& e : lv.objects.column(c)) {
-            const size_t ai = lv.objects.indexOf(e);
-            if (e.row < r0 || e.row > r1 || ai >= als_.size() || als_[ai] == 0) continue;
-            const ph::ObjectTemplate& t = ph::kObjectTemplates[e.id];
-            if (!t.sprite[0] && t.type == 0) continue;
-            Obj* o = objects_.allocHead();               // (the spawner FUN_00403fa0 is not ported exactly yet)
-            if (!o) return;
-            als_[ai] = 0;
-            o->col = c; o->row = e.row; o->id = e.id; o->als = int(ai);
-            o->x = int16_t(c * 16 + 0x18 + t.xOff);                 // FUN_0040454e
-            o->y = int16_t(e.row * 16 - 0x10 + t.yOff);
-            if (t.snap) {
-                ph::FloorHit f = ph::probeNear(lv.collision, o->x, o->y + t.snap);
-                if (f.hit) o->y = int16_t(f.surfaceY - t.snap);
-            }
-            o->sprite = t.sprite[0] ? g.findSprite(t.sprite) : nullptr;
-            o->frame = t.sub;
-            o->type = t.type;
-            o->flags = t.flags;
-            if (t.soundSlot) o->w(0x26) = 0x6663;                   // FUN_004263a6: the Genesis sound-channel request, a stub here
         }
     }
 }
