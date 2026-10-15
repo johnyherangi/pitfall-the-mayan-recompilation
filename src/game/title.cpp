@@ -180,6 +180,9 @@ void Game::renderTitleRunner() {
     s.x = titleRunner_.x; s.y = titleRunner_.y; s.frame = titleRunner_.frame; s.flags = titleRunner_.flags;
     s.sprite = findSprite(spriteSlotName(titleRunner_.slot));
     renderer_.drawSprite(s, engine::View{snap_.scrollX, snap_.scrollY});
+    // The hatman cheat takes its 0x12 px off the record itself, before and after the drawing:
+    // the runner's record keeps them (its y is set only at the title's start), so he rises.
+    if (renderer_.hatmanLifts(s.sprite)) titleRunner_.y -= 0x24;
 }
 
 // ---------------------------------------------------------------- the cutscenes' passes

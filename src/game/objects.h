@@ -316,6 +316,8 @@ extern const uint8_t kData_mapPaths[], kData_mapLevels[], kData_mapNames[];
 // and scripts; 0x4699a4 .. 0x46a859, the credits (each line, its NUL and the delay to the next).
 // The title (title.cpp): 0x46fa50, the runner's frames (longs, -1 ending them).
 extern const uint8_t kData_cutscene[], kData_credits[], kData_titleRunner[];
+// 0x4614c2 .. 0x4615a1: the typed cheat codes (cheats.cpp), every byte 0x2d higher than its letter.
+extern const uint8_t kData_cheatCodes[];
 extern const uint8_t kAnim2_deathFade[], kAnim2_monkeyToss[], kAnim2_condorDive[], kAnim2_jaguarLeap[], kAnim2_jaguarCrouchA[],
     kAnim2_jaguarCrouchB[], kAnim2_jaguarCrouchRoar[], kAnim2_jaguarRoar[], kAnim2_bossCloud[],
     kAnim2_skullThrow[], kAnim2_skullChop[], kAnim2_boneTumble[], kAnim2_ballSwingA[], kAnim2_ballSwingB[], kAnim2_ballSwingC[],

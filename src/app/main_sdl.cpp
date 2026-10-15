@@ -80,6 +80,8 @@ int main(int argc, char** argv) {
         SDL_Event ev;
         while (SDL_PollEvent(&ev)) {
             if (ev.type == SDL_QUIT) running = false;
+            if (ev.type == SDL_TEXTINPUT)                          // WM_CHAR: the typed cheat codes
+                for (const char* p = ev.text.text; *p; ++p) g->typeChar(uint8_t(*p));
             if (ev.type == SDL_KEYDOWN) {
                 if (ev.key.keysym.scancode == SDL_SCANCODE_PAUSE && !ev.key.repeat) g->togglePause();   // (any other key ends a pause)
                 if (ev.key.keysym.scancode == SDL_SCANCODE_RETURN && (ev.key.keysym.mod & KMOD_ALT)) {
@@ -134,6 +136,15 @@ int main(int argc, char** argv) {
             SDL_RenderPresent(ren);
         } else {
             SDL_Delay(1);
+        }
+        if (const int d = g->takeCheatDialog()) {
+            // The original shows its own dialogs (with photographs, from PITFALL.EXE's resources),
+            // paused; here their words.
+            g->setPaused(true);
+            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "Pitfall",
+                                     d == 0x7f ? "Nice try! This isn't Doom!\n\nTin Guerrero, Andy Glaister, Scott Krager"
+                                               : "What a job, eh?\n\nThe Testers!", win);
+            g->setPaused(false);
         }
         if (g->quitRequested()) running = false;
     }

@@ -135,6 +135,10 @@ void Game::startLevel(int level) {
     // FUN_004460e0
     stages_.clear();
     exitCmd_.clear();                                    // DAT_0046b1a8 = 0
+    titleSoundA_ = titleSoundB_ = false;                 // DAT_0046fa40 / 44 = 0
+    // the menu's item for the level comes on, but in a demo (DAT_0046fb8c is 0 when one loads)
+    const bool demoLoad = mode_ == Mode::Attract && level != kTitleScreen && level != kIntro && level != kCredits;
+    if (!demoLoad && level >= 0 && level < 32 && !(menuUnlocks_ & (1u << level))) { menuUnlocks_ |= 1u << level; menuChanged_ = true; }
     levelNo_ = level;
     if (level == kTitleScreen) newGame();                // FUN_004324c6
     mixer_.stopAll();                                    // FUN_0043d910: the two channels end, and the CD
@@ -627,6 +631,7 @@ void Game::render() {
     if (!stages_.empty() && !drawPending_) return;
     drawPending_ = false;
     if (mode_ == Mode::GameOver) { renderGameOver(); return; }
+    renderer_.setHatman(hatman_, assets_->sprite("hatman"));       // DAT_0046d058
     composeFrame();
     applyBrightness();                                             // FUN_00443b90 -> FUN_0043de70
 }
@@ -692,7 +697,8 @@ void Game::composeFrame() {
     if (levelNo_ == kIntro && level_->hasBg)
         renderer_.drawWrappedLayer(level_->bg, snap_.parX, snap_.parY, snap_.parX & 7, snap_.scrollX & 7, nullptr);
     renderHud();                                                   // FUN_00442fa0
-    if (paused_ && (timerTicks_ & 0x60) != 0) renderer_.drawText(assets_->font, 0x82, 0x60, "PAUSED", snap_.scrollX);   // TextOutA in the original
+    renderPaused();
+    renderFrameRate();
 }
 
 void Game::renderAtari2600() {
@@ -723,7 +729,15 @@ void Game::renderVault() {
         if (it->flags & engine::kSprFront) renderer_.drawSprite(*it, view);
     renderer_.drawWrappedLayer(level_->bg, snap_.parX, snap_.parY, fine, fine, nullptr);
     renderHud();
-    if (paused_ && (timerTicks_ & 0x60) != 0) renderer_.drawText(assets_->font, 0x82, 0x60, "PAUSED", snap_.scrollX);   // TextOutA in the original
+    renderPaused();
+    renderFrameRate();
+}
+
+void Game::renderPaused() {
+    // FUN_00443c90: "PAUSED" with TextOutA at (0x82, 0x60) of the buffer, blinking on the timer's
+    // count (here in the 8x8 font, at the view's place: the fine scroll left, 9 lines up).
+    if (paused_ && (timerTicks_ & 0x60) != 0)
+        renderer_.drawText(assets_->font, 0x82 - (snap_.scrollX & 7), 0x60 - 9, "PAUSED", snap_.scrollX);
 }
 
 void Game::completeLevel() {

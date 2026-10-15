@@ -51,6 +51,7 @@ struct App {
     std::unique_ptr<game::Game> game;
     engine::Options options;
     std::string iniPath;
+    std::string dataDir;
     bool fullscreen = false;
     int scale = 1;
     uint32_t paletteCache[256]{};
@@ -242,8 +243,72 @@ void setDisplayMode(int mode) {
     refreshMenuChecks();
 }
 
+// The cheats' dialogs ("iddqd": 0x7f, "paidtoplaygames": 0x100) are the original's own: their
+// templates and photographs (bitmaps 0x80 / 0x81) come from PITFALL.EXE in the data directory,
+// loaded as a data file.  Their procedure (0x43a430 / 0x43a720) centres them on the window,
+// paints the photograph at control 0x404 and ends on OK.
+struct CheatDialog { HMODULE exe; int bitmap; };
+
+INT_PTR CALLBACK cheatDialogProc(HWND dlg, UINT msg, WPARAM wp, LPARAM lp) {
+    switch (msg) {
+    case WM_INITDIALOG: {
+        SetWindowLongPtrW(dlg, DWLP_USER, lp);
+        RECT d, w;
+        GetWindowRect(dlg, &d);
+        GetWindowRect(g_app.hwnd, &w);
+        const int dw = d.right - d.left, dh = d.bottom - d.top;
+        MoveWindow(dlg, w.left + ((w.right - w.left) - dw) / 2, w.top + ((w.bottom - w.top) - dh) / 2, dw, dh, TRUE);
+        return TRUE;
+    }
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC dc = BeginPaint(dlg, &ps);
+        const auto* info = reinterpret_cast<const CheatDialog*>(GetWindowLongPtrW(dlg, DWLP_USER));
+        HBITMAP bmp = info ? (HBITMAP)LoadImageW(info->exe, MAKEINTRESOURCEW(info->bitmap), IMAGE_BITMAP, 0, 0, LR_CREATEDIBSECTION) : nullptr;
+        if (bmp) {
+            RECT r;
+            GetWindowRect(GetDlgItem(dlg, 0x404), &r);
+            POINT tl{r.left, r.top};
+            ScreenToClient(dlg, &tl);
+            BITMAP bm;
+            GetObjectW(bmp, sizeof bm, &bm);
+            HDC mem = CreateCompatibleDC(dc);
+            HGDIOBJ old = SelectObject(mem, bmp);
+            BitBlt(dc, tl.x, tl.y, bm.bmWidth, bm.bmHeight, mem, 0, 0, SRCCOPY);
+            SelectObject(mem, old);
+            DeleteDC(mem);
+            DeleteObject(bmp);
+        }
+        EndPaint(dlg, &ps);
+        return TRUE;
+    }
+    case WM_COMMAND:
+        if (LOWORD(wp) == IDOK) EndDialog(dlg, 1);
+        return TRUE;
+    }
+    return FALSE;
+}
+
+void showCheatDialog(int id) {
+    // FUN_00444ee0(1), the dialog, FUN_00444ee0(0)
+    g_app.game->setPaused(true);
+    if (HMODULE exe = LoadLibraryExA((g_app.dataDir + "\\PITFALL.EXE").c_str(), nullptr, LOAD_LIBRARY_AS_DATAFILE)) {
+        CheatDialog info{exe, id == 0x7f ? 0x80 : 0x81};
+        DialogBoxParamW(exe, MAKEINTRESOURCEW(id), g_app.hwnd, cheatDialogProc, reinterpret_cast<LPARAM>(&info));
+        FreeLibrary(exe);
+    } else {
+        MessageBoxW(g_app.hwnd, id == 0x7f ? L"Nice try! This isn't Doom!\n\nTin Guerrero, Andy Glaister, Scott Krager"
+                                           : L"What a job, eh?\n\nThe Testers!", kTitle, MB_OK);
+    }
+    g_app.game->setPaused(false);
+}
+
 LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
+    case WM_CHAR:
+        // FUN_004388c0 (0x439868 ..): the typed cheat codes
+        if (g_app.game) g_app.game->typeChar(uint8_t(wp));
+        return 0;
     case WM_COMMAND: {
         const UINT id = LOWORD(wp);
         if (id == kMenuExit) { DestroyWindow(hwnd); return 0; }
@@ -329,6 +394,7 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, PWSTR, int) {
     if (startLevel >= 0) g_app.options.level = startLevel;
 
     const std::string dataDir = findDataDir(hint);
+    g_app.dataDir = dataDir;
     if (dataDir.empty()) {
         MessageBoxW(nullptr, L"Could not find file INIT.PH.\nCopy the original game's *.PH files next to pitfall.exe "
                              L"or pass the data directory on the command line.", kTitle, MB_OK | MB_ICONSTOP);
@@ -385,6 +451,7 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, PWSTR, int) {
         while (acc >= 1.0) { pollHost(host); g_app.game->tick(host); acc -= 1.0; ticked = true; }
         if (ticked) { g_app.game->render(); present(); }
         else Sleep(1);
+        if (const int d = g_app.game->takeCheatDialog()) showCheatDialog(d);
         if (g_app.game->quitRequested()) running = false;
     }
     timeEndPeriod(1);

@@ -21,6 +21,7 @@ function boundaries are unreliable there; the full decompilation is kept in
 |--------------|--------------------------------------------------------|---------------------------------------|
 | `0x43c210`   | `WinMain`: window, DIB, arena, timer, loads init.ph    | `src/app/main_win32.cpp`, `Game::Game` |
 | `0x4388c0`   | `WndProc` (menus, property sheet, WM_0x658 CD control) | `main_win32.cpp` (menu subset)        |
+| `0x439868` ..| `WM_CHAR`: the typed cheat codes (a ring of the last 128 characters, the codes at `0x4614c2` .. kept 0x2d higher), their dialogs 0x7f / 0x100 with the bitmaps 0x80 / 0x81 | `Game::typeChar` (`game/cheats.cpp`), the front ends' `WM_CHAR` / `SDL_TEXTINPUT`, `showCheatDialog` |
 | `0x439fd0`   | message loop                                           | `main_win32.cpp` / `main_sdl.cpp`     |
 | `0x4448c0`   | the 17 ms multimedia-timer callback: the engine tick (unless paused, busy or loading), `DAT_00450fa8` + 1 every time | the front ends call `Game::tick` every 17 ms; `Game::timerTicks_` |
 | `0x443370`   | per-tick engine update: input, logic dispatch, parallax camera | `Game::tick`, `game/camera.cpp` |
@@ -91,6 +92,9 @@ function boundaries are unreliable there; the full decompilation is kept in
 | `0x452770` / `0x452768` / `0x45276c` / `0x46dc2c` | the brightness as the frame took it / as applied / the colours kept / their copy | `Game::shownBrightness_ / appliedBrightness_ / effectSaved_ / effectBackup_` |
 | `0x46d41c` / `0x452c58` | the LOGPALETTE / DIB colour table: what the screen shows (the fades write them alone) | `ph::Palette::shown` |
 | `0x46fb88`   | a key went down (`WM_KEYDOWN`, any but F1, Esc, Pause): the title's start, the cutscenes' skip and key, the map's and the 2600 end's way on | `Game::startKey()` |
+| `0x46d054` / `0x46d058` / `0x46d05c` | the cheats "vampire" (no damage), "hatman" (0 .. 2: `FUN_00438140` draws Harry, then the rest, as the hat man), "mijmrowhtrae" (`*50` to level 24) | `Game::invincible_ / hatman_`, `Warp::cheat` |
+| `0x46e054` / `0x46e058` / `0x46e064` / `0x46ed5c` | the frame rate text (Option_FrameRate, "framerate"), the position text ("beammeup"), Ctrl flies Harry (Debug_AllowCheat, "flylikeaneagle"), no CD audio (Option_Slow, "eighttracksrule") | `Options::frameRate`, `Game::showPosition_`, `Options::allowCheat / slow` |
+| `0x46d38c`   | the menu's level items that are on (a bit a level reached outside the demos, or a cheat; kept in the registry hidden in bit 5 of a 64-byte string with a sum) | `Game::menuUnlocks_` |
 | `0x46fb84`   | the attract loaded the intro (track 5, the credits after it at twice the speed); only the menu's intro (0x9c64) clears it | `Game::introAfterDemos_` |
 | `0x450fcc` / `0x450514` | the level has a map / a parallax map (`FUN_004460e0`; the cutscenes' `0x40160e` clears both) | `FrameState::mainLayer / parallaxLayer` |
 | `0x456000` .. `0x4569df` | the cutscenes' data: the script's cursor, the wait's count (`0x456004`), the exit's string (`0x456008`), flags, texts, frame scripts, the ten actors (`0x45623f`, the frame's copy at `0x4564bf`), the scripts (`0x456753` ..) | `Game::cutsceneData`, `PlayLogic::cb` |
@@ -252,7 +256,8 @@ two dust clouds (`fxrdust2` at x 0x170 / 0x24f), four stones (`fx_logo` at x 0x1
 fourth upside down) and the runner (`hyirun` at x -200), and the camera at (0, 0x10).  `FUN_00443370` gives the runner
 the next frame of `0x46fa50` every fifth tick and, for the first 0xe6 ticks, moves him 4 px a tick and the camera 2 px
 from his x 0x1f to the map's edge.  As it draws, `FUN_004426e0` (from tick 0x3d) plays the logo's sounds 0x25 / 0x29
-on channel 1 (once: `DAT_0046fa40` / `44` are only cleared again by the jaguar, which sets them again with its own),
+on channel 1 (once a title: the level load clears `DAT_0046fa40` / `44`, the jaguar clears them and sets them again
+with its own),
 drops the logo in from tick 0xd3 (8 px a tick to y 0x68 below the camera), shows the dust from 0xe1 to 0x103, cracks
 the stones one after another (frames 0 .. 4, a frame every 4 ticks from 0xff, 0x10e, 0x11d and 0x12c), then breaks
 them away (frames 5 .. 9, a frame every 6 ticks from 0x146, each 26 px lower) to show the words under them, the start

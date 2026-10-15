@@ -108,11 +108,6 @@ void Game::renderHud() {
     }
     if (demoPlaying() && (timerTicks_ & 0x30) != 0)
         renderer_.drawText(assets_->font, 0x70, 0xe, "DEMONSTRATION", sx);     // s_DEMONSTRATION
-    if (options_.frameRate) {
-        char fps[16];
-        std::snprintf(fps, sizeof fps, "%3d", snap_.frame);
-        renderer_.drawText(assets_->font, 0x78, 0x10, fps, sx);
-    }
 }
 
 } // namespace game

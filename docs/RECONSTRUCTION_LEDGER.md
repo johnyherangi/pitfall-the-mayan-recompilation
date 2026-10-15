@@ -34,6 +34,7 @@ decompiled code by a test or a rendered image.
 | The title (level 15): its set-up and camera (`FUN_00442410`), the runner's frames and the pan (`FUN_00443370`), the logo dropping in, its dust, the stones cracking and breaking away, the blinking prompt, its sounds (`FUN_004426e0`), the runner and the jaguar (`FUN_00442bf0`), no start key before tick 0x3d nor while the stones break | rendered frames; `tests/ph_tests.cpp` (title: the pan from tick 58 to 217, no start at ticks 0x30 and 0x150) |
 | The cutscenes (levels 21 .. 23): the scene code `0x401000 .. 0x401dff` with its scripts, actors, frame scripts and texts from the data section (kept across levels as the original's), the skip key, the credits (twice as fast after an attract, `DAT_0046fb84`), and their drawing (`FUN_00401346`, `FUN_004012d8`, `FUN_004013f8`, level 21's scene drawn as its parallax map with its vines over everything, level 22's second room, level 23's lines behind the jungle) in `FUN_00443c90`'s order | rendered frames of all three; `tests/ph_tests.cpp` (cutscene: the intro's texts, 1-up, camera, shakes and `*8` at their ticks, a key skipping it, the reunion to `*9`, the end's words by the difficulty and the letters, the hand, "[THE END]", a key skipping the credits) |
 | Level 24's Earthworm Jim (the TNT crate's `ew_ready` variant) and the 200-tick countdown to `*6` (`DAT_0046b1b4`) | `tests/ph_tests.cpp` (earthworm: whipped, `*6` 200 ticks later, back to level 3) |
+| The typed cheat codes (`WM_CHAR`, 0x439868): the 16 codes from the data section with their effects (no damage, the hat man, Earthworm Jim's level, 99 lives / continues / ammunition, the frame rate and position texts, flying, no CD, the menu's levels) and the two dialogs, shown from PITFALL.EXE's own templates and bitmaps in the Win32 front end; the menu's level bits set as levels are reached outside the demos | `tests/ph_tests.cpp` (cheats); rendered frames of the hat man |
 | `.det`/`.dt2`/`.als`/`.trg` column-list layout, collision shape table | parsed for all levels; the `^` start trigger lands Harry on a `.det` surface |
 | Object template table (als id → sprite, offsets, snap) | `0x4678c4`; pouches/items render on the ground in levels 0/1/3 |
 | Harry run / jump / fall constants and probe offsets | `FUN_00428dfa`, `FUN_00425455`; scripted run clears Ceiba Jungle end to end |
@@ -47,7 +48,7 @@ decompiled code by a test or a rendered image.
 | Forest leaf line-scroll band | 32-entry wave table reproduced by shape, not copied from `DAT_00455010` |
 | Engine exits inside the logic tick | `engineExit` unwinds the tick at once; the port runs the tick out and skips only its end (`0x4363bd`) |
 | The logic's memory | Harry and the logic's globals (`0x465800 .. 0x4668ff`) start at zero with each level here; the original keeps what the last level left.  The title's jungle sounds (`FUN_00431a67`, whose countdown `DAT_00465b04` and checks of `DAT_00465b72` / `DAT_0046652f` / `DAT_0046652b` are the logic's) keep their own countdown |
-| "PAUSED" | drawn with `TextOutA` in the original, in the 8×8 font here |
+| "PAUSED", the frame rate / position text | drawn with `TextOutA` (the window's font) in the original, in the 8×8 font here at the same place; the frame rate counts the frames composed against the wall clock as the original's `timeGetTime` |
 | Audio | software mixer instead of Miles (the samples at Option_WavVolume % of 0x7f, the logic's two channels and their priorities, `FUN_004262d9` / `FUN_004261e2`); the CD's tracks are files ripped from the disc (`TrackNN.wav` / `.ogg`) instead of the disc through MCI, mixed in at the CD volume, with the original's choice of track by level and option, its replay at the end, the stop on a pause, the two-second fade at a level load and the stop-watch's quarter volume; the disc check by track lengths has no equivalent |
 | Options UI | the original property sheet (`PropertySheetA`, "System / Sound / Difficulty / Joystick / Keyboard / Language") is replaced by a menu; settings persist in `pitfall.ini` instead of the registry |
 | Full-screen modes | DISPDIB 320×200 mode replaced by a stretched borderless window |
@@ -80,8 +81,8 @@ decompiled code by a test or a rendered image.
 The machine-translated 68000 half of the binary (`0x401000–0x437fff`) is ported routine by routine: Harry's
 states, the object system and 140 of its behaviour types, the camera and spawner, the triggers and level
 scripts, the map screen, the 2600 level, the continue screen, the title, the cutscenes, level 24, the engine's
-transitions and CD audio.  What is left: the typed cheat codes (`0x439868`, e.g. the invincibility of
-`DAT_0046d054`), the per-level water effects of `FUN_00443370` / `FUN_00437ba0`, the window's status bar with the
+transitions, CD audio and the typed cheat codes.  What is left: the per-level water effects of `FUN_00443370` /
+`FUN_00437ba0` (and the sprites of level 18 clipped at the water, `FUN_00438140`), the window's status bar with the
 level's name (`FUN_00440bc0`), the "loading" dialog of a windowed level load, the original's menu (`FUN_0043b920`: a
 new game, the levels to start at, the intro — which clears `DAT_0046fb84` —, the vaults and the 2600 level, help) and
 options property sheet, the real disc through MCI in the Win32 front end, and a build with MSVC itself (the Windows

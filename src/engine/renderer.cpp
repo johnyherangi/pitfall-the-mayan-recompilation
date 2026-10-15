@@ -155,9 +155,30 @@ void Renderer::drawParallaxTiles(const ph::Background& bg, int scrollX, int scro
 
 // -------------------------------------------------------------- sprites ----
 
-void Renderer::drawSprite(const SpriteInstance& s, const View& view) {
+bool Renderer::hatmanLifts(const ph::Sprite* s) const {
+    return hatMode_ == 1 && hat_ && s && s->name().compare(0, 2, "hy") == 0;
+}
+
+void Renderer::drawSprite(const SpriteInstance& in, const View& view) {
     // Port of FUN_00438140.
-    if (!(s.flags & kSprVisible) || !s.sprite || s.sprite->frameCount() == 0) return;
+    if (!(in.flags & kSprVisible) || !in.sprite) return;
+    SpriteInstance s = in;
+    if (hatMode_ != 0 && hat_) {
+        // the hatman cheat (DAT_0046d058); the names' first two or four bytes are compared
+        const std::string& n = s.sprite->name();
+        auto starts = [&n](const char* p) { return n.compare(0, std::strlen(p), p) == 0; };
+        if (hatMode_ == 1 && starts("hy")) {
+            s.y -= 0x12;
+            s.frame &= 3;
+            if (s.frame == 3) s.frame = 1;
+            s.sprite = hat_;
+        } else if (hatMode_ == 2 && !starts("hy") && !starts("mi") && !starts("ob_p") && !starts("obrp")) {
+            s.frame &= 3;
+            if (s.frame == 3) s.frame = 1;
+            s.sprite = hat_;
+        }
+    }
+    if (s.sprite->frameCount() == 0) return;
     const ph::Sprite& spr = *s.sprite;
     uint32_t frameIdx = s.frame;
     while (frameIdx >= uint32_t(spr.frameCount())) frameIdx -= uint32_t(spr.frameCount());

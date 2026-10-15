@@ -192,6 +192,20 @@ public:
     void lifeIconOneUp() { hudAnim_.oneUp = true; hudAnim_.oneUpStart = logicTicks_; }
     bool invincible() const { return invincible_; }   // DAT_0046d054: the typed cheat (0x439868) clears the damage each tick
     uint8_t& startKey() { return startKey_; }         // DAT_0046fb88: a key went down (WM_KEYDOWN, a held key repeats)
+    // WM_CHAR (FUN_004388c0, 0x439868 ..): a typed character goes into a ring of 128
+    // (DAT_004533a0 / DAT_00453384); when the last ones spell one of the codes at 0x4614c2 ..
+    // (kept 0x2d higher, compared ignoring case) its cheat acts, with sound 0x24 (game/cheats.cpp).
+    void typeChar(uint8_t c);
+    // A typed code that shows one of the original's dialogs, paused: 0x7f ("iddqd", bitmap 0x80)
+    // or 0x100 ("paidtoplaygames", bitmap 0x81); 0 when none is due.  The front end shows it.
+    int takeCheatDialog() { const int d = cheatDialog_; cheatDialog_ = 0; return d; }
+    // DAT_0046d38c: the menu's level items that are on (FUN_0043a320), a bit a level reached
+    // outside the demos (FUN_004460e0) or a cheat; menuChanged() says the menu needs them again.
+    uint32_t menuUnlocks() const { return menuUnlocks_; }
+    void setMenuUnlocks(uint32_t m) { menuUnlocks_ = m; }
+    bool menuChanged() { const bool c = menuChanged_; menuChanged_ = false; return c; }
+    uint8_t hatman() const { return hatman_; }        // DAT_0046d058: the "hatman" cheat (0 .. 2)
+    bool showPosition() const { return showPosition_; }   // DAT_0046e058: "beammeup", the camera's position
     // DAT_0046fb84: the attract loaded the intro (track 5, the credits after it); only the menu's
     // new game (0x9c64) clears it, so the end's credits scroll twice as fast after an attract.
     bool introAfterDemos() const { return introAfterDemos_; }
@@ -214,6 +228,8 @@ private:
     void renderActors(bool front);     // FUN_00401346 (the actors behind) / FUN_004013f8 (texts, actors in front)
     void renderScrollText();           // FUN_004012d8: the scrolling lines (levels 21 and 23)
     void drawBigText(int y, const char* s);   // FUN_00431bfb: ltr_lg letters centred on x 0xa0, y of the screen
+    void renderFrameRate();            // FUN_00443c90's frame rate / position text (DAT_0046e054 / DAT_0046e058)
+    void renderPaused();               // FUN_00443c90's "PAUSED"
     void renderVault();                // FUN_00443c90's layer order on the Loltun vaults
     void renderAtari2600();            // FUN_00436fb4 at 0x437078: the 2600 level's screen
     void renderGameOver();             // "*2": 0x44426b
@@ -328,6 +344,19 @@ private:
     std::array<ph::Rgb, 256> effectBackup_{};
     std::vector<engine::DeferredTile> deferred_;
     std::vector<uint8_t> cutData_;
+    // The cheats (game/cheats.cpp).
+    uint8_t typed_[0x80] = {};         // DAT_004533a0: the last characters typed
+    int typedPos_ = 0;                 // DAT_00453384
+    int cheatDialog_ = 0;
+    uint32_t menuUnlocks_ = 1;         // DAT_0046d38c (1 when the registry has nothing valid)
+    bool menuChanged_ = true;
+    uint8_t hatman_ = 0;               // DAT_0046d058
+    bool showPosition_ = false;        // DAT_0046e058
+    // The frame rate text: frames composed (DAT_00453390), the time of its last update
+    // (DAT_00453388, ms) and the text (DAT_004500f0).
+    uint32_t fpsFrames_ = 0;
+    uint64_t fpsTime_ = 0;
+    std::string fpsText_;
     bool quit_ = false;
 };
 

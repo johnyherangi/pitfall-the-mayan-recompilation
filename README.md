@@ -61,6 +61,9 @@ build\Release\pitfall.exe original -level 1
 | pause  | Pause (any other key ends it) | |
 | full screen | Alt+Enter |     |
 
+The original's typed cheat codes work as they did (type them while playing),
+"vampire" and "hatman" among them; `game/cheats.cpp` lists them all.
+
 ## Music
 
 The original plays the game CD's audio tracks (2 .. 23) as music and ambient
@@ -106,10 +109,10 @@ attract-mode demos) and most of the Genesis-derived game logic are
 reconstructed: Harry's whole state machine, the object system with 140
 behaviour types, the camera and spawner, the triggers and level scripts, every
 boss, the Loltun vaults, the continue screen, the map screen, the Atari 2600
-level, the title, the intro, the reunion, the end and its credits.  Still to
-do: the typed cheat codes, the per-level water effects and the original's
-menus and options sheet.  See `docs/RECONSTRUCTION_LEDGER.md` for the exact
-status.
+level, the title, the intro, the reunion, the end and its credits, and the
+typed cheat codes.  Still to do: the per-level water effects and the
+original's menus and options sheet.  See `docs/RECONSTRUCTION_LEDGER.md` for
+the exact status.
 
 ## Legal
 

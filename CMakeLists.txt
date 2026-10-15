@@ -70,6 +70,7 @@ add_library(pitfall_game STATIC
     src/game/game.cpp
     src/game/hud.cpp
     src/game/title.cpp
+    src/game/cheats.cpp
     src/game/demo.cpp
     src/game/camera.cpp
     src/game/play_logic.cpp src/game/scroll.cpp src/game/harry.cpp src/game/harry_states.cpp src/game/harry_stubs.cpp src/game/harry_data.cpp src/game/objects.cpp src/game/handlers.cpp src/game/atari2600.cpp src/game/map_screen.cpp src/game/cutscene.cpp src/game/anim_scripts_data.cpp

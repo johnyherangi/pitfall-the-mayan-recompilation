@@ -97,7 +97,8 @@ namespace { int jaguarTest(const std::string& dir); int bungeeTest(const std::st
             int warriorSpiritTest(const std::string& dir); int atari2600Test(const std::string& dir);
             int mapScreenTest(const std::string& dir); int continueTest(const std::string& dir);
             int transitionTest(const std::string& dir); int musicTest(const std::string& dir);
-            int cutsceneTest(const std::string& dir); int titleTest(const std::string& dir); int earthwormTest(const std::string& dir); }
+            int cutsceneTest(const std::string& dir); int titleTest(const std::string& dir); int earthwormTest(const std::string& dir);
+            int cheatTest(const std::string& dir); }
 namespace {
 // The engine's blocking parts run out: a command's fades and waits, a level load's fade in.
 int settle(game::Game& g, int cap = 1000) {
@@ -159,6 +160,7 @@ int gameplayTests(const std::string& dir) {
     fails += cutsceneTest(dir);
     fails += titleTest(dir);
     fails += earthwormTest(dir);
+    fails += cheatTest(dir);
     return fails;
 }
 }
@@ -1241,6 +1243,59 @@ int earthwormTest(const std::string& dir) {
         ++fails;
     }
     std::printf("earthworm: whipped at %d, \"*6\" at %d, back to level %d\n", hit, left24, g.levelNumber());
+    return fails;
+}
+
+// The typed cheat codes (WM_CHAR, 0x439868): the last characters typed spell a code, in any case;
+// a code toggles or sets its cheat each time it is completed.  The menu's level items come on as
+// the levels are reached, but in the demos.
+int cheatTest(const std::string& dir) {
+    int fails = 0;
+    engine::Options opts;
+    game::Game g(dir, opts);
+    auto type = [&](const char* s) { for (; *s; ++s) g.typeChar(uint8_t(*s)); };
+    const uint32_t boot = g.menuUnlocks();
+    type("vampir");
+    const bool partial = g.invincible();
+    type("e");
+    const bool on = g.invincible();
+    type("xvampire");
+    const bool off = !g.invincible();
+    type("MijmrowhTRAE");
+    const bool jim = g.warp().cheat;
+    type("eatmorebranmeowmeowlikemeowmanpumpyouup");
+    const bool stats = g.stats().continues == 99 && g.stats().lives == 99 && g.stats().ammoCount[0] == 99 &&
+                       g.stats().ammoCount[1] == 99 && g.stats().ammoCount[2] == 99;
+    type("iddqd");
+    const int doom = g.takeCheatDialog();
+    type("paidtoplaygames");
+    const int testers = g.takeCheatDialog();
+    int hats[3];
+    for (int& h : hats) { type("hatman"); h = g.hatman(); }
+    type("framerate beammeup");
+    const bool shown = opts.frameRate && g.showPosition();
+    type("simonsaysplaysimon");
+    const uint32_t vaults = g.menuUnlocks();
+    type("idbuythatforadollar");
+    const uint32_t all = g.menuUnlocks();
+    if (boot != (1u | 1u << 21) || partial || !on || !off || !jim || !stats || doom != 0x7f || testers != 0x100 ||
+        hats[0] != 1 || hats[1] != 2 || hats[2] != 0 || !shown || vaults != (boot | 0x3800) || all != 0xffffffffu) {
+        std::printf("FAIL: cheats: menu %#x, vampire %d/%d/%d, jim %d, stats %d, dialogs %#x %#x, hatman %d %d %d, shown %d, menu %#x %#x\n",
+                    boot, partial, on, off, jim, stats, doom, testers, hats[0], hats[1], hats[2], shown, vaults, all);
+        ++fails;
+    }
+    // a demo's level does not come on in the menu, a level started does
+    game::Game g2(dir, opts);
+    engine::HostInput idle;
+    for (int t = 0; t < 7340; ++t) g2.tick(idle);              // the intro, the title, demo 0, the title, demo 1 on level 1
+    const bool demoOff = g2.levelNumber() == 1 && !(g2.menuUnlocks() & 1u << 1) && (g2.menuUnlocks() & 1u << 15);
+    g2.setMode(game::Mode::Playing);
+    g2.startLevel(5);
+    if (!demoOff || !(g2.menuUnlocks() & 1u << 5)) {
+        std::printf("FAIL: cheats: the menu after a demo %#x (level %d), after level 5 %#x\n", g2.menuUnlocks(), g2.levelNumber(), g2.menuUnlocks());
+        ++fails;
+    }
+    std::printf("cheats: vampire, earthworm jim, 99s, the two dialogs, hatman, the frame rate and position, the menu's levels\n");
     return fails;
 }
 }

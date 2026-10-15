@@ -70,6 +70,12 @@ public:
 
     // FUN_00438140: RLE sprite blit with the original flip/clip semantics.
     void drawSprite(const SpriteInstance& s, const View& view);
+    // FUN_00438140's "hatman" cheat (DAT_0046d058): 1 draws Harry's sprites (names "hy..") as
+    // `hat`, 0x12 px higher; 2 draws every other sprite but the items ("mi..") and the pouches and
+    // pits ("ob_p..", "obrp..") as `hat`; the frame is the sprite's & 3, 3 taken as 1.
+    void setHatman(int mode, const ph::Sprite* hat) { hatMode_ = mode; hat_ = hat; }
+    // Whether the hatman cheat draws Harry's sprite `s` 0x12 px higher (mode 1).
+    bool hatmanLifts(const ph::Sprite* s) const;
 
     // FUN_004387c0: one cell of a raw image at view-space (x, y); colour 0 is transparent.
     void drawCell(const ph::RawImage& img, int cell, int x, int y, int scrollX);
@@ -82,6 +88,8 @@ public:
 private:
     void drawTile(uint8_t* dst, const uint8_t* tile, uint16_t entry);
     Framebuffer& fb_;
+    int hatMode_ = 0;
+    const ph::Sprite* hat_ = nullptr;
 };
 
 } // namespace engine
