@@ -124,6 +124,24 @@ the data section, so the first demo is demo 0, and each demo starts a new game (
 | `0x4668c4` | collision shape heights | `ph::kCollisionHeights` |
 | `0x461f8e` | trigger class table | `ph::kTriggerClass` |
 
+## The map screen (level 19, `src/game/map_screen.cpp`)
+
+A level's exit (`0x430912`) keeps the level in `DAT_0046b1ac` and asks for `*4`, which loads level 19 (level 22 after the
+Warrior Spirit).  The level starts as any other (`FUN_00435fc0` → `FUN_0043256f`), and the end of the restart
+(`0x432cd6`) runs the map's set-up `0x431c99`; `FUN_0043628c` then runs the joypad and `FUN_00432038` instead of the
+usual tick.  The tables: `0x46aa34` the path by the level left, `0x46aa4e` the next level by the path (kept in
+`DAT_0045050c` for `*1`), `0x461c44` the 13 paths ({x, y, frame | 0x8000 h-flip | 0x4000 v-flip} words), `0x46a88e` the
+names.  The tour this gives: 0, 1, 2, 3, 4, 5, 6, 16, 17, 7, 18, 8, 9, 10.
+
+| address | role | port |
+|---------|------|------|
+| `0x431c99` | the set-up: the pegs of up to three paths before, the camera at the path's first point (0x15a / 0x196 to its left / above, kept +0x200 at `0x4661e0` / `0x4661e4` as 16.16), 0x28 ticks to the first step | `PlayLogic::mapSetup` |
+| `FUN_00432038` | a peg every 16 ticks (sounds 9 / 0xa by turns), the camera a sixteenth of the way to it each tick; the buttons count after `DAT_0046a88a` (30) ticks | `PlayLogic::mapTick` |
+| `0x4323b4` | the path's end: the name (`FUN_00431ad5`) rises 3 px a tick to the camera's y + 0xb4; `DAT_004601c0` (180) ticks or a button: `*1` | `PlayLogic::mapArrived` |
+| `FUN_00431a67` | the jungle sounds 0x9b .. 0xa1 every 0x80 .. 0xff ticks on channel 1 | `PlayLogic::mapAmbient` |
+| `FUN_00431ad5` / `FUN_00431b73` | a string in `ltr_lg` letters (type 2 objects) centred on the screen; the glyph and its width by character | `PlayLogic::mapText`, `mapGlyph` |
+| `FUN_00435174` | the display: Harry, then every object from the tail of the list | `PlayLogic::listAll` |
+
 ## The Atari 2600 level (level 20, `src/game/atari2600.cpp`)
 
 A game of its own in the Genesis half (0x401e00 .. 0x403f92): `FUN_00435fc0` runs `FUN_00401e00` for it, `FUN_004360e9`

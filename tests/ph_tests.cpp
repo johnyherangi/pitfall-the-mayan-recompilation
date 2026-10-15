@@ -92,7 +92,8 @@ int main(int argc, char** argv) {
 namespace { int jaguarTest(const std::string& dir); int bungeeTest(const std::string& dir); int stoneTest(const std::string& dir);
             int vortexTest(const std::string& dir); int deathTest(const std::string& dir); int vaultTest(const std::string& dir);
             int stoneJaguarTest(const std::string& dir); int jaguarManTest(const std::string& dir);
-            int warriorSpiritTest(const std::string& dir); int atari2600Test(const std::string& dir); }
+            int warriorSpiritTest(const std::string& dir); int atari2600Test(const std::string& dir);
+            int mapScreenTest(const std::string& dir); }
 namespace {
 int gameplayTests(const std::string& dir) {
     int fails = 0;
@@ -129,6 +130,7 @@ int gameplayTests(const std::string& dir) {
     fails += jaguarManTest(dir);
     fails += warriorSpiritTest(dir);
     fails += atari2600Test(dir);
+    fails += mapScreenTest(dir);
     return fails;
 }
 }
@@ -138,6 +140,13 @@ int gameplayTests(const std::string& dir) {
 // Harry to the exit and the level end.
 namespace game { extern PlayLogic* g_debugLogic; }
 namespace {
+// A level's exit ("*4") goes through the map screen (level 19): let it run to the next level.
+int throughMap(game::Game& g) {
+    int t = 0;
+    for (engine::HostInput idle; g.levelNumber() == 19 && t < 1000; ++t) g.tick(idle);
+    return t;
+}
+
 int jaguarTest(const std::string& dir) {
     int fails = 0;
     engine::Options opts; opts.allowCheat = true;
@@ -176,8 +185,9 @@ int jaguarTest(const std::string& dir) {
     }
     if (!sawBoss) { std::printf("FAIL: the jaguar never woke up\n"); ++fails; }
     if (!sawMeter) { std::printf("FAIL: no boss health meter\n"); ++fails; }
-    if (g.levelNumber() == 0) { std::printf("FAIL: level 0 did not end after the jaguar fight\n"); ++fails; }
-    std::printf("jaguar: level %d after %d ticks, score %d\n", g.levelNumber(), ticks, g.stats().score);
+    const int mapTicks = throughMap(g);
+    if (g.levelNumber() != 1) { std::printf("FAIL: level 0 did not lead to level 1 after the jaguar fight (level %d)\n", g.levelNumber()); ++fails; }
+    std::printf("jaguar: level %d after %d ticks and %d on the map, score %d\n", g.levelNumber(), ticks, mapTicks, g.stats().score);
     return fails;
 }
 }
@@ -508,6 +518,7 @@ int stoneJaguarTest(const std::string& dir) {
     if (ledgeAt < 0) { std::printf("FAIL: no stone jaguar leapt up onto the ledge\n"); ++fails; }
     if (deadAt < 0) { std::printf("FAIL: the stone jaguars did not die\n"); ++fails; }
     if (ropeAt < 0 || segments != 8 || ropeY != -0x20) { std::printf("FAIL: the rope (segments %d, head y %d)\n", segments, ropeY); ++fails; }
+    throughMap(g);
     if (outAt < 0 || g.levelNumber() != 4) { std::printf("FAIL: Harry did not leave the level by the rope (level %d)\n", g.levelNumber()); ++fails; }
     std::printf("stone jaguars: fight at tick %d, both awake at %d, ledge at %d, dead at %d, rope at %d, top at %d, level 4 at %d\n",
                 fightAt, bothAwakeAt, ledgeAt, deadAt, ropeAt, climbedAt, outAt);
@@ -569,6 +580,7 @@ int jaguarManTest(const std::string& dir) {
     if (manAt < 0) { std::printf("FAIL: the jaguar man never swiped in its man form\n"); ++fails; }
     if (clawAt < 0) { std::printf("FAIL: no claw with the swipe\n"); ++fails; }
     if (deadAt < 0) { std::printf("FAIL: the jaguar man did not die\n"); ++fails; }
+    throughMap(g);
     if (outAt < 0 || g.levelNumber() != 9) { std::printf("FAIL: Harry did not leave level 8 by the tongue (level %d)\n", g.levelNumber()); ++fails; }
     std::printf("jaguar man: shown at tick %d, swipe at %d, claw at %d, dead at %d, level 9 at %d\n", shownAt, manAt, clawAt, deadAt, outAt);
     return fails;
@@ -764,14 +776,14 @@ int atari2600Test(const std::string& dir) {
     run(400, 0, [&] { return h.b(0x465ea2) != 0; });
     h.uw(0x465ba8) = 0; h.x() = 0x21f; h.y() = 0x1c1; h.b(0x465ea2) = 0;
     const int stungAt = run(400, 8, [&] { return h.b(0x465e86) != 0; });
-    const int livesStung = h.b(0x465e85);
+    const int livesStung = h.b(0x465e85), screenStung = h.uw(0x465ba8);
     int exitAt = -1;
     for (int i = 0; i < 600 && exitAt < 0; ++i) {
         g.tick(a26Pad(i >= 300 && (i & 1) ? 0x40 : 0));
         if (game::g_debugLogic != pl) exitAt = i;
     }
-    if (stungAt < 0 || livesStung != 0 || h.uw(0x465ba8) != 3 || exitAt < 300) {
-        std::printf("FAIL: 2600: the scorpion (stung %d, lives %d, screen %d), out at %d\n", stungAt, livesStung, int(h.uw(0x465ba8)), exitAt);
+    if (stungAt < 0 || livesStung != 0 || screenStung != 3 || exitAt < 300) {               // (h is gone with the old logic)
+        std::printf("FAIL: 2600: the scorpion (stung %d, lives %d, screen %d), out at %d\n", stungAt, livesStung, screenStung, exitAt);
         ++fails;
     }
     pl = game::g_debugLogic;
@@ -785,6 +797,58 @@ int atari2600Test(const std::string& dir) {
     if (upAt < 0 || upAt > 120) { std::printf("FAIL: 2600: the clock did not run out (%d)\n", upAt); ++fails; }
     std::printf("2600: demo %d ticks, at screen %d x %d score %d; hole at %d, top %d, log %d; pit %d, back %d; ring %d; on the crocodile at x %d for %d; stung %d, out at %d; time up %d\n",
                 demoTicks, last.screen, last.x, last.score, holeAt, topAt, tripAt, sinkAt, backAt, ringAt, onX, drownAt, stungAt, exitAt, upAt);
+    return fails;
+}
+}
+
+// The map screen (level 19) after each level of the tour: the path's pegs, the next level's name,
+// and on to the next level of the original's order (6 -> 16 -> 17 -> 7 -> 18 -> 8); a button after
+// the first 30 ticks goes on at once.
+namespace {
+int mapScreenTest(const std::string& dir) {
+    int fails = 0;
+    static const int kTour[][2] = {{0, 1}, {1, 2}, {2, 3}, {3, 4}, {4, 5}, {5, 6}, {6, 16}, {16, 17}, {17, 7}, {7, 18}, {18, 8}, {8, 9}, {9, 10}};
+    static const int kPegs[] = {7, 9, 9, 10, 5, 10, 12, 6, 7, 17, 10, 9, 16};
+    static const char* const kNames[] = {"[XIBALBA FALLS]", "[TAZAMUL MINES]", "[LOST CITY OF COPAN]", "[COPAN TEMPLE]", "[LAKAMUL RAINFOREST]",
+                                         "[YAXCHILAN LAGOON]", "[PALENQUE RUINS]", "[TOMB OF PALENQUE]", "[RUNAWAY MINECAR]", "[JAINA ISLAND FALLS]",
+                                         "[TIKAL RUINS]", "[TEMPLE OF TIKAL]", "[WARRIOR SPIRIT]"};
+    engine::Options opts;
+    game::Game g(dir, opts);
+    engine::HostInput idle;
+    int total = 0;
+    for (size_t i = 0; i < sizeof kTour / sizeof kTour[0]; ++i) {
+        g.setMode(game::Mode::Playing);
+        g.startLevel(kTour[i][0]);
+        g.completeLevel();
+        g.tick(idle);
+        if (g.levelNumber() != 19) { std::printf("FAIL: map: level %d did not lead to the map (%d)\n", kTour[i][0], g.levelNumber()); ++fails; continue; }
+        game::PlayLogic* pl = game::g_debugLogic;
+        int t = 0, pegs = 0, letters = 0;
+        for (; g.levelNumber() == 19 && t < 1000; ++t) {
+            int p = 0, l = 0;
+            for (const game::Obj* o : pl->objectSystem().list()) { p += o->type == 1; l += o->type == 2; }
+            pegs = std::max(pegs, p);
+            letters = std::max(letters, l);
+            g.tick(idle);
+        }
+        // the pegs of up to three paths before stay on the map
+        int expect = kPegs[i];
+        for (size_t k = i >= 3 ? i - 3 : 0; k < i; ++k) expect += kPegs[k];
+        if (g.levelNumber() != kTour[i][1] || pegs != expect || letters != int(std::strlen(kNames[i]))) {
+            std::printf("FAIL: map after level %d: level %d (want %d), %d pegs (want %d), %d letters\n", kTour[i][0], g.levelNumber(), kTour[i][1], pegs, expect, letters);
+            ++fails;
+        }
+        total += t;
+    }
+    // a button skips it, but not in its first 30 ticks
+    g.startLevel(0);
+    g.completeLevel();
+    g.tick(idle);
+    engine::HostInput jump; jump.keyDown['W'] = true;
+    int skipAt = -1;
+    for (int t = 0; t < 100 && skipAt < 0; ++t) { g.tick(t % 2 ? jump : idle); if (g.levelNumber() != 19) skipAt = t; }
+    if (skipAt < 29 || skipAt > 32 || g.levelNumber() != 1) { std::printf("FAIL: map: a button went on at %d (level %d)\n", skipAt, g.levelNumber()); ++fails; }
+    std::printf("map: 13 paths in %d ticks; a button goes on at %d\n", total, skipAt);
     return fails;
 }
 }

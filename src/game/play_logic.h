@@ -221,6 +221,19 @@ private:
     void a26ClearButtons();
     void a26Frame(Game& g, int entry);          // level 20 in FUN_0043628c (0) / FUN_004360e9 (1) / FUN_00435fc0 (2)
 
+    // ---- map_screen.cpp: level 19 (0x431c99, FUN_00432038) ----
+    void mapSetup();                            // 0x431c99, the end of the restart on level 19
+    void mapTick();                             // FUN_00432038
+    void mapArrived();                          // 0x4323b4
+    void mapAmbient();                          // FUN_00431a67
+    void mapPeg(Obj& o, uint32_t va);           // a peg of the path at va
+    uint8_t mapGlyph(uint8_t ch, int& width);   // FUN_00431b73
+    void mapText(const char* s, int y);         // FUN_00431ad5
+    void mapExit();                             // "*1"
+    void listAll();                             // FUN_00435174: Harry, then the objects from the tail
+    uint32_t fixed(uint32_t a) const;           // a 16.16 value kept int word first
+    void setFixed(uint32_t a, uint32_t v);
+
     Game* game_ = nullptr;
     int level_ = 0;                  // DAT_00466535
     Harry h_;                        // 0x465800 .. 0x4668ff
@@ -245,7 +258,11 @@ private:
     uint32_t a26Deferred_ = 0;       // DAT_00457408: 1 = waiting for the first input, else the code to run when ...
     int32_t a26Wait_ = 0;            // DAT_0045740c: ... this countdown runs out
     int32_t a26End_ = 0;             // DAT_00457410: the game is over; the ticks before a button can leave
-    bool a26Exited_ = false;         // engineExit was taken this tick
+    bool specialExited_ = false;     // engineExit was taken this tick (the 2600 level, the map screen)
+    int32_t mapEnd_ = 0;             // DAT_004601c0: the ticks the map waits at the end of its path
+    uint32_t mapNamed_ = 0;          // DAT_0046a87c: the next level's name is up
+    uint32_t mapKeysOff_ = 0;        // DAT_0046a88a: the ticks before the buttons count
+    uint8_t mapSpace_ = 0;           // DAT_0046a878: which of the two space glyphs is next
 };
 
 // Item handler (type 2, 0x405328) effect table at 0x45a8d4: sprite -> effect.

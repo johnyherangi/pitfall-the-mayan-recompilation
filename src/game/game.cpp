@@ -118,7 +118,7 @@ void Game::startLevel(int level) {
     if (autoLogic_) {
         // Levels with collision data get the playable logic, the rest the explorer; the 2600
         // level has its own code in the game logic (FUN_00435fc0's 0x401e00).
-        if (!level_->collision.empty() || level == kAtari2600Level) logic_ = std::make_unique<PlayLogic>();
+        if (!level_->collision.empty() || level == kAtari2600Level || level == kMapScreen) logic_ = std::make_unique<PlayLogic>();
         else logic_ = std::make_unique<ExplorerLogic>();
     }
     if (logic_) logic_->enter(*this);
@@ -174,6 +174,14 @@ void Game::tick(const engine::HostInput& host) {
 void Game::command(const char* cmd) {
     // The WinMain switch on DAT_0046b1a8[1], the cases of the vortex warps.
     switch (cmd[1]) {
+    case '1':                                            // 0x444216: the level kept (after the map screen, a continue)
+        mixer_.stopAll();                                // FUN_0043e470 (then 750 ms unless on the map)
+        requestLevel(nextLevel_);
+        break;
+    case '4':                                            // 0x4445b9: the map screen, or the reunion after the Warrior Spirit
+        mixer_.stopAll();
+        requestLevel(levelNo_ == kWarriorSpirit ? kSimonRoom : kMapScreen);
+        break;
     case '5':                                            // 0x4445ef: into a vault, or the 2600 level
         if (cmd[2] == '0') {
             warp_.returnLevel = kLoltunVault2;           // (0xb marks "back from the 2600 level" for "*6")
@@ -255,6 +263,8 @@ void Game::render() {
     }
     // Main tile layer (FUN_00436fb4).
     if (levelNo_ == kAtari2600Level && level_->hasBg) renderAtari2600();
+    else if (levelNo_ == kMapScreen && level_->hasBg)                // 0x43718c: the map wraps both ways, no priority list
+        renderer_.drawWrappedLayer(level_->bg, snap_.scrollX, snap_.scrollY, snap_.scrollX & 7, snap_.scrollX & 7, nullptr);
     else if (level_->hasBg) renderer_.drawTileLayer(level_->bg, view, deferred_);
     // Sprites, back to front (FUN_004426e0 walks the list from the end).
     for (auto it = snap_.displayList.rbegin(); it != snap_.displayList.rend(); ++it)
@@ -301,15 +311,9 @@ void Game::renderVault() {
 }
 
 void Game::completeLevel() {
-    // The original goes to the map screen (level 19) which picks the next
-    // level; the map logic is not ported, so follow the tour order directly.
-    static const int kTour[] = {kCeibaJungle, kXibalbaFalls, kTazamulMines, kLostCityOfCopan, kCopanTemple,
-                                kLakamulRainForest, kYaxchilanLagoon, kBalankancheMine, kTikalRuins,
-                                kTempleOfTikal, kPalenqueRuins, kTombOfPalenque, kJainaIslandFalls, kWarriorSpirit};
-    playSound(0x2b);
-    for (size_t i = 0; i + 1 < sizeof(kTour) / sizeof(kTour[0]); ++i)
-        if (kTour[i] == levelNo_) { requestLevel(kTour[i + 1]); return; }
-    requestLevel(kCredits);
+    // 0x430912: the level is kept for the map screen (DAT_0046b1ac), then "*4"
+    tourLevel_ = levelNo_;
+    command("*4");
 }
 
 uint32_t Game::random() {

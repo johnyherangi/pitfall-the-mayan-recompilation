@@ -125,7 +125,9 @@ public:
     void playChannel(int ch, int id) { mixer_.playChannel(ch, id, options_.wavVolume); }   // FUN_0043cc10(id, ch)
     bool channelBusy(int ch) const { return mixer_.channelBusy(ch); }                       // FUN_0043cbc0(ch)
     void requestLevel(int level) { pendingLevel_ = level; }           // "*" command strings
-    void completeLevel();                                             // "*4": next level in the tour
+    void completeLevel();                                             // 0x430912: the level is kept (DAT_0046b1ac), "*4"
+    int tourLevel() const { return tourLevel_; }                      // DAT_0046b1ac: the level last completed
+    void setNextLevel(int l) { nextLevel_ = l; }                      // DAT_0045050c: the level "*1" loads
     void loseLife();                                                  // FUN_00430eb6's tail: "*3", or a continue / game over
     void restartLevel() { pendingRestart_ = true; }                   // "*3" (FUN_004360e9): the logic starts again in place
     // The transitions of the vortex warps, "*50" .. "*53", "*6" and "*7" (the WinMain command
@@ -190,6 +192,8 @@ private:
     int pendingLevel_ = -1;
     bool pendingRestart_ = false;
     int demoIndex_ = -1;               // DAT_0046fbbc (-1 in the data section: the first demo is demo 0)
+    int tourLevel_ = 0;                // DAT_0046b1ac: the level last completed (the map screen's path)
+    int nextLevel_ = 0;                // DAT_0045050c: the level "*1" loads (the map's next one, the one a continue goes back to)
     int demoPos_ = 0;                  // DAT_0046fb8c (0x800 == not in demo)
     int demoCountdown_ = 1;            // DAT_0046fb98
     uint32_t demoButtons_ = 0;         // DAT_0046fb94

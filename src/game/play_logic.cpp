@@ -205,8 +205,8 @@ void PlayLogic::resetObjects() {
 }
 
 void PlayLogic::restartBody() {
-    // 0x432723: the part FUN_0043256f / FUN_00432615 and FUN_00432713 share (the map screen's
-    // set-up at its end, 0x431c99, is not ported).
+    // 0x432723: the part FUN_0043256f / FUN_00432615 and FUN_00432713 share (with the map
+    // screen's set-up at its end, 0x431c99).
     h_.b(0x466555) = 0xff;
     h_.b(0x465b38) = 0;
     h_.b(0x465bb3) = 0;
@@ -308,6 +308,7 @@ void PlayLogic::restartBody() {
     h_.l(0x466796) = 0;
     h_.b(0x466552) = 0;
     h_.b(0x466553) = 0;
+    if (level_ == kMapScreen) mapSetup();                  // 0x432cd6: the map screen's set-up
 }
 
 // ---------------------------------------------------------------- the main loop (FUN_0043628c)
@@ -317,6 +318,18 @@ void PlayLogic::tick(Game& g) {
     level_ = g.levelNumber();
     if (level_ == kAtari2600Level) { a26Frame(g, 0); return; }   // 0x436224: FUN_004263f3, 0x4020d1
     FrameState& fs = g.state();
+    if (level_ == kMapScreen) {                            // 0x436215: FUN_004263f3, FUN_00432038
+        fs.displayList.clear();
+        specialExited_ = false;
+        readPad();
+        mapTick();
+        if (specialExited_) return;
+        fs.scrollX = h_.w(0x4658b4);
+        fs.scrollY = h_.w(0x4658b6);
+        fs.bob = h_.w(0x465b02);
+        ++tickCount_;
+        return;
+    }
     const bool debug = (fs.joypad & 0x100) != 0;
     readPad();                                             // FUN_004263f3
     camera();                                              // FUN_00404714 (with the spawner)

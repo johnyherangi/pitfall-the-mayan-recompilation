@@ -308,6 +308,10 @@ extern const uint8_t kData_spiritPoses[], kData_spiritScripts[], kData_spiritPar
 // FUN_00431a3f counts in; 0x46b1fc, the map columns the renderer takes the screen's two strips from.
 extern const uint8_t kData_a26VineTips[], kData_a26Items[], kData_a26Pit[], kData_a26Vine[], kData_a26Run[],
     kData_a26Jump[], kData_a26Rooms[], kData_a26Powers[], kData_a26Columns[];
+// The map screen (map_screen.cpp): 0x461c44, the 13 paths (pointers, then {x, y, frame} words, -1
+// ending each); 0x46aa34, the path by the level left, then (+0x1a) the next level by the path;
+// 0x46a88e, the next level's name by the level left (pointers, then the strings).
+extern const uint8_t kData_mapPaths[], kData_mapLevels[], kData_mapNames[];
 extern const uint8_t kAnim2_deathFade[], kAnim2_monkeyToss[], kAnim2_condorDive[], kAnim2_jaguarLeap[], kAnim2_jaguarCrouchA[],
     kAnim2_jaguarCrouchB[], kAnim2_jaguarCrouchRoar[], kAnim2_jaguarRoar[], kAnim2_bossCloud[],
     kAnim2_skullThrow[], kAnim2_skullChop[], kAnim2_boneTumble[], kAnim2_ballSwingA[], kAnim2_ballSwingB[], kAnim2_ballSwingC[],

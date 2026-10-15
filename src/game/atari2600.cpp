@@ -53,7 +53,7 @@ void PlayLogic::a26Exit(const char* cmd) {
     // engineExit (0x4361d6): the display list is emptied and the stack unwound out of the game
     // logic; the engine then takes the command ("*3": FUN_004360e9, "*6": out of the level).
     game_->state().displayList.clear();
-    a26Exited_ = true;
+    specialExited_ = true;
     if (cmd[1] == '3') game_->restartLevel();
     else game_->command(cmd);
 }
@@ -66,12 +66,12 @@ void PlayLogic::a26Frame(Game& g, int entry) {
     level_ = g.levelNumber();
     FrameState& fs = g.state();
     fs.displayList.clear();
-    a26Exited_ = false;
+    specialExited_ = false;
     if (entry == 2) a26Start();
     else if (entry == 1) a26Screen();
     else { readPad(); a26Tick(); }
     fs.atariScreen = h_.uw(0x465ba8);                         // (FUN_00436fb4 reads it as it draws)
-    if (a26Exited_) return;
+    if (specialExited_) return;
     fs.scrollX = h_.w(0x4658b4);
     fs.scrollY = h_.w(0x4658b6);
     fs.bob = h_.w(0x465b02);
@@ -351,9 +351,7 @@ void PlayLogic::a26Show() {
     for (auto it = objs.rbegin(); it != objs.rend(); ++it)
         if ((*it)->type == 6) displayEntry(**it);
     a26Hud();
-    h_.w(0x465886) = 0x7000;
-    displayEntry(h_.x(), h_.y(), h_.frame(), h_.facing(), h_.b(0x465b38), h_.flags(), game_->findSprite(h_.sprite()));
-    for (auto it = objs.rbegin(); it != objs.rend(); ++it) displayEntry(**it);
+    listAll();                                                // FUN_00435174
 }
 
 void PlayLogic::a26Glyph(uint32_t frame, int d6, int d7) {
