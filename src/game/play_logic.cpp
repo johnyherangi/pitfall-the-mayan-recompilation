@@ -32,69 +32,177 @@ uint32_t PlayLogic::addrOf(const Obj* o) const {
 // ---------------------------------------------------------------- level start
 
 void PlayLogic::enter(Game& g) {
+    // FUN_00435fc0, the engine's bridge into the game logic, with FUN_0043256f: a level starts.
     g_debugLogic = this;
     game_ = &g;
     level_ = g.levelNumber();
-    const ph::LevelData& lv = g.level();
     h_ = Harry{};
-    alsMem_ = lv.als;                                          // [DAT_004504e4]
-    if (alsMem_.size() < 0x1000) alsMem_.resize(0x1000, 0);
-    for (const auto& cr : g.permanentlyGone()) {               // collected for good (FUN_00430eb6 keeps them)
-        const uint16_t off = alsWord(4 + size_t(cr.first) * 2);
-        if (off == 0) continue;
-        for (size_t e = off; alsByte(e) != 0xff; e += 2)
-            if (alsByte(e) == cr.second) alsMem_[e + 1] = 0;
-    }
-    for (Killed& k : killed_) k = Killed{};
+    // [DAT_004504e4]: the .als working copy (0x800 bytes, zero past the data) and the level's
+    // own copy after it ([DAT_004504c4], what a lost life restores from).
+    const std::vector<uint8_t>& als = g.level().als;
+    alsMem_.assign(0x1000, 0);
+    std::copy(als.begin(), als.begin() + std::ptrdiff_t(std::min<size_t>(als.size(), 0x800)), alsMem_.begin());
+    std::copy(alsMem_.begin(), alsMem_.begin() + 0x800, alsMem_.begin() + 0x800);
     exiting_ = false;
     deathTimer_ = 0;
     boss_ = nullptr;
-    ch0Pri_ = ch0Id_ = ch0Hold_ = ch1Pri_ = ch1Id_ = 0;
-    objects_.reset();
-    hud_.clear();                                                           // 0x4331c4
-    h_.w(0x4658ac) = int16_t(lv.columns);                                   // the level size in cells
-    h_.w(0x4658ae) = int16_t(lv.hasBg ? lv.bg.hTiles / 2 : 14);
-    h_.w(0x465bae) = int16_t(lv.hasBg ? lv.bg.wTiles * 8 : 320);           // and in pixels
-    h_.w(0x465bb0) = int16_t(lv.hasBg ? lv.bg.hTiles * 8 : 224);
     h_.l(0x466535) = level_;
-
-    // FUN_004331d8: the '^' trigger gives the start position.
-    bool found = false;
-    for (int c = 0; c < lv.triggers.columns() && !found; ++c)
-        for (const ph::ColumnEntry& e : lv.triggers.column(c))
-            if (e.id == ph::kTrgStart) { h_.x() = int16_t(c * 16 - 8); h_.y() = int16_t((e.row + 2) * 16); found = true; break; }
-    if (!found) { h_.x() = 160; h_.y() = 160; }
-    if (g.checkpoint().valid) {               // FUN_00430a69 restart: DAT_0046679e.. after a death
-        h_.x() = int16_t(g.checkpoint().x); h_.y() = int16_t(g.checkpoint().y);
-    }
-    levelRestart();
-    if (level_ >= 0 && level_ < 19 && !g.checkpoint().valid && ph::kStartFacing[level_]) h_.facing() = 0xff;
-    if (g.checkpoint().valid) h_.facing() = g.checkpoint().facingLeft ? 0xff : 0;
+    if (g.warp().fromAtari) h_.b(0x465b39) = 0xff;            // (before the level start: the checkpoint stays)
+    levelStart();                                              // FUN_0043256f
+    g.warp().fromAtari = g.warp().fromVault = false;           // DAT_004601c4 / DAT_004504cc
     FrameState& fs = g.state();
     fs.scrollX = h_.w(0x4658b4);
     fs.scrollY = h_.w(0x4658b6);
     displayList(g);
 }
 
+void PlayLogic::restart(Game& g) {
+    // FUN_004360e9 ("*3"): the level logic starts again at the checkpoint; the level is not
+    // loaded again, so the .als working copy keeps what FUN_00430eb6 left in it.
+    game_ = &g;
+    deathTimer_ = 0;
+    restartAtCheckpoint();                                     // FUN_00432615
+    g.warp().fromAtari = g.warp().fromVault = false;
+    FrameState& fs = g.state();
+    fs.scrollX = h_.w(0x4658b4);
+    fs.scrollY = h_.w(0x4658b6);
+    displayList(g);
+}
+
+void PlayLogic::levelStart() {
+    // FUN_0043256f
+    h_.b(0x465adf) = 0;
+    levelSetup();                                              // FUN_0043305f
+    std::memset(game_->levelFlags(), 0, 0x14);                 // DAT_00466510 .. 23 (24 / 25 last the game)
+    h_.b(0x465b00) = 0;
+    h_.w(0x465afb) = 0;                                        // the vortex Harry went through
+    h_.b(0x465b3c) = 0;
+    restartAtCheckpoint();                                     // (runs on into FUN_00432615)
+}
+
+void PlayLogic::levelSetup() {
+    // FUN_0043305f: the level's size, FUN_00433116, the start position, Harry's record.
+    const ph::LevelData& lv = game_->level();
+    h_.w(0x4658ac) = int16_t(lv.hasBg ? lv.bg.wTiles / 2 : 0x28);    // DAT_00450fb4: the size in cells
+    h_.w(0x4658ae) = int16_t(lv.hasBg ? lv.bg.hTiles / 2 : 0xe);     // DAT_00450fb0
+    h_.w(0x465bae) = int16_t((h_.w(0x4658ac) << 4) - 0x20);         // and in pixels
+    h_.w(0x465bb0) = int16_t((h_.w(0x4658ae) << 4) - 0x20);
+    h_.w(0x466539) = 0xfa;
+    // FUN_00433116
+    h_.b(0x465b72) = 0;
+    h_.w(0x46652b) = 0;
+    h_.w(0x46652f) = 0;
+    stopSound0();                                              // FUN_0042624a
+    sound1Now(0x89);                                           // FUN_004261b0
+    ch1Id_ = 0;                                                // DAT_004627c1
+    ch0Hold_ = 0;                                              // DAT_004627c2
+    h_.b(0x465e64) = 0;
+    for (Killed& k : killed_) k = Killed{};                    // 0x465a40 .. 0x465ad8
+    h_.uw(0x465e6c) = 0xffff;
+    resetObjects();                                            // FUN_00435274
+    h_.b(0x466552) = 0;
+    h_.b(0x466553) = 0;
+    h_.w(0x465b02) = 0;
+    hud_.clear();                                              // DAT_00466870 = 0x466874
+    startPosition();                                           // FUN_004331d8
+    h_.uw(0x465b1b) = 0x6000;
+    h_.setSprite("hyirun");
+    h_.frame() = 1;
+    h_.w(0x465b35) = 0;
+    h_.b(0x465b17) = 0xff;
+    resetObjects();                                            // FUN_00435274
+    h_.b(0x466555) = 0;
+}
+
+void PlayLogic::startPosition() {
+    // FUN_004331d8: Harry at the '^' trigger (x = col * 16 - 8, y = (row + 2) * 16) and the
+    // checkpoint there too, unless he comes out of a vortex (DAT_00465b39); the facing from
+    // the table at 0x433334 (one byte a level, read past its end for the levels after 18).
+    h_.w(0x4667a2) = 0;                                        // no marker lit
+    h_.w(0x466782) = 0;
+    const ph::ColumnTable& trg = game_->level().triggers;
+    for (int c = 0; c < uint16_t(h_.w(0x4658ac)) && c < trg.columns(); ++c, h_.w(0x466782) += 1) {
+        for (const ph::ColumnEntry& e : trg.column(c)) {
+            if (e.id != ph::kTrgStart) continue;
+            const int16_t x = int16_t(c * 16 - 8), y = int16_t((e.row + 2) * 16);
+            if (h_.b(0x465b39) == 0) h_.w(0x46679e) = x;
+            h_.x() = x;
+            h_.y() = y;
+            if (h_.b(0x465b39) == 0) h_.w(0x4667a0) = y;
+            const uint8_t f = level_ >= 0 && level_ < 25 ? ph::kStartFacing[level_] : 0;
+            h_.b(0x4667a4) = f;
+            h_.facing() = f;
+            return;
+        }
+    }
+}
+
+void PlayLogic::restartAtCheckpoint() {
+    // FUN_00432615: Harry at the checkpoint (DAT_0046679e / a0 / a4), or where a vortex warp
+    // brings him back to with the level as he left it (FUN_004288ec saved it).
+    Game::Warp& wp = game_->warp();
+    h_.x() = h_.w(0x46679e);
+    h_.y() = h_.w(0x4667a0);
+    h_.facing() = h_.b(0x4667a4);
+    h_.b(0x465b01) = 0;
+    auto restoreSaved = [&] {
+        if (wp.als.size() == 0x1000) std::copy(wp.als.begin(), wp.als.end(), alsMem_.begin());   // 0x4601dd
+        h_.w(0x46679e) = wp.cpX;                               // DAT_0046a860 / 62 / 66
+        h_.w(0x4667a0) = wp.cpY;
+        h_.w(0x4667a4) = wp.cpFacing;
+    };
+    if (wp.fromAtari) {                                        // DAT_004601c4: out of the 2600 level
+        wp.fromAtari = false;
+        h_.x() = 0x6e5;
+        h_.y() = 0x587;
+        h_.facing() = 0xff;
+        restoreSaved();
+    }
+    if (wp.fromVault) {                                        // DAT_004504cc: out of a vault
+        if (wp.als.size() == 0x1000) std::copy(wp.als.begin(), wp.als.end(), alsMem_.begin());
+        h_.x() = wp.x;
+        h_.y() = wp.y;
+        h_.facing() = wp.facing;
+        h_.b(0x465b39) = 0xff;                                 // he twirls out of the vortex (FUN_0042a064)
+        h_.w(0x46679e) = wp.cpX;
+        h_.w(0x4667a0) = wp.cpY;
+        h_.w(0x4667a4) = wp.cpFacing;
+    }
+    h_.w(0x4667a8) = 0x30;
+    restartBody();
+}
+
 void PlayLogic::levelRestart() {
-    // FUN_00432713 (the parts every level shares; the vaults' and the map screen's set-up
-    // that follows in the original is not ported yet).
-    h_.b(0x4667a8) = 0;
+    // FUN_00432713: into another area of the level, the objects start again.
+    h_.w(0x4667a8) = 0;
     h_.facing() = 0;
-    h_.b(0x466555) = 0xff;
-    h_.b(0x465b38) = 0;
-    h_.b(0x465bb3) = 0;
-    h_.onGround() = 0xff;
-    // FUN_00435274: the object pool and Harry's state fields
+    restartBody();
+}
+
+void PlayLogic::resetObjects() {
+    // FUN_00435274: the object pool, Harry's state fields and the killed-enemy list.
     h_.b(0x465ae4) = 0; h_.l(0x465ae7) = 0;
     h_.frame() = 0xff;
     h_.setUl(0x465898, 0);
     h_.b(0x465d49) = 0;
+    objects_.reset();
     h_.b(0x465b35) = 0;
     h_.w(0x465b35) = 0x6663;                               // FUN_004263a6 on Harry
     for (uint32_t a = 0x465b41; a < 0x465b69; a += 4) h_.l(a) = 0;
     for (uint32_t a = 0x466808; a < 0x46681c; a += 4) h_.l(a) = 0;
     h_.l(0x46681c) = 0;
+    for (Killed& k : killed_) k = Killed{};                // 0x465a40 .. 0x465ad8
+    h_.b(0x466554) = 0xff;
+}
+
+void PlayLogic::restartBody() {
+    // 0x432723: the part FUN_0043256f / FUN_00432615 and FUN_00432713 share (the vaults' and
+    // the map screen's set-up at its end are not ported yet).
+    h_.b(0x466555) = 0xff;
+    h_.b(0x465b38) = 0;
+    h_.b(0x465bb3) = 0;
+    h_.onGround() = 0xff;
+    resetObjects();                                        // FUN_00435274
     h_.w(0x465b02) = 0;
     h_.vx() = 0; h_.vy() = 0;
     h_.setUl(0x465b7e, 0);
@@ -148,6 +256,10 @@ void PlayLogic::levelRestart() {
     h_.b(0x46650a) = 0;
     h_.b(0x46618a) = 0;
     h_.w(0x465cf0) = 0x96;
+    if (game_->warp().fromVault) {                         // DAT_004504cc: the classes as the level was left
+        game_->warp().fromVault = false;
+        std::memcpy(h_.trgClass(), game_->warp().classes, 0x100);   // 0x4611dd
+    }
     h_.b(0x466795) = 6;
     h_.b(0x465d49) = 0;
     if (level_ == 7) h_.b(0x465d49) = 1;
@@ -365,14 +477,28 @@ void PlayLogic::h4311a5() {
 }
 
 void PlayLogic::h430eb6() {
-    // FUN_00430eb6: a life is lost (the level data restored, "*3" restarts the level).
+    // FUN_00430eb6: a life is lost.  Every object goes (FUN_004311bf), the .als working copy
+    // takes the level's own entries back but for the treasures and the letters, which stay
+    // collected, the triggers' working copy is restored (it holds the boss pointer), the lever
+    // flags 0x466510 .. 21 are cleared, and "*3" starts the level again at the checkpoint
+    // (the engine exit ends this tick in the original; the port guards against a second call).
     if (deathTimer_) return;
     deathTimer_ = 1;
+    h_.b(0x465b39) = 0;
     if (level_ == 7) game_->stats().treasures = 0;
     h_.damage() = 0;
+    h4311bf();
     ammo(0) = 0x14;
     if (ammo(1) < 2) ammo(1) = 2;
     if (ammo(2) == 0) ammo(2) = 1;
+    for (size_t i = 0; i < 0x800; ++i) {                   // [DAT_004504e4] from [DAT_004504c4]
+        const uint8_t d4 = alsMem_[0x800 + i];
+        if (alsMem_[i] == d4) continue;
+        if ((d4 >= 0x58 && d4 <= 0x5c) || (d4 >= 0xf0 && d4 <= 0xf6)) continue;   // gold, 1-up, coin, silver, ring, P-I-T-F-A-L-L
+        alsMem_[i] = d4;
+    }
+    boss_ = nullptr;                                       // [DAT_0045052c] -> [DAT_00450510]
+    std::memset(game_->levelFlags(), 0, 0x12);
     game_->loseLife();
 }
 

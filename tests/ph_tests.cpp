@@ -87,7 +87,8 @@ int main(int argc, char** argv) {
 }
 
 // ---- gameplay smoke tests (appended) --------------------------------------
-namespace { int jaguarTest(const std::string& dir); int bungeeTest(const std::string& dir); int stoneTest(const std::string& dir); }
+namespace { int jaguarTest(const std::string& dir); int bungeeTest(const std::string& dir); int stoneTest(const std::string& dir);
+            int vortexTest(const std::string& dir); int deathTest(const std::string& dir); }
 namespace {
 int gameplayTests(const std::string& dir) {
     int fails = 0;
@@ -117,6 +118,8 @@ int gameplayTests(const std::string& dir) {
     fails += jaguarTest(dir);
     fails += bungeeTest(dir);
     fails += stoneTest(dir);
+    fails += vortexTest(dir);
+    fails += deathTest(dir);
     return fails;
 }
 }
@@ -224,7 +227,7 @@ int stoneTest(const std::string& dir) {
     game::PlayLogic* pl = game::g_debugLogic;
     if (!pl) return 1;
     for (int i = 0; i < 60; ++i) g.tick(engine::HostInput{});
-    g.stats().ammoCount[0] = 10;                          // (Harry starts the game without stones)
+    g.stats().ammoCount[0] = 10;
     const int ammo0 = g.stats().ammoCount[0];
     int thrownAt = -1, x0 = 0, maxDx = 0, gone = -1, prevY = 0;
     bool fell = false, broke = false, slotSet = false;
@@ -294,6 +297,89 @@ int stoneTest(const std::string& dir) {
     if (pieces != 8) { std::printf("FAIL: the big stone made %d pieces\n", pieces); ++fails; }
     if (flash < 0) { std::printf("FAIL: no blast from the big stone\n"); ++fails; }
     std::printf("boomerang: back at tick %d, caught at %d; big stone: %d pieces, blast at %d\n", back, caught, pieces, flash);
+    return fails;
+}
+}
+
+// The vortex of Tikal Ruins (type 71 at (6040, 400)): walking into it spins Harry away to the
+// third vault (level 12, "*52"); "*7" brings him back next to it with the level as he left it,
+// twirling out (state 0x42a08f), and the vortex stays shut (DAT_0046a888).
+namespace {
+void flyTo(game::Game& g, game::PlayLogic* pl, int x, int y) {
+    for (int i = 0; i < 4000; ++i) {
+        const game::Harry& h = pl->harry();
+        if (std::abs(h.x() - x) <= 7 && std::abs(h.y() - y) <= 7) return;
+        engine::HostInput fly; fly.ctrlDown = true;
+        fly.keyDown[h.x() < x ? 0x27 : 0x25] = std::abs(h.x() - x) > 7;
+        fly.keyDown[h.y() < y ? 0x28 : 0x26] = std::abs(h.y() - y) > 7;
+        g.tick(fly);
+    }
+}
+int vortexTest(const std::string& dir) {
+    int fails = 0;
+    engine::Options opts; opts.allowCheat = true;
+    game::Game g(dir, opts);
+    g.newGame();
+    g.startLevel(8); g.setMode(game::Mode::Playing);
+    game::PlayLogic* pl = game::g_debugLogic;
+    if (!pl) return 1;
+    flyTo(g, pl, 5970, 400);
+    int caught = -1, warped = -1;
+    for (int i = 0; i < 400 && warped < 0; ++i) {
+        engine::HostInput in;
+        if (i >= 40 && caught < 0) in.keyDown[0x27] = true;
+        g.tick(in);
+        if (caught < 0 && g.levelNumber() == 8 && pl->harry().cont() == 0x428780) caught = i;
+        if (g.levelNumber() != 8) warped = i;
+    }
+    if (caught < 0) { std::printf("FAIL: the vortex did not catch Harry\n"); return fails + 1; }
+    if (g.levelNumber() != 12) { std::printf("FAIL: the vortex led to level %d, not 12\n", g.levelNumber()); return fails + 1; }
+    g.command("*7");
+    g.tick(engine::HostInput{});
+    pl = game::g_debugLogic;
+    const game::Harry& h = pl->harry();
+    const int bx = h.x(), by = h.y();
+    const uint32_t cont = h.cont();
+    bool shut = true;
+    for (int i = 0; i < 60; ++i) {
+        g.tick(engine::HostInput{});
+        for (const game::Obj* o : pl->objectSystem().list()) if (o->type == 71 && o->frame != 0xff) shut = false;
+    }
+    if (g.levelNumber() != 8 || bx != 6044 || cont != 0x42a08f) { std::printf("FAIL: back on level %d at (%d, %d) in state %#x\n", g.levelNumber(), bx, by, cont); ++fails; }
+    if (!shut) { std::printf("FAIL: the vortex opened again\n"); ++fails; }
+    std::printf("vortex: caught at tick %d, level 12 at %d, back at (%d, %d)\n", caught, warped, bx, by);
+    return fails;
+}
+
+// A lost life on Ceiba Jungle: the silver at the start (id 0x5b) stays collected, the pouch
+// (id 5) comes back, and the level logic starts again in place at the checkpoint.
+size_t alsEntry(const std::vector<uint8_t>& als, int col, int row) {
+    const size_t off = size_t(als[4 + col * 2] << 8 | als[5 + col * 2]);
+    for (size_t e = off; e + 1 < als.size() && als[e] != 0xff; e += 2) if (als[e] == row) return e;
+    return 0;
+}
+int deathTest(const std::string& dir) {
+    int fails = 0;
+    engine::Options opts; opts.allowCheat = true;
+    game::Game g(dir, opts);
+    g.newGame();
+    g.startLevel(0); g.setMode(game::Mode::Playing);
+    game::PlayLogic* pl = game::g_debugLogic;
+    if (!pl) return 1;
+    const size_t silver = alsEntry(g.level().als, 11, 17);
+    auto id = [&](size_t e) { return int(pl->alsLong(e + 1) & 0xff); };
+    flyTo(g, pl, 200, 250);
+    for (int i = 0; i < 60; ++i) { engine::HostInput in; if (i > 20) in.keyDown[i < 40 ? 0x25 : 0x27] = true; g.tick(in); }
+    const int score = g.stats().score, lives = g.stats().lives;
+    if (id(silver) != 0) { std::printf("FAIL: the silver was not collected (score %d)\n", score); ++fails; }
+    pl->harry().b(0x465b72) = 0xfa;                       // fell out of the level
+    g.tick(engine::HostInput{});
+    const game::Harry& h = pl->harry();
+    if (game::g_debugLogic != pl) { std::printf("FAIL: the level was loaded again\n"); ++fails; }
+    if (g.stats().lives != lives - 1) { std::printf("FAIL: lives %d -> %d\n", lives, g.stats().lives); ++fails; }
+    if (id(silver) != 0) { std::printf("FAIL: the silver came back after the death\n"); ++fails; }
+    if (h.x() != h.w(0x46679e)) { std::printf("FAIL: Harry at x %d, not at the checkpoint %d\n", int(h.x()), int(h.w(0x46679e))); ++fails; }
+    std::printf("death: score %d kept, lives %d, Harry at (%d, %d)\n", g.stats().score, g.stats().lives, int(h.x()), int(h.y()));
     return fails;
 }
 }

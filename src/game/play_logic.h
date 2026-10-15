@@ -26,8 +26,9 @@ constexpr LevelScriptEntry kLevelScript[] = {
 
 class PlayLogic : public LevelLogic {
 public:
-    void enter(Game& g) override;
+    void enter(Game& g) override;               // FUN_00435fc0 / FUN_0043256f: a level starts
     void tick(Game& g) override;
+    void restart(Game& g) override;             // FUN_004360e9 / FUN_00432615: "*3", again at the checkpoint
     Harry& harry() { return h_; }
     const Harry& harry() const { return h_; }
     ObjectSystem& objectSystem() { return objects_; }
@@ -87,8 +88,9 @@ public:
     void hudAdd(const Obj& o) { hud_.push_back(objects_.indexOf(o)); }   // 0x4150a2: FUN_0043348e places it next tick
     uint32_t& fadeCmd() { return fadeCmd_; }      // DAT_0046b1b0 (0xc0: the big stone's white flash)
     // [DAT_004504e4] + off: the Genesis variables the PC keeps in the .als buffer past the level's
-    // data (+0x384: the Balankanche ride's last obstacle, the map screen's flags); the copy here is
-    // padded to the 4 KB the death restart saves (0x4288a2).
+    // data (+0x384: the Balankanche ride's last obstacle, the map screen's flags).  The buffer is
+    // the working copy (0x800 bytes) and the level's own copy after it, the 4 KB a vortex warp
+    // saves (0x4288a2).
     uint32_t alsLong(size_t off) const;
     void setAlsLong(size_t off, uint32_t v);
 
@@ -128,7 +130,13 @@ private:
     void runState();                            // call harryCont
     void leanShadow();                          // FUN_00426f67
     void harryLevelStart();                     // FUN_00427e30
+    void levelStart();                          // FUN_0043256f
+    void levelSetup();                          // FUN_0043305f (with FUN_00433116)
+    void startPosition();                       // FUN_004331d8
+    void restartAtCheckpoint();                 // FUN_00432615
     void levelRestart();                        // FUN_00432713
+    void resetObjects();                        // FUN_00435274
+    void restartBody();                         // 0x432723: what the three share
     void harryDeath();                          // FUN_00430a69
     void blinkTimer();                          // FUN_0042306c
     void selectWeapon();                        // FUN_00434932
@@ -166,7 +174,7 @@ private:
     Harry h_;                        // 0x465800 .. 0x4668ff
     ObjectSystem objects_;
     std::vector<int> hud_;           // 0x466874: the records 0x4150a2 listed in the last object pass
-    std::vector<uint8_t> alsMem_;    // [DAT_004504e4]: the level's .als data as the spawner works on it (an id is 0 while its object lives, or once collected or killed)
+    std::vector<uint8_t> alsMem_;    // [DAT_004504e4]: the level's .als data as the spawner works on it (an id is 0 while its object lives, or once collected or killed), then at +0x800 the level's own copy ([DAT_004504c4])
     struct Killed { uint8_t count = 0, id = 0; int als = -1; };   // als: the entry's offset in alsMem_
     Killed killed_[19];              // 0x465a40 .. 0x465ad8
     bool exiting_ = false;

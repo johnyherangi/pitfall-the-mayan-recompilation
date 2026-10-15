@@ -11,6 +11,7 @@ case 0x42756d: h42756d(); return;
 case 0x428505: h428505(); return;
 case 0x428588: h428588(); return;
 case 0x428625: h428625(); return;
+case 0x428780: h428780(); return;
 case 0x428aaa: h428aaa(); return;
 case 0x428cdb: h428cdb(); return;
 case 0x428dce: h428dce(); return;

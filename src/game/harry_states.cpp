@@ -3765,6 +3765,52 @@ void PlayLogic::h42bda7() {
     h42dcbc();
 }
 
+// ---------------------------------------------------------------- 0x428780: through a vortex
+
+void PlayLogic::h428780() {
+    // Harry spins away in a vortex (the script 0x428a43, 6 ticks a frame).  Then every object
+    // goes, and the trigger under the vortex says where to: 0x89 the 2600 level ("*50", with
+    // the level kept as it is), 0x8a / 0x8b / 0x8c a vault ("*53" / "*51" / "*52", with the
+    // level and the way back saved by FUN_004288ec; the vortex stays shut from then on).
+    // Anything else puts him back at the checkpoint (FUN_00432615).
+    h_.onGround() = 0;
+    if (!hAnim2(0x465b4b, 6)) return;
+    h4311bf();
+    Obj* a5 = objAt(h_.ul(0x465b43));                      // (the record is free by now; x / y stay)
+    const uint8_t id = a5 ? trg(a5->x - 0x18, a5->y + 0x18).id : 0;
+    Game::Warp& wp = game_->warp();
+    const char* cmd = nullptr;
+    switch (id) {
+    case 0x89:                                             // 0x4288a2
+        wp.als = alsMem_;
+        wp.cpX = h_.w(0x46679e); wp.cpY = h_.w(0x4667a0); wp.cpFacing = h_.w(0x4667a4);   // -> 0x46a860..
+        cmd = "*50";
+        break;
+    case 0x8a: h4288ec(); wp.used[0] = h_.x(); cmd = "*53"; break;
+    case 0x8b: h4288ec(); wp.used[1] = h_.x(); cmd = "*51"; break;
+    case 0x8c: h4288ec(); wp.used[2] = h_.x(); cmd = "*52"; break;
+    default: break;
+    }
+    if (cmd) {
+        if (!exiting_) { exiting_ = true; game_->command(cmd); }
+        return;
+    }
+    for (Obj* p : objects_.list()) { restoreEntry(*p); objects_.free(*p); }   // the stones in flight
+    restartAtCheckpoint();                                 // jmp FUN_00432615
+}
+
+void PlayLogic::h4288ec() {
+    // FUN_004288ec: the level as Harry leaves it for a vault, and where he comes back.
+    Game::Warp& wp = game_->warp();
+    wp.als = alsMem_;                                      // [DAT_004504e4] -> 0x4601dd (4 KB)
+    std::memcpy(wp.classes, h_.trgClass(), 0x100);        // 0x4658c0 -> 0x4611dd
+    wp.level = level_;                                     // DAT_00465af3
+    wp.x = int16_t(h_.x() + 4);                            // DAT_00465af7
+    wp.y = h_.y();                                         // DAT_00465af9
+    wp.facing = h_.facing();                               // DAT_00465afd
+    wp.cpX = h_.w(0x46679e); wp.cpY = h_.w(0x4667a0); wp.cpFacing = h_.w(0x4667a4);   // -> 0x46a860..
+}
+
 // ---------------------------------------------------------------- FUN_004311bf: the objects start again
 
 void PlayLogic::h4311bf() {

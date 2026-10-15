@@ -249,8 +249,6 @@ void PlayLogic::padOverrides() {
                 a5->x = 0; a5->behind = 0xff; a5->type = 0x9b;
                 a5->setSprite(game_->findSprite("mi_go")); a5->frame = 0; a5->flags = 0xe000;
                 h_.w(0x46679e) = 0xf96; h_.w(0x4667a0) = 0x4a; h_.w(0x4667a2) = 0xf92; h_.b(0x4667a4) = 0xff;
-                Game::Checkpoint& cp = game_->checkpoint();        // (the port keeps the restart point here)
-                cp.valid = true; cp.x = 0xf96; cp.y = 0x4a; cp.markerX = 0xf92; cp.facingLeft = true;
                 h_.b(0x465d49) = 0x76;
             }
             return;

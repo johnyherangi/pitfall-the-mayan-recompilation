@@ -95,10 +95,7 @@ void Game::startLevel(int level) {
     level_ = std::make_unique<ph::LevelData>(ph::loadLevel(level, dataDir_, palette_));
     fs_ = FrameState{};
     deferred_.clear();
-    if (goneLevel_ != level) {
-        gone_.clear(); checkpoint_ = Checkpoint{}; goneLevel_ = level; std::memset(levelFlags_, 0, sizeof levelFlags_);
-        stats_.secret1up = false;               // 0x43091e: cleared when the exit trigger is taken
-    }
+    pendingRestart_ = false;
     if (level_->hasBg) {
         // DAT_00450fb8 = (w/2 - 20) * 16, DAT_00450fbc = (h/2 - 14) * 16
         fs_.maxScrollX = std::max(0, (level_->bg.wTiles / 2 - 0x14) * 16);
@@ -164,6 +161,49 @@ void Game::tick(const engine::HostInput& host) {
     tickAttract();
 
     if (pendingLevel_ >= 0) { const int l = pendingLevel_; pendingLevel_ = -1; startLevel(l); }
+    else if (pendingRestart_) {
+        // "*3": FUN_0043e470 stops the sounds, then FUN_004360e9 starts the level logic again.
+        pendingRestart_ = false;
+        mixer_.stopAll();
+        if (logic_) logic_->restart(*this);
+    }
+}
+
+void Game::command(const char* cmd) {
+    // The WinMain switch on DAT_0046b1a8[1], the cases of the vortex warps.
+    switch (cmd[1]) {
+    case '5':                                            // 0x4445ef: into a vault, or the 2600 level
+        if (cmd[2] == '0') {
+            warp_.returnLevel = kLoltunVault2;           // (0xb marks "back from the 2600 level" for "*6")
+            requestLevel(warp_.cheat ? kEnding : kAtari2600Level);
+        } else {
+            warp_.returnLevel = levelNo_;
+            requestLevel(cmd[2] - 0x26);                 // "*51" .. "*53": levels 11 .. 13
+        }
+        break;
+    case '6':                                            // 0x444661: out of the 2600 level
+        if (warp_.returnLevel == kLoltunVault2) { warp_.fromAtari = true; requestLevel(kLostCityOfCopan); }
+        else requestLevel(warp_.cheat ? kEnding : kAtari2600Level);
+        break;
+    case '7':                                            // 0x4446bd: out of a vault
+        if (warp_.returnLevel != 1) { warp_.fromVault = true; requestLevel(warp_.returnLevel); }
+        else requestLevel(levelNo_);
+        break;
+    default:
+        std::fprintf(stderr, "game: unhandled command %s\n", cmd);
+        break;
+    }
+}
+
+void Game::newGame() {
+    // FUN_004324c6 with the title's set-up: lives, ammo, score and the cross-level state.
+    stats_ = PlayerStats{};
+    stats_.difficulty = options_.difficulty;
+    std::memset(levelFlags_, 0, sizeof levelFlags_);
+    const bool cheat = warp_.cheat;
+    warp_ = Warp{};                                      // DAT_0046a884 / 86 / 88 = 0, DAT_00450fc8 = 1
+    warp_.cheat = cheat;
+    seedRandom();                                        // FUN_00434815
 }
 
 void Game::tickAttract() {
@@ -172,9 +212,7 @@ void Game::tickAttract() {
         const bool start = fs_.frame >= kTitleAcceptInputAfter && (fs_.joypad & ~fs_.joypadPrev) != 0;
         if (start) {
             mode_ = Mode::Playing;
-            stats_ = PlayerStats{};
-            stats_.difficulty = options_.difficulty;
-            seedRandom();                                    // FUN_00434815
+            newGame();
             playSound(0x25);
             requestLevel(kCeibaJungle);                      // FUN_004324c6 + FUN_004460e0(0)
             return;
@@ -270,21 +308,22 @@ void Game::setRandomSeed(uint32_t s0, uint32_t s1) {
 }
 
 void Game::loseLife() {
-    // FUN_00430a69 death branch: lives-- ; at 0 a continue (if any) refills the
-    // lives and clears the score and treasures, otherwise game over ("*1" -> title).
-    if (--stats_.lives <= 0) {
-        if (stats_.continues <= 0) {
-            stats_ = PlayerStats{};
-            mode_ = Mode::Title;
-            requestLevel(kTitleScreen);
-            return;
-        }
-        --stats_.continues;
-        stats_.lives = stats_.difficulty ? 3 : 4;
-        stats_.score = 0;
-        stats_.treasures = 0;
+    // FUN_00430eb6's tail: a life gone, "*3" starts the level again at the checkpoint.  With
+    // none left, "*0" goes to the continue screen (level 14, not ported: the continue is taken
+    // at once, as its 0x430d09 does, and "*1" loads the level again from its start), or with
+    // no continues either "*2" ends the game.
+    if (--stats_.lives > 0) { restartLevel(); return; }
+    if (stats_.continues <= 0) {
+        stats_ = PlayerStats{};
+        mode_ = Mode::Title;
+        requestLevel(kTitleScreen);
+        return;
     }
-    requestLevel(levelNo_);                     // "*3": restart the level
+    --stats_.continues;
+    stats_.lives = stats_.difficulty ? 3 : 4;
+    stats_.score = 0;
+    stats_.treasures = 0;
+    requestLevel(levelNo_);
 }
 
 void Game::drawTextWorld(int x, int y, const char* text) {

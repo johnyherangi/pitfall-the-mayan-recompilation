@@ -77,10 +77,14 @@ function boundaries are unreliable there; the full decompilation is kept in
 
 ## Level transition commands (`FUN_00443c90` switch on `DAT_0046b1a8[1]`)
 
-The game logic requests a transition by setting a string `"*<digit>..."`:
-`*1` game over → title, `*3` restart current level, `*4` level 10 → room 22
-else map 19, `*5` next level (`*50` → 2600 level 20 / ending 24),
-`*6` bonus vault return, `*7` continue, `*8` title, `*9` credits.
+The game logic requests a transition by setting a string `"*<digit>..."` and jumping to the engine exit:
+`*0` continue screen (level 14, the level kept in `DAT_0045050c`), `*1` back to that level, `*2` game over,
+`*3` the level logic starts again at the checkpoint without the level being loaded (`FUN_004360e9`), `*4` level 10 →
+room 22 else map 19, `*50` the 2600 level 20 (level 24 with the `DAT_0046d05c` cheat) with `DAT_00450fc8` = 0xb,
+`*51`..`*53` the vaults 11..13 with `DAT_00450fc8` = the level left, `*6` out of the 2600 level (back to level 3 with
+`DAT_004601c4` when `DAT_00450fc8` is 0xb), `*7` out of a vault (back to `DAT_00450fc8` with `DAT_004504cc`), `*8`
+title, `*9` credits.  A level load runs one logic tick in `FUN_00435fc0` and one engine tick (thirteen more on levels
+0, 2, 5, 8 and 16, the table `0x46ffa0`) before its first frame; `*3` runs the one logic tick and the thirteen.
 Title → attract: after 0x5a0 ticks play demo 0 (level 0), demo 1 (level 1),
 demo 2 (level 20 — the Atari 2600 easter-egg level), then the intro (21).
 
@@ -152,7 +156,9 @@ demo 2 (level 20 — the Atari 2600 easter-egg level), then the intro (21).
 | `0x415028` | pouch respawner (type 74): template 7 (`mi_pouc2`) spawned off-screen while `DAT_00466528` (sling stones) < 10 | `h_pouchRespawner` |
 | `FUN_0042e25e` / `FUN_0042ea52` (`0x42e49b..`, `0x42ec8f..`) | invisible walls: `.trg` cells whose class byte has bit 0, probed 8 / 24 px ahead of Harry at y - 4 and 24 px ahead at y - 0x1c; he snaps to `(x & ~15) + 7` (left) / `+ 9` (right) | `PlayLogic::stepHorizontal` |
 | `FUN_00430229` + `FUN_004251f9` | Harry's trigger cell is `((x + 0x10) >> 4, max(4, y - 0x10) >> 4)`; `.trg` range entries `{0xfe, from, to, id}` cover `from <= row < to` | `PlayLogic::checkTriggers`, `ph::ColumnTable` |
-| `0x46679e..a4` | checkpoint (fx_mls marker) restored by `FUN_00430a69` | `Game::checkpoint` |
+| `0x46679e..a4` | checkpoint: x, y, the lit marker's x, facing; set to the `^` start by `FUN_004331d8` at each level start (unless Harry comes out of a vortex), moved by the fx_mls markers, where `FUN_00432615` puts Harry back | Harry memory (`h_.w(0x46679e)` ..) |
+| `FUN_004288ec` / `0x4288a2`, `0x4601dd` / `0x4611dd`, `0x465af3..afd`, `0x46a860..66`, `0x46a884..88` | a vortex warp's save: the 4 KB `.als` buffer, the 256 runtime trigger classes, the level, Harry's x + 4 / y / facing, the checkpoint, and the x of each vault vortex taken (it stays shut; cleared by a new game) | `Game::Warp` (`warp()`) |
+| `DAT_00450fc8` / `DAT_004504cc` / `DAT_004601c4` / `DAT_0046d05c` | the level `*7` returns to (1: none, 0xb: back from the 2600 level), "coming out of a vault", "coming out of the 2600 level" (Harry at 0x6e5, 0x587 on level 3), the cheat that sends `*50` to level 24 | `Game::Warp::returnLevel / fromVault / fromAtari / cheat` |
 | `0x466507` / `trg+0x1f4` | boss fight on / the boss record (heart beat script, exit trigger ignored, meter source) | `PlayLogic::setBoss / bossObject / bossActive` |
 | `0x465b09` | camera left lock (the jaguar arena: `0x9fa`) read by `0x404e17` | `PlayLogic::lockCameraLeft` |
 | `0x465d49` + `FUN_0043426d` | boss outro: controls dropped for 0x50 ticks, then `DAT_00466767` (left) held until the exit | `PlayLogic::startBossOutro`, `outroTicks_` |
@@ -166,7 +172,7 @@ demo 2 (level 20 — the Atari 2600 easter-egg level), then the intro (21).
 | `DAT_00466504` | the level's hidden 1-up has been revealed (types 113 / 174); cleared at the exit trigger and on a new game | `PlayerStats::secret1up` |
 | `FUN_004261e2` / `FUN_004262d9` / `FUN_0042633d` | the two sound channels: 1 (priority `0x4627c0`, skipped while Harry dies or the stop-watch runs) and 0 (priority `0x4627be`, an 8-tick hold `0x4627c2`); a lower-priority sound is dropped while the channel plays; `FUN_004262c8` / `FUN_004261d1` test whether a channel is playing | `PlayLogic::sound0 / sound1 / sound1Now / channel0Busy / channel1Busy` |
 | `0x45b1fc` | level script table, 12-byte entries `{leverTrgId, doorTrgId, flagAddr, w6, w8, param}`; the lever handler (`FUN_0041804b`) finds the entry by the trigger under the lever and sets its flag, the door / chute handlers look their own trigger up to see whether the flag is set | `kLevelScript[16]`, `scriptByLever / scriptByDoor`, `levelScriptPull` |
-| `DAT_00466510..` | 32 level-script flags (lever pulled, one-way door shut); kept across deaths, cleared with the level (`FUN_00430eb6`) | `Game::levelFlags_[32]` (index = address - 0x466510) |
+| `DAT_00466510..25` | level-script flags (lever pulled, one-way door shut, crate blown): a level start clears 0x00..0x13 (`FUN_0043256f`), a lost life 0x00..0x11 (`FUN_00430eb6`), a new game all (`FUN_004324c6`: 0x14 / 0x15, the crates of level 2, last the game) | `Game::levelFlags_` (index = address - 0x466510) |
 | `DAT_004658c0` | runtime copy of the trigger class table, rebuilt from `0x461f8e` at level start and restart (`FUN_00432713`): doors of pulled levers cleared, flag 0x15 clears id 0x5d, one-way doors 0x90..0xaf with flag 3 become class 3 | `PlayLogic::trgClass_`, `triggerClassOf / clearTriggerClass / setTriggerClass` |
 | `DAT_0046650d` + `0x45b9c0 / 0x45b9d0` | temple piston cycle (0x50 steps, one every 5 ticks), phase offsets by trigger id 0xa0..0xa7 and the frame table | `PlayLogic::pistonPhase_ / pistonTick_`, `kPistonPhase / kPistonFrames` |
 | `FUN_00447190` | binds the Genesis sprite slots to the level's sprites by name (slot `obzpit2a` -> `obrpit2a` in level 3, `obtpit2a` in level 4, `obfpit2a` in levels 5 / 8, `fxleaf*2` leaves, the level-8 `obftung2 / fxpltof2 / ob_door2`, ...) | `ph::kSlotBindings` (generated `slot_bindings_data.cpp`), aliased in `ph::loadLevel` |
@@ -185,8 +191,8 @@ lever `0x40b9e0`, 27 bungee `0x40c5fe`, 28 spear `0x40d322`, 29 projectile `0x40
 `0x4100ca`, 48 bossMeter `0x41018c`, 50 explosion `0x41052a`, 51 floorSpikes `0x41061a`, 52 stoneBlock `0x410946`, 55
 jaguar `0x410ce6`, 56 templeArcher `0x411aae`, 57 arrow `0x412124`, 59 pitCreature `0x412444`, 60 treeSnakeBody
 `0x412710`, 61 gargoyle `0x41271a`, 62 axe `0x412b2c`, 63 leafSpawner `0x412c52`, 64 feather `0x412d6a`, 65 dust
-`0x412f14`, 66 skullWarrior `0x412fc2`, 67 wheel `0x414100`, 68 swingBall `0x41479e`, 70 climbingRat `0x414ab1`, 72
-vineMonkey `0x414dac`, 74 pouchRespawner `0x415028`, 76 fallingRock `0x41514e`, 78 batRoost `0x4153e0`, 79 rippleTwin
+`0x412f14`, 66 skullWarrior `0x412fc2`, 67 wheel `0x414100`, 68 swingBall `0x41479e`, 70 climbingRat `0x414ab1`, 71
+vortex `0x414c58`, 72 vineMonkey `0x414dac`, 74 pouchRespawner `0x415028`, 76 fallingRock `0x41514e`, 78 batRoost `0x4153e0`, 79 rippleTwin
 `0x41562c`, 80 boar `0x415640`, 81 bossDeathBurst `0x415d15`, 82 dripper `0x415e92`, 83 drip `0x415f4a`, 84
 leapingCroc `0x4160b2`, 85 hawk `0x4165f2`, 87 explodingPlant `0x416be0`, 88 limpSnake `0x416f48`, 91 tonguePlant
 `0x417a54`, 92 pushLever `0x417d0e`, 96 ceilingDripper `0x41836e`, 97 ceilingSpikes `0x418474`, 98 cartSpawner
@@ -208,9 +214,14 @@ Notes on some of them: the jaguar boss's states are INTRO `0x411391`, GO `0x4112
 hawk share the stun tumble `0x4073d3` / `0x407555`, the wall turn `0x40769b` and the climb `0x40775b`; the vault levers
 of levels 11..13 (the Simon game at `0x40b9e0`'s vault branch) are not ported.
 
-Still `h_default` (drawn in the template frame, never act): 71 vortex `0x414c58` (Harry's warp `0x428780` and the
-vault / ending transitions), 103 vault letters `0x418e24` (with the Simon game of the vault levers), 105 the Warrior
-Spirit `0x420bd0`, and the later jaguars 140 `0x41c4c2` / 158 `0x41e462`, with the objects only they spawn.  The
+The vortex (71) catches Harry standing in its box `0x45bbce` and hands him to his state `0x428780` (spins away in the
+script `0x428a43`, 6 ticks a frame); the trigger under it then picks the exit: 0x89 the 2600 level (`*50`, level 3),
+0x8a / 0x8b / 0x8c the vaults (`*53` from level 2, `*51` from level 4, `*52` from level 8), anything else the
+checkpoint (`FUN_00432615`).
+
+Still `h_default` (drawn in the template frame, never act): 103 vault letters `0x418e24` (with the Simon game of the
+vault levers), 105 the Warrior Spirit `0x420bd0`, and the later jaguars 140 `0x41c4c2` / 158 `0x41e462`, with the
+objects only they spawn.  The
 boss meter's branches for types 0x69 / 0x8c and the level-8 boss are not ported.
 
 Every ported handler has been checked against its disassembly, in address order.  Quirks of the original that

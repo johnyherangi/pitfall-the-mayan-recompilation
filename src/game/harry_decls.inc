@@ -19,6 +19,8 @@ void h428588();
 void h4285c5();
 void h4285d7(Obj& bat);
 void h428625();
+void h428780();
+void h4288ec();
 void h428a56();
 void h428aaa();
 void h428cc5();

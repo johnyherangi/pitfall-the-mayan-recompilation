@@ -2886,7 +2886,7 @@ void h_checkpoint(ObjCtx& ctx, Obj& o) {
         o.frame = 0;
         { int y = o.y + 0x19; if (ctx.floorSnap(o.x, y)) o.y = int16_t(y - 0x19); }
         o.behind = 0xff;
-        if (ctx.g.checkpoint().valid && ctx.g.checkpoint().markerX == o.x) o.frame = 8;   // already lit
+        if (ctx.harry.w(0x4667a2) == o.x) o.frame = 8;      // already lit (DAT_004667a2: the lit marker's x)
     }
     if (o.frame == 8 || o.frame == 0xc) {
         // Lit: flickers 8 / 12 three times, then rests for 200 ticks.
@@ -2906,12 +2906,11 @@ void h_checkpoint(ObjCtx& ctx, Obj& o) {
     animStep(ctx, o, o.anim(0x40), kAnim_marker, 4);
     if (ctx.harry.onGround() && ctx.touchesHarry(o)) {
         ctx.sound0(0xeb, 0x12);                       // FUN_004262d9
-        Game::Checkpoint& cp = ctx.g.checkpoint();
-        cp.valid = true;
-        cp.x = o.x + 4 + 0x18 - (o.facing == 0 ? 0x30 : 0);
-        cp.y = ctx.harry.y();
-        cp.markerX = o.x;
-        cp.facingLeft = o.facing != 0;
+        // The checkpoint (DAT_0046679e / a0 / a4) a little in front of the marker, and its x.
+        ctx.harry.w(0x46679e) = int16_t(o.x + 4 + 0x18 - (o.facing == 0 ? 0x30 : 0));
+        ctx.harry.w(0x4667a0) = ctx.harry.y();
+        ctx.harry.w(0x4667a2) = o.x;
+        ctx.harry.b(0x4667a4) = o.facing;
         o.frame = 8;
         if (Obj* f = ctx.spawnFrom(o, true)) {    // the flame (type 0x76; FUN_0043546e(1): it runs this tick)
             f->w(0x26) = 0x6663;
@@ -6611,6 +6610,39 @@ void h_templeArcher(ObjCtx& ctx, Obj& o) {
     exitDespawnMid(ctx, o);
 }
 
+// ---------------------------------------------------------------- vortex (type 71, 0x414c58)
+
+// The swirl that takes Harry to a vault, or on level 3 to the 2600 level.  It stays shut once
+// its vault has been seen (DAT_0046a884 / 86 / 88 hold the x of the vortices taken) and, but on
+// level 3, from the moment Harry goes through it (DAT_00465afb); otherwise Harry standing in
+// its box (0x45bbce) is caught: he spins away in Harry's state 0x428780 (the script 0x428a43).
+void h_vortex(ObjCtx& ctx, Obj& o) {
+    animStep(ctx, o, o.anim(0x3c), kAnim_marker, 4);           // 0x4619cf
+    const Game::Warp& wp = ctx.g.warp();
+    Harry& h = ctx.harry;
+    if (o.x == wp.used[0] || o.x == wp.used[1] || o.x == wp.used[2] ||
+        (ctx.levelNo != 3 && h.w(0x465afb) == o.x)) {
+        o.frame = 0xff;
+        return;
+    }
+    const uint32_t cont = h.cont();
+    if (cont != 0x430e3a && cont != 0x428780 && h.onGround() && cont != 0x42fadf &&
+        harryOnBox(ctx, o, -20, 20, -80, 80)) {
+        o.b(0x32) = 0xff;
+        h.l(0x465b47) = 0x9000;
+        h.setUl(0x465b4b, 0x428a43);                            // Harry's script and its tick
+        h.w(0x465afb) = o.x;
+        h.w(0x465b4f) = 0;
+        h.x() = o.x;
+        h.y() = int16_t(o.y + 0x25);
+        h.onGround() = 0;
+        h.setCont(0x428780);
+        ctx.sound1(0xa2, 0x12);
+        h.setUl(0x465b43, ctx.pl.addrOf(&o));                   // the vortex: its trigger says where to
+    }
+    exitDespawnFar(ctx, o);
+}
+
 // ---------------------------------------------------------------- default
 
 // Types without a port yet: show the template frame and leave when far away.
@@ -6746,6 +6778,7 @@ Handler ObjectSystem::handler(uint8_t type) {
     case 113:  return h_hidden1up;
     case 174:  return h_leanLever;
     case 173:  return h_oneWayDoor;
+    case 71:   return h_vortex;
     case 0:    return nullptr;
     default:   return h_default;
     }
