@@ -137,6 +137,7 @@ void ObjectSystem::tick(ObjCtx& ctx) {
         Obj& o = *pool_[i];
         if (o.freed) continue;
         Handler h = handler(o.type);
+        ctx.pl.setTriggerClass(2, 3);     // 0x40528a: trigger id 2 is a wall for objects (a few handlers clear it again)
         if (h) h(ctx, o);
         o.fresh = false;
     }
@@ -392,6 +393,12 @@ void exitDespawnVertical(ObjCtx& ctx, Obj& o) {
     // 0x42501f / 0x424e73: only the vertical distance counts (0xa0 above .. 0x17c below the camera).
     const int dy = o.y - ctx.camY;
     if (dy < -0xa0 || dy >= 0x17c) { ctx.pl.restoreEntry(o); ctx.release(o); }
+}
+
+void exitDespawnMid(ObjCtx& ctx, Obj& o) {
+    // 0x424d9c
+    const int dx = o.x - ctx.camX, dy = o.y - ctx.camY;
+    if (dx < -0xc8 || dx >= 0x208 || dy < -0x82 || dy >= 0x15e) { ctx.pl.restoreEntry(o); ctx.release(o); }
 }
 
 bool beyondWide(const ObjCtx& ctx, const Obj& o) {

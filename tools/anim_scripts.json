@@ -71,7 +71,13 @@
   "crocBite": "0x45b910",
   "crocDive": "0x45b929",
   "priestTurn": "0x45a823",
-  "fireballDie": "0x45abd7"
+  "fireballDie": "0x45abd7",
+  "guardShotLow": "0x45bb42",
+  "guardShotHigh": "0x45bb52",
+  "guardTurn": "0x45bb61",
+  "guardPeel": "0x45bb68",
+  "guardWalk": "0x45bb78",
+  "hawkGlide": "0x45b179"
  },
  "anim2": {
   "monkeyToss": "0x45ab81",
@@ -92,7 +98,8 @@
   "crocSink": "0x45a9ef+7",
   "priestRise": "0x45a814",
   "priestMain": "0x45a82f",
-  "fireball": "0x45abdc"
+  "fireball": "0x45abdc",
+  "hawkDive": "0x45b147"
  },
  "raw": {
   "bungeeScripts": "0x45aaa4+0xc3",

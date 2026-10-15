@@ -96,6 +96,10 @@ void PlayLogic::tick(Game& g) {
         updateCamera(g); spawnObjects(g); runObjects(g); emitSprites(g);
         return;
     }
+    // FUN_00426810 (0x4268b6): trigger id 3 is a wall for Harry only while he is on the ground,
+    // id 2 never (the object pass sets it to 3 for each handler).
+    trgClass_[3] = h_.onGround ? 1 : 0;
+    trgClass_[2] = 0;
     if (h_.dead) {
         // Death animation plays out, then the level restarts (FUN_00430a69 "*3").
         if (std::strcmp(h_.anim, "hyisink") == 0) {
@@ -575,6 +579,7 @@ void PlayLogic::runObjects(Game& g) {
     // 0x40d9bd (called every tick from the main loop): the piston cycle steps every 5 ticks, 0x50 steps.
     if (--pistonTick_ < 0) { pistonTick_ = 4; if (++pistonPhase_ == 0x50) pistonPhase_ = 0; }
     h_.platformTicks = 0;      // 0x4051c4: DAT_00465b73 is cleared before every object pass; a platform re-sets it
+    trgClass_[3] = 0;          // 0x4051ab: trigger id 3 (a wall for Harry on the ground) never stops objects
     ObjCtx ctx{g, *this, g.level(), h_};
     ctx.levelNo = g.levelNumber();
     ctx.camX = fs.scrollX; ctx.camY = fs.scrollY;

@@ -620,11 +620,13 @@ void h_fly(ObjCtx& ctx, Obj& o) {
 }
 
 
-// ---------------------------------------------------------------- condor (type 10, 0x406f62)
+// ---------------------------------------------------------------- condor (type 10, 0x406f62), hawk (type 85, 0x4165f2)
 
-// The handler keeps its state as a code pointer at +0x38; these are the targets.
+// The handlers keep their state as a code pointer at +0x38; these are the targets.  The hawk
+// has its own glide and dive and shares the condor's stun tumble, wall turn and climb away.
 enum CondorState : int32_t { kCdFlyIn = 0x4070c7, kCdTurn = 0x4071c0, kCdDive = 0x407272, kCdStun = 0x407555,
-                             kCdTurnWall = 0x40769b, kCdFlyAway = 0x40775b };
+                             kCdTurnWall = 0x40769b, kCdFlyAway = 0x40775b,
+                             kHkGlide = 0x416709, kHkDive = 0x4167f8 };
 
 // 0x40762b: a wall marker 0x70 px ahead turns the bird round.
 void condorWallCheck(ObjCtx& ctx, Obj& o) {
@@ -643,7 +645,167 @@ void condorEaseX(Obj& o, bool towardsFacing, int32_t step) {
 
 void condorFlyAway(ObjCtx& ctx, Obj& o) {
     o.l(0x38) = kCdFlyAway; o.w(0x3c) = 0;
-    o.sprite = ctx.spr("hkifly"); o.frame = 0;
+    o.sprite = ctx.spr("hkifly"); o.frame = 0;   // (the hawk and the end of the stun keep the frame: the climb's first step sets it anyway)
+}
+
+// 0x4073d3: hit but not killed.  The state is saved at +0x64 (and the sprite at +0x68, never
+// read back), four feathers drift down and the tumble starts on this tick.
+void condorStun(ObjCtx& ctx, Obj& o) {
+    o.l(0x64) = o.l(0x38);
+    o.l(0x38) = kCdStun;
+    o.l(0x5e) = -0x20000;
+    o.l(0x34) = ctx.harry.facingLeft ? -0x30000 : 0x30000;
+    o.w(0x62) = 0;
+    for (int d7 = 3; d7 >= 0; --d7) {
+        Obj* f = ctx.spawn();                 // FUN_0043546e
+        if (!f) break;
+        f->w(0x4e) = 0x46;
+        f->x = o.x; f->y = o.y;
+        int dx = int(ctx.rnd() & 0x1f); if (d7 & 1) dx = -dx;
+        f->x += dx;
+        f->w(0x3a) = int16_t(ctx.rnd() & 7);
+        f->y += int(ctx.rnd() & 0x1f) - 0x10;
+        f->w(0x58) = 0x40;
+        o.w(0x58) += int16_t(ctx.rnd() & 0x1f);   // sic (ROM too): the random part of the lifetime goes to the bird
+        f->type = 0x40; f->flags = 0x6000;
+        f->l(0x36) = int32_t(ctx.rnd() & 0x7fff) + 0x6000;
+        f->sprite = ctx.spr("fxifeath");
+        f->script = kAnim_feather;
+    }
+}
+
+// The state code after the per-tick x move.  A transition the original makes with a jump
+// runs the new state on the same tick (continue).
+void condorStates(ObjCtx& ctx, Obj& o) {
+    for (int guard = 0; guard < 4; ++guard) {
+        switch (o.l(0x38)) {
+        case kCdFlyIn: {
+            animStep(ctx, o, o.anim(0x3c), kAnim_run10, 4);
+            condorWallCheck(ctx, o);
+            if (o.y - o.w(0x3e) < 0) o.l(0x40) += 0x2000; else o.l(0x40) -= 0x2000;
+            moveY(o, o.l(0x40));
+            const int d = ctx.harry.x + (o.facing ? 0x50 : -0x50) - o.x;
+            if (between(d, -0x20, 0x20)) {
+                o.sprite = ctx.spr("hkiturn"); o.frame = 0;
+                o.l(0x38) = kCdTurn; o.w(0x3c) = 0;
+                continue;
+            }
+            harryContact(ctx, o, 0xf);
+            exitDespawnWide(ctx, o);
+            return;
+        }
+        case kCdTurn:
+            if (animStep(ctx, o, o.anim(0x3c), kAnim_condorTurn, 5)) {
+                o.l(0x38) = kCdDive;
+                o.w(0x6a) = o.y;
+                o.script = kAnim2_condorDive; o.l(0x4c) = 0;
+                o.w(0x3c) = 0;
+                o.sprite = ctx.spr("hkidive"); o.frame = 0;
+                o.facing ^= 1;
+                continue;
+            }
+            condorEaseX(o, true, 0x2500);
+            harryContact(ctx, o, 0xf);
+            exitDespawnWide(ctx, o);
+            return;
+        case kCdDive:
+        case kHkDive: {
+            const bool hawk = o.l(0x38) == kHkDive;
+            moveY(o, o.l(0x46));
+            condorWallCheck(ctx, o);
+            if (o.b(0x52) == 0 && harryContact(ctx, o, 0xf)) {
+                o.b(0x52) = 0xff; o.b(0x4a) = 0xff;
+                condorFlyAway(ctx, o);
+                continue;
+            }
+            anim2Step(ctx, o, 0x4c, 4);
+            if (o.b(0x4a)) {
+                if (o.w(0x48) != -2) o.l(0x46) -= 0x4800;
+                exitDespawnFar(ctx, o);
+                return;
+            }
+            if (o.w(0x48) != 4) o.l(0x46) += 0x2200;
+            // Pulls out after 0x68 px, or once level with Harry (0x40 / 0x30 above his feet).
+            if (o.y - o.w(0x6a) >= 0x68 || ctx.harry.y - (hawk ? 0x30 : 0x40) - o.y < 0) {
+                o.b(0x4a) = 0xff;
+                condorFlyAway(ctx, o);
+                continue;
+            }
+            if (!hawk) condorEaseX(o, false, 0x2500);
+            exitDespawnWide(ctx, o);
+            return;
+        }
+        case kCdStun:
+            o.sprite = ctx.spr("hkistun");
+            moveY(o, o.l(0x5e));
+            if (o.w(0x60) < 1) o.l(0x5e) += 0x2000;
+            if (o.w(0x36) == 0) o.l(0x34) = 0;
+            else if (o.w(0x36) < 0) o.l(0x34) += 0x2000;
+            else o.l(0x34) -= 0x2000;
+            moveX(o, o.l(0x34));
+            if (animStep(ctx, o, o.anim(0x62), kAnim_condorStun, 2)) { condorFlyAway(ctx, o); continue; }
+            exitDespawnFar(ctx, o);
+            return;
+        case kCdTurnWall:
+            if (animStep(ctx, o, o.anim(0x3c), kAnim_condorTurn, 3)) {
+                condorFlyAway(ctx, o);
+                o.facing ^= 1;
+                continue;
+            }
+            if (o.w(0x42) >= -2) o.l(0x40) -= 0x5000;
+            moveY(o, o.l(0x40));
+            condorEaseX(o, true, 0x4000);
+            harryContact(ctx, o, 0xf);
+            exitDespawnWide(ctx, o);
+            return;
+        case kHkGlide: {
+            // 0x416709: glides level (bobbing about 0xc px below where it appeared) until it is
+            // 0x70 px short of Harry, then dives.  No contact damage while gliding.
+            animStep(ctx, o, o.anim(0x3c), kAnim_hawkGlide, 4);
+            condorWallCheck(ctx, o);
+            if (o.y - o.w(0x3e) < 0) o.l(0x40) += 0x1000; else o.l(0x40) -= 0x1000;
+            moveY(o, o.l(0x40));
+            const int d = ctx.harry.x + (o.facing ? -0x70 : 0x70) - o.x;
+            if (between(d, -0x10, 0x10)) {
+                o.w(0x6a) = o.y;
+                o.sprite = ctx.spr("hkidive");
+                o.script = kAnim2_hawkDive; o.l(0x4c) = 0;
+                o.l(0x38) = kHkDive;
+                continue;
+            }
+            exitDespawnFar(ctx, o);
+            return;
+        }
+        case kCdFlyAway:
+        default:
+            animStep(ctx, o, o.anim(0x3c), kAnim_run10, 4);
+            condorWallCheck(ctx, o);
+            if (o.w(0x42) >= -2) o.l(0x40) -= 0x5000;
+            moveY(o, o.l(0x40));
+            if (o.facing) { if (o.l(0x5a) < 0x30000) o.l(0x5a) += 0x8000; }
+            else          { if (o.l(0x5a) >= -0x30000) o.l(0x5a) -= 0x8000; }
+            moveX(o, o.l(0x5a));
+            harryContact(ctx, o, 0xf);
+            exitDespawnWide(ctx, o);
+            return;
+        }
+    }
+}
+
+// The common tick (0x40704b / 0x41668d): the whip kills or stuns, the stop-watch freezes,
+// else the bird moves on by +0x34 and runs its state.
+void condorTick(ObjCtx& ctx, Obj& o) {
+    bool killed = false;
+    if (weaponHits(ctx, o, 0x14, &killed)) {
+        if (ctx.freeze || killed) { killObject(ctx, o); return; }
+        condorStun(ctx, o);
+        condorStates(ctx, o);
+        return;
+    }
+    if (ctx.freeze) { freezeSparkle(ctx, o); return; }
+    moveX(o, o.l(0x34));
+    condorWallCheck(ctx, o);
+    condorStates(ctx, o);
 }
 
 void h_condor(ObjCtx& ctx, Obj& o) {
@@ -662,124 +824,22 @@ void h_condor(ObjCtx& ctx, Obj& o) {
         o.l(0x38) = kCdFlyIn;
         o.b(0x32) = 0xff;
     }
-    bool killed = false;
-    if (weaponHits(ctx, o, 0x14, &killed)) {
-        if (ctx.freeze || killed) { killObject(ctx, o); return; }
-        // Stunned: drops a few feathers and tumbles before flying off.
-        o.l(0x64) = o.l(0x38);
-        o.l(0x38) = kCdStun;
-        o.l(0x5e) = -0x20000;
-        o.l(0x34) = ctx.harry.facingLeft ? -0x30000 : 0x30000;
-        o.w(0x62) = 0;
-        for (int i = 0; i < 4; ++i) {
-            Obj* f = ctx.spawn();
-            if (!f) break;
-            f->w(0x4e) = 0x46;
-            f->x = o.x; f->y = o.y;
-            int dx = int(ctx.rnd() & 0x1f); if (i & 1) dx = -dx;
-            f->x += dx;
-            f->w(0x3a) = int16_t(ctx.rnd() & 7);
-            f->y += int(ctx.rnd() & 0x1f) - 0x10;
-            f->w(0x58) = int16_t(0x40 + (ctx.rnd() & 0x1f));
-            f->type = 0x40; f->flags = 0x6000;
-            f->l(0x36) = int32_t(ctx.rnd() & 0x7fff) + 0x6000;
-            f->sprite = ctx.spr("fxifeath");
-            f->script = kAnim_feather;
-        }
+    condorTick(ctx, o);
+}
+
+// 0x4165f2: type 85, the hawk.  Glides in towards Harry from where it was placed (only if
+// that is above him), dives at him from 0x70 px out and climbs away.
+void h_hawk(ObjCtx& ctx, Obj& o) {
+    if (o.b(0x32) == 0) {
+        if (o.y - ctx.harry.y >= 0) { ctx.pl.restoreEntry(o); ctx.release(o); return; }
+        o.b(0x32) = 0xff;
+        o.frame = 0;
+        o.w(0x3e) = int16_t(o.y + 0xc);
+        o.l(0x38) = kHkGlide;
+        if (ctx.harry.x - o.x < 0) o.l(0x34) = -0x30000;
+        else { o.l(0x34) = 0x30000; o.facing = 1; }
     }
-    if (ctx.freeze) { freezeSparkle(ctx, o); return; }
-    moveX(o, o.l(0x34));
-    condorWallCheck(ctx, o);
-    switch (o.l(0x38)) {
-    case kCdFlyIn:
-        animStep(ctx, o, o.anim(0x3c), kAnim_run10, 4);
-        condorWallCheck(ctx, o);
-        if (o.y - o.w(0x3e) < 0) o.l(0x40) += 0x2000; else o.l(0x40) -= 0x2000;
-        moveY(o, o.l(0x40));
-        {
-            const int d = ctx.harry.x + (o.facing ? 0x50 : -0x50) - o.x;
-            if (between(d, -0x20, 0x20)) {
-                o.sprite = ctx.spr("hkiturn"); o.frame = 0;
-                o.l(0x38) = kCdTurn; o.w(0x3c) = 0;
-                return;                       // falls through to the turn next tick
-            }
-        }
-        harryContact(ctx, o, 0xf);
-        exitDespawnWide(ctx, o);
-        return;
-    case kCdTurn:
-        if (animStep(ctx, o, o.anim(0x3c), kAnim_condorTurn, 5)) {
-            o.l(0x38) = kCdDive;
-            o.w(0x6a) = o.y;
-            o.script = kAnim2_condorDive; o.l(0x4c) = 0; o.b(0x50) = 0;
-            o.w(0x3c) = 0;
-            o.sprite = ctx.spr("hkidive"); o.frame = 0;
-            o.facing ^= 1;
-            return;
-        }
-        condorEaseX(o, true, 0x2500);
-        harryContact(ctx, o, 0xf);
-        exitDespawnWide(ctx, o);
-        return;
-    case kCdDive:
-        moveY(o, o.l(0x46));
-        condorWallCheck(ctx, o);
-        if (o.b(0x52) == 0 && harryContact(ctx, o, 0xf)) {
-            o.b(0x52) = 0xff; o.b(0x4a) = 0xff;
-            condorFlyAway(ctx, o);
-            return;
-        }
-        anim2Step(ctx, o, 0x4c, 4);
-        if (o.b(0x4a)) {
-            if (o.w(0x48) != -2) o.l(0x46) -= 0x4800;
-            exitDespawnFar(ctx, o);
-            return;
-        }
-        if (o.w(0x48) != 4) o.l(0x46) += 0x2200;
-        if (o.y - o.w(0x6a) < 0x68 && ctx.harry.y - 0x40 - o.y >= 0) {
-            condorEaseX(o, false, 0x2500);
-            exitDespawnWide(ctx, o);
-            return;
-        }
-        o.b(0x4a) = 0xff;
-        condorFlyAway(ctx, o);
-        return;
-    case kCdStun:
-        o.sprite = ctx.spr("hkistun");
-        moveY(o, o.l(0x5e));
-        if (o.w(0x60) < 1) o.l(0x5e) += 0x2000;
-        if (o.w(0x36) == 0) o.l(0x34) = 0;
-        else if (o.w(0x36) < 0) o.l(0x34) += 0x2000;
-        else o.l(0x34) -= 0x2000;
-        moveX(o, o.l(0x34));
-        if (animStep(ctx, o, o.anim(0x62), kAnim_condorStun, 2)) { condorFlyAway(ctx, o); return; }
-        exitDespawnFar(ctx, o);
-        return;
-    case kCdTurnWall:
-        if (animStep(ctx, o, o.anim(0x3c), kAnim_condorTurn, 3)) {
-            condorFlyAway(ctx, o);
-            o.facing ^= 1;
-            return;
-        }
-        if (o.w(0x42) >= -2) o.l(0x40) -= 0x5000;
-        moveY(o, o.l(0x40));
-        condorEaseX(o, true, 0x4000);
-        harryContact(ctx, o, 0xf);
-        exitDespawnWide(ctx, o);
-        return;
-    case kCdFlyAway:
-    default:
-        animStep(ctx, o, o.anim(0x3c), kAnim_run10, 4);
-        condorWallCheck(ctx, o);
-        if (o.w(0x42) >= -2) o.l(0x40) -= 0x5000;
-        moveY(o, o.l(0x40));
-        if (o.facing) { if (o.l(0x5a) < 0x30000) o.l(0x5a) += 0x8000; }
-        else          { if (o.l(0x5a) >= -0x30000) o.l(0x5a) -= 0x8000; }
-        moveX(o, o.l(0x5a));
-        harryContact(ctx, o, 0xf);
-        exitDespawnWide(ctx, o);
-        return;
-    }
+    condorTick(ctx, o);
 }
 
 // 0x412d6a: type 0x40, a drifting feather / leaf that Harry's run can push.
@@ -1867,6 +1927,7 @@ void projectileShatter(ObjCtx& ctx, Obj& o) {
 }
 
 void h_projectile(ObjCtx& ctx, Obj& o) {
+    ctx.pl.setTriggerClass(2, 0);            // 0x40d3b0: trigger id 2 does not stop thrown things
     if (o.script) {
         anim2Step(ctx, o, 0x50, 3);
         bool killed = false;
@@ -2138,6 +2199,7 @@ void h_oneWayDoor(ObjCtx& ctx, Obj& o) {
 // 0x412b2c: a thrown axe (type 0x3e): spins, falls with gravity 0x3500, shatters on the
 // floor, a wall, the whip or Harry (15 damage).
 void h_axe(ObjCtx& ctx, Obj& o) {
+    ctx.pl.setTriggerClass(2, 0);            // trigger id 2 does not stop thrown things
     moveX(o, o.l(0x32));
     moveY(o, o.l(0x46));
     o.l(0x46) += 0x3500;
@@ -4299,6 +4361,148 @@ void h_firePriest(ObjCtx& ctx, Obj& o) {
     exitDespawnFar(ctx, o);
 }
 
+// ---------------------------------------------------------------- temple archer and its arrow (types 56 / 57)
+
+// 0x412124: the archer's arrow (type 0x39, tgfarrow): flies at l32 (+-6.1 px/tick) until a
+// wall marker, where it sticks for 30 ticks (blinking on odd counts from 15 up - so while
+// it is fresh) and vanishes.  It hurts Harry for 15 and bounces off him (a quarter of its
+// speed back, falling under 0x5000 until it hits the floor).
+void h_arrow(ObjCtx& ctx, Obj& o) {
+    ctx.pl.setTriggerClass(2, 0);            // the arrow flies through id-2 markers
+    if (o.l(0x64)) {                                                     // bounced off Harry
+        o.l(0x64) += 0x5000;
+        moveY(o, o.l(0x64));
+        moveX(o, o.l(0x68));
+        int y = o.y;
+        if (ctx.floorSnap(o.x, y)) { ctx.release(o); return; }
+        exitDespawnFar(ctx, o);
+        return;
+    }
+    if (ctx.touchesHarry(o)) {                                           // 0x407b0f
+        ctx.hurtHarry(0xf);
+        o.l(0x64) = 0x200;
+        o.l(0x68) = -(o.l(0x32) >> 2);
+    }
+    if (o.w(0x5a)) {                                                     // stuck in the wall
+        if (o.w(0x5a) >= 0xf && (o.w(0x5a) & 1)) o.frame ^= 1;
+        o.w(0x5a) -= 1;
+        if (o.w(0x5a) == 0) { ctx.release(o); return; }
+        exitDespawnFar(ctx, o);
+        return;
+    }
+    if (ctx.triggerClass(o.x - (o.l(0x32) < 0 ? 0x10 : 0), o.y) & 1) o.w(0x5a) = 0x1e;
+    moveX(o, o.l(0x32));
+    exitDespawnFar(ctx, o);
+}
+
+// 0x411aae: a temple archer (type 56).  It waits inside the wall until Harry comes within
+// 0xd8 x 0x90 px, then peels out of it (tgrpeel; harmless until frame 7), drops to the
+// floor and walks its ledge (tgrwalk, 0.5 px/tick, turning at edges, wall markers and - at
+// random intervals - to face Harry).  Every 6..9 steps it stops and shoots an arrow (type
+// 0x39), high or low at random; every 3rd or 4th time it pauses longer.  30 hp, 13 contact
+// damage.  Faces left when b0b is set.
+void h_templeArcher(ObjCtx& ctx, Obj& o) {
+    auto spriteIs = [&](const char* n) { return o.sprite && o.sprite->name() == n; };
+    for (int pass = 0; pass < 2; ++pass) {                               // (a turn re-enters at the top)
+        if (o.b(0x32) == 0) {                                            // still in the wall
+            o.w(0x64) = 1; o.w(0x66) = 4;
+            o.facing = uint8_t((o.x >> 4) & 1);
+            if (!between(o.x - ctx.harry.x, -0xd8, 0xd8) || !between(o.y - ctx.harry.y, -0x90, 0x90)) {
+                exitDespawnMid(ctx, o);
+                return;
+            }
+            o.b(0x32) = 0xff;
+            o.w(0x34) = 1;                                               // (sic: the peel starts at its second frame)
+            o.l(0x3c) = 0x20000;
+            o.b(0x42) = 1;
+            if (o.facing) o.l(0x3c) = -o.l(0x3c);
+        }
+        if (!(spriteIs("tgrpeel") && o.frame < 7)) harryContact(ctx, o, 0xd);
+        bool killed = false;
+        if (weaponHits(ctx, o, 0x1e, &killed) && killed) { killObject(ctx, o); return; }
+        if (o.b(0x33)) { o.b(0x33) -= 1; return; }                       // pausing (no exit test)
+        if (o.w(0x46)) {                                                 // shooting
+            const bool low = o.l(0x48) == 1;
+            o.sprite = ctx.spr(low ? "tgrlarro" : "tgrharro");
+            const bool done = animStep(ctx, o, o.anim(0x46), low ? kAnim_guardShotLow : kAnim_guardShotHigh, 6);
+            if (o.w(0x46) == (low ? 0xc : 0xb)) {                        // the arrow leaves the bow
+                if (Obj* a = ctx.spawn()) {                              // FUN_0043546e(1)
+                    a->w(0x26) = 0x6663;
+                    a->type = 0x39; a->frame = 1;
+                    a->sprite = ctx.spr("tgfarrow");
+                    a->l(0x32) = 0x62000;
+                    a->x = o.x; a->xFrac = o.xFrac; a->y = o.y; a->yFrac = o.yFrac;
+                    a->x += 0x10; a->y -= 0x29;
+                    if (low) a->y += 0x14;
+                    if (o.facing) { a->facing ^= 1; a->l(0x32) = -a->l(0x32); a->x -= 0x20; }
+                }
+                exitDespawnMid(ctx, o);
+                return;
+            }
+            if (!done) { exitDespawnMid(ctx, o); return; }
+            o.w(0x3c) = 0;
+        }
+        if (o.w(0x3a)) {                                                 // turning (tgrturn)
+            o.sprite = ctx.spr("tgrturn");
+            const bool done = animStep(ctx, o, o.anim(0x3a), kAnim_guardTurn, 4);
+            if (o.w(0x3a) == 3) o.facing ^= 1;
+            if (!done) { exitDespawnMid(ctx, o); return; }
+        }
+        if (o.w(0x34)) {                                                 // peeling out of the wall
+            if (o.w(0x34) == 6) {                                        // ...and dropping to the floor
+                if (o.w(0x36) != -5) o.l(0x36) += 0x3000;                // (sic: the cap tests the fraction)
+                moveY(o, o.l(0x36));
+                if (o.w(0x3c)) { o.l(0x3c) -= 0x900; moveX(o, o.l(0x3c)); }   // (sic: so it never moves sideways)
+                int y = o.y + 0xe;
+                const bool landed = ctx.floorSnap(o.x, y);
+                o.y = int16_t(y - 0xe);
+                if (landed) { o.w(0x3a) = 0; o.w(0x34) = 0xa; }
+                exitDespawnMid(ctx, o);
+                return;
+            }
+            o.sprite = ctx.spr("tgrpeel");
+            if (!animStep(ctx, o, o.anim(0x34), kAnim_guardPeel, 5)) { exitDespawnMid(ctx, o); return; }
+            o.frame = 0; o.sprite = ctx.spr("tgrharro");
+            o.b(0x33) = 5;
+            o.w(0x34) = 0; o.w(0x38) = 0; o.w(0x3c) = 0;
+            o.l(0x3e) = o.facing ? -0x8000 : 0x8000;
+            exitDespawnMid(ctx, o);
+            return;
+        }
+        // walking (0x411e99)
+        bool turn = false;
+        o.w(0x38) -= 1;
+        if (o.w(0x38) < 0) {
+            o.w(0x38) = int16_t((ctx.rnd() & 0x1f) + 0x30);
+            turn = ctx.harry.x < o.x ? o.facing == 0 : o.facing != 0;
+        }
+        if (!turn) {
+            o.sprite = ctx.spr("tgrwalk"); o.frame = 0;
+            if (o.w(0x66)) { o.w(0x66) -= 1; o.w(0x38) = 0; }
+            else if (ctx.triggerClass(o.x + (o.l(0x3e) < 0 ? -0x28 : 0x28), o.y - 0x10) & 1) o.frame = 5;
+            else { animStep(ctx, o, o.anim(0x3c), kAnim_guardWalk, 4); moveX(o, o.l(0x3e)); }
+            o.b(0x42) -= 1;
+            if (o.b(0x42) == 0) {                                        // time to shoot
+                const uint32_t r = ctx.rnd() & 3;
+                o.b(0x42) = uint8_t(r + 6);
+                o.w(0x66) = int16_t(r + 6 + 2);
+                o.w(0x64) -= 1;
+                if (o.w(0x64) < 0) { o.w(0x64) = int16_t((ctx.rnd() & 1) + 3); o.b(0x42) += 0x50; }
+                o.w(0x46) = 1;                                           // (pos 1)
+                o.l(0x48) = (ctx.rnd() & 1) ? 1 : 2;                     // 0x45bb42 low / 0x45bb52 high
+            }
+            int y = o.y + 0xe; ctx.floorSnap(o.x, y); o.y = int16_t(y - 0xe);
+            int y2 = o.y + 0xe;
+            if (ctx.floorSnap(o.x - (o.facing ? 0x20 : 0), y2)) { exitDespawnMid(ctx, o); return; }
+            o.w(0x38) = int16_t((ctx.rnd() & 0x1f) + 0x30);             // the ledge ends: turn round
+        }
+        o.l(0x3e) = -o.l(0x3e);                                          // 0x411ef7
+        o.w(0x3a) = 1;
+        o.w(0x3c) = 0;
+    }
+    exitDespawnMid(ctx, o);
+}
+
 // ---------------------------------------------------------------- default
 
 // Types without a port yet: show the template frame and leave when far away.
@@ -4389,6 +4593,8 @@ Handler ObjectSystem::handler(uint8_t type) {
     case 164:  return h_snakeRespawner;
     case 47:   return h_fish;
     case 52:   return h_stoneBlock;
+    case 56:   return h_templeArcher;
+    case 57:   return h_arrow;
     case 67:   return h_wheel;
     case 148:  return h_pitWheel;
     case 149:  return h_wheelSpawner;
@@ -4396,6 +4602,7 @@ Handler ObjectSystem::handler(uint8_t type) {
     case 0x81: return h_ripple;
     case 66:   return h_skullWarrior;
     case 68:   return h_swingBall;
+    case 85:   return h_hawk;
     case 173:  return h_oneWayDoor;
     case 0:    return nullptr;
     default:   return h_default;
