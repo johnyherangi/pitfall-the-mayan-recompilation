@@ -310,35 +310,71 @@ def sym(addr):
                 return f'{REG[r]}+{addr - r}'
     return None
 
-def main():
-    start = int(sys.argv[1], 16)
-    e = sys.argv[2]
-    end = start + int(e[1:], 0) if e.startswith('+') else int(e, 16)
+def listing(start, end):
     out = subprocess.run(['objdump', '-D', '-b', 'binary', '-m', 'i386', '-M', 'intel',
                           f'--adjust-vma={TEXT_VA - TEXT_RAW:#x}', f'--start-address={start:#x}',
                           f'--stop-address={end:#x}', EXE], capture_output=True, text=True).stdout
+    rows = []
     for line in out.splitlines():
         m = re.match(r'\s*([0-9a-f]+):\t([0-9a-f ]+)\t(.*)', line)
-        if not m: continue
-        addr, _, ins = m.groups()
-        notes = []
-        for hx in re.findall(r'0x([0-9a-f]{6})', ins):
-            s = sym(int(hx, 16))
-            if s: notes.append(f'{hx}={s}')
-        ins = re.sub(r'\s+', ' ', ins)
-        def regsub(m):
-            size, hx = m.group(1), int(m.group(2), 16)
-            s2 = sym(hx)
-            if s2 and (hx in REG or hx in KNOWN or '+' in (s2 or '')):
-                suf = {'BYTE': '.b', 'WORD': '.w', 'DWORD': '.l'}[size]
-                return s2 + suf
-            return m.group(0)
-        ins = re.sub(r'(BYTE|WORD|DWORD) PTR ds:0x([0-9a-f]{6})', regsub, ins)
-        # moffs loads / stores: a named variable, or [0x...] so they cannot be mistaken for immediates
-        ins = re.sub(r'\b(ax|eax|al),ds:0x([0-9a-f]{6})', lambda m: f'{m.group(1)},{sym(int(m.group(2),16)) or "[0x"+m.group(2)+"]"}', ins)
-        ins = re.sub(r'ds:0x([0-9a-f]{6}),(ax|eax|al)', lambda m: f'{sym(int(m.group(1),16)) or "[0x"+m.group(1)+"]"},{m.group(2)}', ins)
-        notes = [n for n in notes if not n.split('=')[1].startswith(('d', 'a')) or n.split('=')[1] in names.values()]
-        if ins.startswith('mov edi,a6.l'): ins = 'edi = a6 (obj)'
-        print(f'{addr}: {ins:<44} {"; " + " ".join(notes) if notes else ""}')
+        if m: rows.append((int(m.group(1), 16), m.group(2).split(), m.group(3)))
+    return rows
+
+
+def fmt(addr, ins):
+    notes = []
+    for hx in re.findall(r'0x([0-9a-f]{6})', ins):
+        s = sym(int(hx, 16))
+        if s: notes.append(f'{hx}={s}')
+    ins = re.sub(r'\s+', ' ', ins)
+    def regsub(m):
+        size, hx = m.group(1), int(m.group(2), 16)
+        s2 = sym(hx)
+        if s2 and (hx in REG or hx in KNOWN or '+' in (s2 or '')):
+            suf = {'BYTE': '.b', 'WORD': '.w', 'DWORD': '.l'}[size]
+            return s2 + suf
+        return m.group(0)
+    ins = re.sub(r'(BYTE|WORD|DWORD) PTR ds:0x([0-9a-f]{6})', regsub, ins)
+    # moffs loads / stores: a named variable, or [0x...] so they cannot be mistaken for immediates
+    ins = re.sub(r'\b(ax|eax|al),ds:0x([0-9a-f]{6})', lambda m: f'{m.group(1)},{sym(int(m.group(2),16)) or "[0x"+m.group(2)+"]"}', ins)
+    ins = re.sub(r'ds:0x([0-9a-f]{6}),(ax|eax|al)', lambda m: f'{sym(int(m.group(1),16)) or "[0x"+m.group(1)+"]"},{m.group(2)}', ins)
+    notes = [n for n in notes if not n.split('=')[1].startswith(('d', 'a')) or n.split('=')[1] in names.values()]
+    if ins.startswith('mov edi,a6.l'): ins = 'edi = a6 (obj)'
+    return f'{addr:x}: {ins:<44} {"; " + " ".join(notes) if notes else ""}'
+
+
+def main():
+    # usage: pc_dis.py <start> <end|+len> [--sync] [--data a-b,a-b...]
+    #   --sync   restart the disassembly at every branch / call target and every
+    #            continuation address stored to DAT_00465b69, so inline data between
+    #            routines cannot misalign the code after it; --data marks byte ranges
+    #            (inline scripts and tables) to print as data.
+    start = int(sys.argv[1], 16)
+    e = sys.argv[2]
+    end = start + int(e[1:], 0) if e.startswith('+') else int(e, 16)
+    sync = '--sync' in sys.argv
+    data = []
+    if '--data' in sys.argv:
+        for part in sys.argv[sys.argv.index('--data') + 1].split(','):
+            a, b = part.split('-'); data.append((int(a, 16), int(b, 16)))
+    if not sync:
+        for addr, _, ins in listing(start, end): print(fmt(addr, ins))
+        return
+    anchors = {start}
+    for addr, _, ins in listing(start, end):
+        for m in re.finditer(r'\b(?:j[a-z]+|call) 0x([0-9a-f]+)', ins): anchors.add(int(m.group(1), 16))
+        for m in re.finditer(r'harryCont\.l,0x([0-9a-f]+)', fmt(addr, ins)): anchors.add(int(m.group(1), 16))
+    anchors |= {a for a in names if isinstance(a, int)}
+    for a, b in data: anchors.add(a); anchors.add(b)
+    anchors = sorted(a for a in anchors if start <= a < end) + [end]
+    for a, b in zip(anchors, anchors[1:]):
+        blob = next(((x, y) for x, y in data if x <= a < y), None)
+        if blob:
+            raw = open(EXE, 'rb').read()
+            o = a - TEXT_VA + TEXT_RAW
+            print(f'{a:x}: db ' + ' '.join(f'{v:02x}' for v in raw[o:o + (b - a)]))
+            continue
+        for addr, _, ins in listing(a, b): print(fmt(addr, ins))
+
 
 main()

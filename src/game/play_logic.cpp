@@ -1,520 +1,413 @@
 #include "game/play_logic.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 #include <string>
 
 namespace game {
 
-using namespace physics;
+PlayLogic* g_debugLogic = nullptr;   // the most recent PlayLogic, for the debugging tools
 
 namespace {
-// Animation scripts from the original data (FUN_004237a5 interpreter).
-// Positive = frame index; the original also embeds sound/effect opcodes.
-const int kRunScript[] = {8, 9, 0, 1, 2, 3, 4, 5, 6, 7};            // 0x46166b
-// hyivjump frame by integer vy, index = vy + 12 (table at 0x461480..0x4614a4).
-const uint8_t kJumpFrameByVy[] = {1, 1, 1, 1, 1, 1, 1, 1, 2, 3, 4, 5,   // vy -12..-1
-                                  6, 6, 7, 8, 9, 10, 10, 10, 10, 10, 10, 10, 10};   // vy 0..12
-constexpr int kRunFrameTicks = 3;
+inline bool neg(int v) { return int16_t(v) < 0; }     // the sign test of a 16-bit cmp (js)
 }
 
-ph::FloorHit PlayLogic::probeFeet(const ph::LevelData& lv, int x, int y) const {
-    const ph::ColumnTable& t = (h_.usePlane2 && !lv.collision2.empty()) ? lv.collision2 : lv.collision;
-    return ph::probeCell(t, x + kProbeDx, y + kProbeDy);
+// ---------------------------------------------------------------- object records by address
+
+Obj* PlayLogic::objAt(uint32_t addr) {
+    if (addr < kObjPoolAddr) return nullptr;
+    const uint32_t i = (addr - kObjPoolAddr) / kObjSize;
+    if ((addr - kObjPoolAddr) % kObjSize != 0 || i >= objects_.objects().size()) return nullptr;
+    Obj* o = objects_.objects()[i].get();
+    return o->freed ? nullptr : o;
 }
 
-PlayLogic* g_debugLogic = nullptr;   // the most recent PlayLogic, for the debugging tools
+uint32_t PlayLogic::addrOf(const Obj* o) const {
+    if (!o) return 0;
+    const auto& v = objects_.objects();
+    for (size_t i = 0; i < v.size(); ++i)
+        if (v[i].get() == o) return kObjPoolAddr + uint32_t(i) * kObjSize;
+    return 0;
+}
+
+// ---------------------------------------------------------------- level start
 
 void PlayLogic::enter(Game& g) {
     g_debugLogic = this;
+    game_ = &g;
+    level_ = g.levelNumber();
     const ph::LevelData& lv = g.level();
-    h_ = Harry{};                          // FUN_00430a69 resets the damage meter on restart
+    h_ = Harry{};
     collected_.clear();
     cleared_.clear();
     exiting_ = false;
     deathTimer_ = 0;
-    camMinX_ = 0; camMaxX_ = -1; boss_ = nullptr; outroTicks_ = 0; shake_ = 0;   // 0x432a09 / 0x42adad: cleared at level start and on a death
-    pistonPhase_ = 0; pistonTick_ = 0;                  // 0x4329a4
-    // FUN_00432713 (0x432896): the trigger classes, with the doors of pulled levers opened again.
-    std::memcpy(trgClass_, ph::kTriggerClass, sizeof ph::kTriggerClass);
-    trgClass_[255] = 0;
-    for (const LevelScriptEntry& e : kLevelScript)
-        if (g.levelFlags()[e.flag]) trgClass_[e.door] = 0;
-    if (g.levelFlags()[0x15]) trgClass_[0x5d] = 0;      // DAT_00466525 (a TNT crate)
-    for (int id = 0x90; id < 0xb0; ++id)                 // one-way doors shut earlier (0x420860)
-        if (g.levelFlags()[id - 0x90] == 3) trgClass_[id] = 3;
-    levelW_ = lv.hasBg ? lv.bg.wTiles * 8 : 320;
-    levelH_ = lv.hasBg ? lv.bg.hTiles * 8 : 224;
+    boss_ = nullptr;
+    ch0Pri_ = ch0Id_ = ch0Hold_ = ch1Pri_ = ch1Id_ = 0;
+    objects_.reset();
+    h_.w(0x4658ac) = int16_t(lv.columns);                                   // the level size in cells
+    h_.w(0x4658ae) = int16_t(lv.hasBg ? lv.bg.hTiles / 2 : 14);
+    h_.w(0x465bae) = int16_t(lv.hasBg ? lv.bg.wTiles * 8 : 320);           // and in pixels
+    h_.w(0x465bb0) = int16_t(lv.hasBg ? lv.bg.hTiles * 8 : 224);
+    h_.l(0x466535) = level_;
 
     // FUN_004331d8: the '^' trigger gives the start position.
     bool found = false;
-    for (int c = 0; c < lv.triggers.columns() && !found; ++c) {
-        for (const ph::ColumnEntry& e : lv.triggers.column(c)) {
-            if (e.id == ph::kTrgStart) {
-                h_.x = c * 16 - 8;
-                h_.y = (e.row + 2) * 16;
-                found = true;
-                break;
-            }
-        }
-    }
-    if (!found) { h_.x = 160; h_.y = 160; }
-    const int lvNo = g.levelNumber();
-    h_.facingLeft = (lvNo >= 0 && lvNo < 19) ? ph::kStartFacing[lvNo] != 0 : false;
+    for (int c = 0; c < lv.triggers.columns() && !found; ++c)
+        for (const ph::ColumnEntry& e : lv.triggers.column(c))
+            if (e.id == ph::kTrgStart) { h_.x() = int16_t(c * 16 - 8); h_.y() = int16_t((e.row + 2) * 16); found = true; break; }
+    if (!found) { h_.x() = 160; h_.y() = 160; }
     if (g.checkpoint().valid) {               // FUN_00430a69 restart: DAT_0046679e.. after a death
-        h_.x = g.checkpoint().x; h_.y = g.checkpoint().y; h_.facingLeft = g.checkpoint().facingLeft;
+        h_.x() = int16_t(g.checkpoint().x); h_.y() = int16_t(g.checkpoint().y);
     }
-    h_.onGround = true;
-    // Snap to the floor if the start is a few pixels above it.
-    ph::FloorHit f = ph::probeNear(lv.collision, h_.x + kProbeDx, h_.y + kProbeDy);
-    if (f.hit) h_.y = f.surfaceY - kProbeDy;
-    jumpWasDown_ = true;
-    objects_.reset();
-    rng_ = 0x2545f491u ^ uint32_t(lvNo * 0x9e3779b9u);
-    updateCamera(g);
-    g.state().scrollX = std::clamp(h_.x + kDisplayOffset - 160, 0, g.state().maxScrollX);
-    g.state().scrollY = std::clamp(h_.y + kDisplayOffset - 128, 0, g.state().maxScrollY);
-    emitSprites(g);
-}
-
-void PlayLogic::tick(Game& g) {
-    FrameState& fs = g.state();
-    uint32_t pad = fs.joypad;
-    if (outroTicks_ > 0 && !(pad & engine::kJoyDebug)) {
-        // FUN_0043426d: after a boss dies the controls are dropped for 0x50 ticks,
-        // then "left" is held (DAT_00466767) until the exit trigger ends the level.
-        if (outroTicks_ < 0x50) ++outroTicks_;
-        pad = outroTicks_ >= 0x50 ? uint32_t(engine::kJoyLeft) : 0u;
-    }
-    if (pad & engine::kJoyDebug) {
-        // Debug fly mode (FUN_00426810 head, Ctrl held with Debug_AllowCheat).
-        if ((pad & engine::kJoyLeft) && h_.x > 7) h_.x -= 7;
-        if ((pad & engine::kJoyUp) && h_.y > 7) h_.y -= 7;
-        if ((pad & engine::kJoyRight) && h_.x < levelW_ - 7) h_.x += 7;
-        if ((pad & engine::kJoyDown) && h_.y < levelH_ - 7) h_.y += 7;
-        h_.onGround = false; h_.vy = 0;
-        updateCamera(g); spawnObjects(g); runObjects(g); emitSprites(g);
-        return;
-    }
-    // FUN_00426810 (0x4268b6): trigger id 3 is a wall for Harry only while he is on the ground,
-    // id 2 never (the object pass sets it to 3 for each handler).
-    trgClass_[3] = h_.onGround ? 1 : 0;
-    trgClass_[2] = 0;
-    if (h_.dead) {
-        // Death animation plays out, then the level restarts (FUN_00430a69 "*3").
-        if (std::strcmp(h_.anim, "hyisink") == 0) {
-            if (const ph::Sprite* spr = g.findSprite(h_.anim))
-                if (++h_.animTick % 6 == 0 && h_.frame + 1 < spr->frameCount()) ++h_.frame;
-            h_.y += 1;
-        } else {
-            if ((h_.vy >> 16) < kTerminalVy) h_.vy += kGravity;
-            h_.y += h_.vy >> 16;
-        }
-        runObjects(g);
-        emitSprites(g);
-        if (--deathTimer_ <= 0) g.loseLife();
-        return;
-    }
-    if (h_.invulnerable > 0) --h_.invulnerable;
-    if (h_.hurtTimer > 0) --h_.hurtTimer;
-    if (h_.chiliTimer > 0) --h_.chiliTimer;
-    if (h_.grabbedBy) {
-        tickGrabbed(g, pad);
-        updateCamera(g);
-        spawnObjects(g);
-        runObjects(g);
-        g.stats().damage = h_.damage;
-        emitSprites(g);
-        jumpWasDown_ = (pad & engine::kJoyJump) != 0;
-        return;
-    }
-    if (h_.bungee) {
-        // State 0x429fe2: the vine handler moves and animates Harry and reads the jump button.
-        spawnObjects(g);
-        runObjects(g);
-        updateCamera(g);
-        g.stats().damage = h_.damage;
-        g.stats().harryDead = h_.dead;
-        emitSprites(g);
-        jumpWasDown_ = (pad & engine::kJoyJump) != 0;
-        return;
-    }
-    if (h_.whipTimer > 0) --h_.whipTimer;
-    else if ((pad & engine::kJoyWhip) && !(fs.joypadPrev & engine::kJoyWhip) && h_.onGround) whip(g);
-    stepHorizontal(g, pad);
-    stepVertical(g, pad);
-    animate(g);
+    levelRestart();
+    if (level_ >= 0 && level_ < 19 && !g.checkpoint().valid && ph::kStartFacing[level_]) h_.facing() = 0xff;
+    if (g.checkpoint().valid) h_.facing() = g.checkpoint().facingLeft ? 0xff : 0;
     updateCamera(g);
     spawnObjects(g);
-    runObjects(g);
-    g.stats().damage = h_.damage;
-    g.stats().harryDead = h_.dead;
-    checkTriggers(g);
     emitSprites(g);
-    jumpWasDown_ = (pad & engine::kJoyJump) != 0;
 }
 
-void PlayLogic::hurt(Game& g, int amount) {
-    // FUN_00428233: ignored while invulnerable; damage accumulates up to 0xa0,
-    // 0x96 (100 on hard) kills; 0x46 ticks of invulnerability follow.
-    if (h_.invulnerable > 0 || h_.dead) return;
-    h_.damage = std::min(h_.damage + amount, kDamageCap);
-    h_.invulnerable = amount >= kInvulnTicks ? amount + 0x28 : kInvulnTicks;
-    h_.hurtTimer = kHurtTicks;
-    static const int kHurtSounds[4] = {0x17, 0x2f, 0x30, 0x31};
-    g.playSound(kHurtSounds[g.state().globalFrame & 3]);
-    if (!h_.onGround) h_.vx = h_.facingLeft ? 0x10000 : -0x10000;    // knock-back
-    const int limit = g.stats().difficulty ? 100 : kDamageMax;
-    if (h_.damage >= limit) die(g);
-}
-
-void PlayLogic::whip(Game& g) {
-    // FUN_0042babc: the whip swing (hyiwhip, 9 frames); enemies in reach are hit.
-    h_.whipTimer = kWhipTicks;
-    h_.vx = 0;
-    h_.anim = "hyiwhip"; h_.frame = 0; h_.animTick = 0;
-    g.playSound(0x1c);
-}
-
-void PlayLogic::die(Game& g) {
-    if (h_.dead) return;
-    h_.dead = true;
-    h_.anim = "hyidie"; h_.frame = 0;
-    h_.vx = 0; h_.vy = -0x30000;
-    deathTimer_ = 90;
-    g.playSound(0x8c);
-}
-
-void PlayLogic::sink(int y) {
-    // FUN_0042a325: Harry sinks into a tar pit (hyisink, script 0x461875) and is lost.
-    if (h_.dead) return;
-    h_.dead = true;
-    h_.y = y; h_.x = h_.x;
-    h_.anim = "hyisink"; h_.frame = 0;
-    h_.vx = 0; h_.vy = 0x4000;              // slow sink instead of the death leap
-    deathTimer_ = 120;
-}
-
-void PlayLogic::checkTriggers(Game& g) {
-    // FUN_00430229 probes (x - 0x10, y - 0x10) through FUN_004251f9, which adds 0x20 to x and
-    // clamps y to 4: the cell is ((x + 0x10) >> 4, (y - 0x10) >> 4).
-    const ph::LevelData& lv = g.level();
-    const int tx = h_.x - 0x10 + kTriggerDx, ty = std::max(4, h_.y - 0x10);
-    if (tx < 0) return;
-    const ph::ColumnEntry* e = lv.triggers.find(tx >> 4, ty >> 4);
-    if (!e) return;
-    switch (e->id) {
-    case ph::kTrgExit:
-        if (!exiting_) { exiting_ = true; g.completeLevel(); }
-        break;
-    case ph::kTrgBossExit:
-        if (!exiting_) { exiting_ = true; g.requestLevel(kEnding); }
-        break;
-    case ph::kTrgVault1: case ph::kTrgVault2: case ph::kTrgVault3:
-        // Bonus vaults need the Loltun (Simon) mini-game logic: not ported, ignore.
-        break;
-    case ph::kTrgPlane1: h_.usePlane2 = false; break;
-    case ph::kTrgPlane2: h_.usePlane2 = true; break;
-    case ph::kTrgWater: die(g); h_.drowning = true; break;     // (state 0x427528)
-    default: break;
-    }
-}
-
-void PlayLogic::stepHorizontal(Game& g, uint32_t pad) {
-    const ph::LevelData& lv = g.level();
-    const bool left = (pad & engine::kJoyLeft) != 0, right = (pad & engine::kJoyRight) != 0;
-    const int32_t maxV = h_.powerJump() ? kRunMaxPower : kRunMax;
-    const int32_t accel = h_.onGround ? kRunAccel : kAirAccel;
-    if (h_.whipTimer > 0 && h_.onGround) { h_.vx = 0; return; }
-    if (h_.leverTicks > 0) { h_.vx = 0; return; }
-    if (h_.knockDecel) {
-        // 0x4272c1: a knock-back ignores the pad and slides to a stop (DAT_00465b59 per tick).
-        if (h_.vx < 0) { h_.vx += h_.knockDecel; if (h_.vx > 0) h_.vx = 0; }
-        else if (h_.vx > 0) { h_.vx -= h_.knockDecel; if (h_.vx < 0) h_.vx = 0; }
-        if (h_.vx == 0 || h_.hurtTimer == 0) h_.knockDecel = 0;
-    } else if (left && !right) {
-        h_.vx -= accel;
-        if (h_.vx < -maxV) h_.vx = -maxV;
-        h_.facingLeft = true;
-    } else if (right && !left) {
-        h_.vx += accel;
-        if (h_.vx > maxV) h_.vx = maxV;
-        h_.facingLeft = false;
-    } else if (h_.onGround) {
-        // FUN_004300e0(0x4000): decelerate towards zero without overshooting.
-        if (h_.vx < 0) { h_.vx += kRunDecel; if (h_.vx > 0) h_.vx = 0; }
-        else if (h_.vx > 0) { h_.vx -= kRunDecel; if (h_.vx < 0) h_.vx = 0; }
-    }
-    // 32-bit fixed-point position update (obj+2 is the fractional word).
-    const int32_t sum = int32_t(h_.xFrac) + (h_.vx & 0xffff);
-    h_.xFrac = uint16_t(sum & 0xffff);
-    int32_t nx = h_.x + (h_.vx >> 16) + (sum >> 16);
-    nx = std::clamp(nx, 8, levelW_ - 8);
-    if (nx != h_.x) {
-        // Wall test: a surface more than 10 px above the feet in the new column blocks.
-        if (h_.onGround) {
-            ph::FloorHit ahead = ph::probeNear(lv.collision, nx + kProbeDx, h_.y + kProbeDy);
-            if (ahead.hit && ahead.surfaceY < h_.y + kProbeDy - 10) { h_.vx = 0; nx = h_.x; }
-        } else {
-            ph::FloorHit ahead = ph::probeCell(lv.collision, nx + kProbeDx, h_.y + kProbeDy - 8);
-            if (ahead.hit && ahead.surfaceY < h_.y + kProbeDy - 8) { h_.vx = 0; nx = h_.x; }
-        }
-        // FUN_0042e25e / FUN_0042ea52: invisible walls are .trg cells whose class has bit 0,
-        // probed 8 and 24 px ahead at y - 4 and 24 px ahead at y - 0x1c (through FUN_004251f9,
-        // which adds 0x20 to x); Harry snaps to the cell edge (+7 going left, +9 going right).
-        auto wall = [&](int px, int py) {
-            const int tx = px + 0x20, ty = std::max(4, py);
-            if (tx < 0) return false;
-            const ph::ColumnEntry* e = lv.triggers.find(tx >> 4, ty >> 4);
-            if (!e) return false;
-            const uint8_t cls = trgClass_[e->id];
-            return cls < 0xf0 && (cls & 1) != 0;
-        };
-        if (nx > h_.x) {
-            if (wall(nx + 8, h_.y - 4) || wall(nx + 0x18, h_.y - 4) || wall(nx + 0x18, h_.y - 0x1c)) { nx = (nx & ~0xf) + 9; h_.vx = 0; }
-        } else {
-            if (wall(nx - 0x28, h_.y - 4) || wall(nx - 0x38, h_.y - 4) || wall(nx - 0x38, h_.y - 0x1c)) { nx = (nx & ~0xf) + 7; h_.vx = 0; }
-        }
-        h_.x = nx;
-    }
-}
-
-void PlayLogic::stepVertical(Game& g, uint32_t pad) {
-    const ph::LevelData& lv = g.level();
-    const bool jumpDown = (pad & engine::kJoyJump) != 0;
-    if (h_.onGround) {
-        if (jumpDown && !jumpWasDown_) {
-            h_.vy = h_.powerJump() ? kJumpVyPower : kJumpVy;
-            h_.jumpHold = kJumpHoldTicks;
-            h_.onGround = false;
-            h_.anim = "hyivjump"; h_.animTick = 0;
-            g.playSound(kSndJump);
-            return;
-        }
-        if (h_.platformTicks > 0) { --h_.platformTicks; return; }   // carried by an object
-        // Follow the floor (FUN_00425455 ground branch: same row, one below, two above).
-        ph::FloorHit f = probeFeet(lv, h_.x, h_.y);
-        if (!f.hit) f = probeFeet(lv, h_.x, h_.y + 16);
-        if (!f.hit) f = probeFeet(lv, h_.x, h_.y - 16);
-        if (f.hit && f.surfaceY - (h_.y + kProbeDy) <= 16 && (h_.y + kProbeDy) - f.surfaceY <= 16) {
-            h_.y = f.surfaceY - kProbeDy;
-        } else {
-            h_.onGround = false;            // walked off an edge
-            h_.vy = 0;
-        }
-        return;
-    }
-    // Airborne (FUN_00428dfa jump/fall loop).
-    if ((h_.vy >> 16) < 6) {
-        bool skipGravity = false;
-        if (h_.jumpHold > 0) {
-            --h_.jumpHold;
-            if (jumpDown) skipGravity = true; else h_.jumpHold = 0;
-        }
-        if (!skipGravity && (h_.vy >> 16) < kTerminalVy) h_.vy += kGravity;
-    } else if ((h_.vy >> 16) < kTerminalVy) {
-        h_.vy += kGravity;
-    }
-    const int oldFeet = h_.y + kProbeDy;
-    const int32_t sum = int32_t(h_.yFrac) + (h_.vy & 0xffff);
-    h_.yFrac = uint16_t(sum & 0xffff);
-    h_.y += (h_.vy >> 16) + (sum >> 16);
-    if (h_.vy > 0) {
-        // Landing: look for a surface between the old and the new feet position.
-        const int newFeet = h_.y + kProbeDy;
-        for (int y = oldFeet & ~15; y <= newFeet; y += 16) {
-            ph::FloorHit f = ph::probeCell(h_.usePlane2 && !lv.collision2.empty() ? lv.collision2 : lv.collision,
-                                           h_.x + kProbeDx, y);
-            if (f.hit && f.surfaceY >= oldFeet - 1 && f.surfaceY <= newFeet) {
-                h_.y = f.surfaceY - kProbeDy;
-                h_.vy = 0; h_.yFrac = 0;
-                h_.onGround = true;
-                h_.anim = (h_.vx != 0) ? "hyirun" : "hyiready";
-                h_.animTick = 0; h_.scriptPos = 0;
-                g.playSound(kSndLand);
-                break;
-            }
-        }
-    }
-    if (h_.y > levelH_ + 32) die(g);           // fell out of the level
-}
-
-void PlayLogic::animate(Game& g) {
-    (void)g;
-    h_.runTicks = (h_.onGround && h_.vx != 0) ? h_.runTicks + 1 : 0;    // DAT_00465b9a
-    if (h_.whipTimer > 0) {
-        h_.anim = "hyiwhip";
-        h_.frame = std::min(8, (kWhipTicks - h_.whipTimer) / 2);
-        return;
-    }
-    if (!h_.onGround) {
-        if (h_.somersault > 0) {                  // state 0x42cdb6: tumbling until he lands
-            h_.anim = "hyisomr2";
-            h_.frame = (h_.somersault++ / 3) % 8;
-            return;
-        }
-        const int vyInt = std::clamp(int(h_.vy >> 16), -12, 12);
-        h_.frame = kJumpFrameByVy[vyInt + 12];
-        h_.anim = (h_.vx != 0) ? "hyihjump" : "hyivjump";
-        return;
-    }
-    h_.somersault = 0;
-    if (h_.leverTicks > 0) {                // state 0x42a6e7: hyipull over script 0x427e1b, the lever follows 0x427e26
-        static const uint8_t kPullHarry[11] = {0, 1, 1, 2, 3, 4, 5, 5, 6, 7, 7};
-        static const uint8_t kPullLever[11] = {0, 0, 0, 1, 2, 3, 4, 4, 4, 4, 4};
-        const int step = std::min(10, (44 - h_.leverTicks) / 4);
-        h_.anim = "hyipull"; h_.frame = kPullHarry[step];
-        if (h_.lever && !h_.lever->freed) h_.lever->frame = kPullLever[step];
-        if (--h_.leverTicks == 0) { if (h_.lever && !h_.lever->freed) h_.lever->frame = 4; h_.lever = nullptr; }
-        return;
-    }
-    if (h_.tripTicks > 0) {                 // FUN_0042e9b2 with the 0x46168e script: 8 frames, 5 ticks each
-        --h_.tripTicks;
-        h_.anim = "hyitrip1";
-        h_.frame = std::min(7, (40 - h_.tripTicks) / 5);
-        return;
-    }
-    if (h_.vx != 0) {
-        if (std::strcmp(h_.anim, "hyirun") != 0) { h_.anim = "hyirun"; h_.scriptPos = 0; h_.animTick = 0; }
-        if (++h_.animTick >= kRunFrameTicks) {
-            h_.animTick = 0;
-            h_.scriptPos = (h_.scriptPos + 1) % int(sizeof(kRunScript) / sizeof(kRunScript[0]));
-        }
-        h_.frame = kRunScript[h_.scriptPos];
+void PlayLogic::levelRestart() {
+    // FUN_00432713 (the parts every level shares; the vaults' and the map screen's set-up
+    // that follows in the original is not ported yet).
+    h_.b(0x4667a8) = 0;
+    h_.facing() = 0;
+    h_.b(0x466555) = 0xff;
+    h_.b(0x465b38) = 0;
+    h_.b(0x465bb3) = 0;
+    h_.onGround() = 0xff;
+    // FUN_00435274: the object pool and Harry's state fields
+    h_.b(0x465ae4) = 0; h_.l(0x465ae7) = 0;
+    h_.frame() = 0xff;
+    h_.setUl(0x465898, 0);
+    h_.b(0x465d49) = 0;
+    h_.b(0x465b35) = 0;
+    h_.w(0x465b35) = 0x6663;                               // FUN_004263a6 on Harry
+    for (uint32_t a = 0x465b41; a < 0x465b69; a += 4) h_.l(a) = 0;
+    for (uint32_t a = 0x466808; a < 0x46681c; a += 4) h_.l(a) = 0;
+    h_.l(0x46681c) = 0;
+    h_.w(0x465b02) = 0;
+    h_.vx() = 0; h_.vy() = 0;
+    h_.setUl(0x465b7e, 0);
+    h_.l(0x466796) = 0;
+    h_.b(0x465c56) = 0;
+    h_.w(0x4658bc) = 0;
+    h_.l(0x466868) = 0;
+    harryLevelStart();                                     // FUN_00427e30
+    if (h_.cont() == 0x42a217) {
+        h42a1a1();
     } else {
-        h_.anim = "hyiready";
-        h_.frame = 0;
+        h_.l(0x465b45) &= 0xffff;
+        h_.setCont(0x428e50);
+        h429498();
+        if (level_ == 0xe) h42989c();
+    }
+    if (h_.b(0x465b39)) h42a064();
+    h_.b(0x465aff) = 0;
+    h_.b(0x465b72) = 0;
+    h_.uw(0x465e6c) = 0xffff;
+    h_.b(0x465b79) = 5;
+    h_.w(0x465b92) = 0;
+    h_.b(0x466547) = 0;
+    h_.l(0x465cf8) = 0;
+    h_.b(0x465b76) = 0;
+    h_.setUl(0x465892, 0xffffffff);
+    h_.b(0x465b71) = 0;
+    h_.b(0x4667ae) = 0;
+    h_.w(0x465cf2) = 0x200;
+    h_.l(0x46617c) = 0;
+    h_.l(0x466180) = 0;
+    // The trigger classes (0x461f8e), with the doors of pulled levers opened again.
+    std::memcpy(h_.trgClass(), ph::kTriggerClass, 0xff);
+    const uint8_t* f = game_->levelFlags();
+    static const struct { uint8_t flag, id; } kOpen[] = {
+        {0x12, 0x4d}, {0x13, 0x4e}, {0x14, 0x51}, {0x15, 0x5d}, {0x06, 0x45}, {0x07, 0x46}, {0x08, 0x47},
+        {0x09, 0x48}, {0x04, 0x53}, {0x05, 0x55}, {0x0a, 0x57}, {0x0b, 0x59}, {0x0c, 0x5b}};
+    for (const auto& e : kOpen) if (f[e.flag]) h_.trgClass()[e.id] = 0;
+    for (int i = 0; i < 4; ++i) h_.trgClass()[0x90 + i] = f[3 - i];   // the long at 0x466510, byte-swapped
+    h_.b(0x46650d) = 0; h_.b(0x46650e) = 0;
+    h_.w(0x465b9e) = 0;
+    h_.w(0x465b04) = 0x14;
+    h_.w(0x4658a6) = 0;
+    h_.onGround() = 0xff;
+    h_.l(0x46588c) = 0;
+    h_.b(0x465b97) = 0;
+    h_.w(0x465b9a) = 0;
+    h_.w(0x46652b) = 0; h_.w(0x46652d) = 0; h_.w(0x46652f) = 0;
+    h_.b(0x466507) = 0;
+    h_.b(0x46650a) = 0;
+    h_.b(0x46618a) = 0;
+    h_.w(0x465cf0) = 0x96;
+    h_.b(0x466795) = 6;
+    h_.b(0x465d49) = 0;
+    if (level_ == 7) h_.b(0x465d49) = 1;
+    if (level_ == 4 && !neg(h_.x() - 0xbe9) && neg(h_.x() - 0xc29)) {
+        for (const auto& p : objects_.objects()) if (!p->freed && p->type == 0x20) { objects_.free(*p); break; }
+    }
+    if (level_ == 0 || level_ == 5) {
+        if (level_ == 5) h_.b(0x466507) = 0xff;
+        h_.l(0x465c6e) = int32_t((random() & 0x3f) + 0x10);
+    }
+    if (level_ == 6 && neg(h_.x() - 0x5b)) { h_.y() = 0xb4; h42abee(); }   // the level starts on a zip line
+    if (level_ == 10) h_.b(0x465d49) = 1;
+    h_.b(0x466794) = 0x3c;
+    h_.b(0x465b39) = 0;
+    h_.b(0x46650c) = 0;
+    h_.l(0x466796) = 0;
+    h_.b(0x466552) = 0;
+    h_.b(0x466553) = 0;
+}
+
+// ---------------------------------------------------------------- the main loop (FUN_0043628c)
+
+void PlayLogic::tick(Game& g) {
+    game_ = &g;
+    level_ = g.levelNumber();
+    FrameState& fs = g.state();
+    const bool debug = (fs.joypad & 0x100) != 0;
+    readPad();                                             // FUN_004263f3
+    updateCamera(g);                                       // FUN_00404714
+    harryUpdate();                                         // FUN_00426810
+    if (!debug) spawnObjects(g);                           // FUN_0043348e
+    runObjects(g);                                         // FUN_00405170
+    if (ch0Hold_) --ch0Hold_;                              // FUN_00433a09
+    if (h_.w(0x46652d) > 0) h_.w(0x46652d) -= 1;
+    if (h_.w(0x46652b) > 0) h_.w(0x46652b) -= 1;
+    if (!debug) {
+        blinkTimer();                                      // FUN_0042306c
+        // FUN_004348f1: the controls are dead for the first ticks of a level
+        if (h_.b(0x466795) != 0) {
+            h_.b(0x466795) -= 1;
+            for (uint32_t a : {0x466768u, 0x466765u, 0x466766u, 0x466761u, 0x466762u, 0x466763u, 0x466764u}) h_.b(a) = 0;
+        }
+        selectWeapon();                                    // FUN_00434932
+        leanShadow();                                      // FUN_00426f67
+        h42d2ec();                                         // the rope sprites
+        harryDeath();                                      // FUN_00430a69
+    }
+    // FUN_00435c4e (the damage meter): a full meter kills
+    const int limit = g.stats().difficulty ? 100 : 0x96;
+    if (h_.damage() >= limit) {
+        if (h_.cont() != 0x428dce && h_.cont() != 0x428cdb && h_.b(0x465b72) == 0) h_.b(0x465b72) = 0xff;
+    }
+    g.stats().damage = h_.damage();
+    g.stats().harryDead = h_.b(0x465b72) != 0;
+    fs.bob = h_.w(0x465b02);
+    emitSprites(g);
+    ++tickCount_;
+}
+
+void PlayLogic::blinkTimer() {
+    // FUN_0042306c: DAT_00466799 toggles every 0x55 ticks
+    h_.b(0x466796) += 1;
+    if (h_.b(0x466796) != 0x55) return;
+    h_.b(0x466796) = 0;
+    const bool on = h_.b(0x466797) == 0;
+    h_.b(0x466799) = on ? 1 : 0;
+    h_.b(0x466797) = on ? 1 : 0;
+}
+
+void PlayLogic::selectWeapon() {
+    // FUN_00434932: the select key cycles the weapon (sling, boomerang, stone)
+    if (h_.b(0x466764) == 0) { h_.b(0x46650a) = 0; return; }
+    if (h_.b(0x46650a) == 1) return;
+    h_.b(0x46650a) = 1;
+    if (h_.b(0x465b72) || h_.b(0x466795) || level_ == 0xe || h_.w(0x4667a8)) { h_.b(0x46650a) = 0; return; }
+    if (level_ == 0xb || level_ == 0xc || level_ == 0xd) return;
+    weaponSel() += 1;
+    if (weaponSel() == 3) weaponSel() = 0;
+}
+
+void PlayLogic::harryDeath() {
+    // FUN_00430a69
+    const uint8_t b72 = h_.b(0x465b72);
+    if (b72 == 0) return;
+    if (h_.cont() == 0x4311a5) { h4311a5(); return; }     // (runs as Harry's state)
+    h_.uw(0x465b92) = 0x8000;
+    if (b72 == 0xfa || b72 == 0x80) { h430eb6(); return; }
+    if (h_.spriteIs("hyislice")) { h43118d(); return; }
+    if (level_ == 0xe || b72 == 0x7f || b72 == 0x7e || b72 == 0x7c) {
+        notPorted(0x430ca8);                                // the continue screen, the vaults' exits
+        h430eb6();
+        return;
+    }
+    if (h_.cont() == 0x430e3a) return;
+    if (h_.spriteIs("hyirn2cl")) { if (h_.frame() == 5) h43118d(); return; }
+    if (h_.spriteIs("hyidie")) return;
+    if (h_.spriteIs("hyifcrwl")) { h43118d(); return; }
+    if (h_.spriteIs("hyihwall") && h_.frame() == 7) { h43118d(); return; }
+    // 0x430e06: Harry dies (hyidie)
+    h_.setCont(0x430e3a);
+    h_.setSprite("hyidie");
+    h_.setUl(0x465b47, 0x4615ab);
+    h_.w(0x465b4b) = 0;
+    h4310d5();
+}
+
+void PlayLogic::h430e3a() {
+    h_.uw(0x465b92) = 0x8000;
+    h43112b();
+    h4310ca();
+    if (!h_.onGround() && h_.ul(0x465b47) >= 0x4615b7) fadeCmd_ -= 0x13;
+    if (hAnim2(0x465b47, 4)) { h430eb6(); return; }
+    // (0x430ea1 loads a sound id and pitch but plays nothing)
+}
+
+void PlayLogic::h4310ca() { h_.w(0x46652d) = 0x78; }
+
+void PlayLogic::h4310d5() {
+    // the palette fades to the death colours
+    h_.setUl(0x46655e, 0x462614);
+    h_.w(0x466566) = 0x3f;
+    h_.setUl(0x466562, 0x46212e);
+    if (h_.onGround()) {
+        if (level_ == 0) h_.setUl(0x466562, 0x46224e);
+        if (level_ == 5) h_.setUl(0x466562, 0x4622ce);
+    }
+    h_.w(0x466568) = 0xf;
+}
+
+void PlayLogic::h43112b() {
+    // nothing is drawn behind Harry any more
+    for (const auto& p : objects_.objects()) {
+        Obj& o = *p;
+        if (o.freed || o.type == 0x78 || o.type == 0x86 || o.type == 0x88) continue;
+        o.behind = 0;
+        if (o.flags == 0x6000) o.flags = 0x4000;
+        if (o.flags == 0xe000) o.flags = 0xc000;
     }
 }
 
-void PlayLogic::updateCamera(Game& g) {
-    FrameState& fs = g.state();
-    fs.bob = shake_;                        // DAT_004517ec = DAT_00465b02
-    // Keep Harry inside a window; the original camera (DAT_004658b4/b6) has
-    // per-level scripting that is not ported yet, so this is a plain follow.
-    const int targetX = h_.x + kDisplayOffset - 160;
-    int sx = fs.scrollX;
-    if (targetX > sx + 24) sx = targetX - 24;
-    if (targetX < sx - 24) sx = targetX + 24;
-    const int targetY = h_.y + kDisplayOffset - 128;
-    int sy = fs.scrollY;
-    if (targetY > sy + 32) sy = targetY - 32;
-    if (targetY < sy - 32) sy = targetY + 32;
-    const int maxX = camMaxX_ >= 0 ? std::min(camMaxX_, fs.maxScrollX) : fs.maxScrollX;   // DAT_00465b0b
-    fs.scrollX = std::clamp(sx, std::min(camMinX_, maxX), maxX);   // 0x404e17: DAT_00465b09 lock
-    fs.scrollY = std::clamp(sy, 0, fs.maxScrollY);
+void PlayLogic::h43118d() {
+    h4310d5();
+    h_.setCont(0x4311a5);
+    h_.w(0x465b47) = 0x40;
+    h4311a5();
 }
 
-
-void PlayLogic::grabHarry(Obj& bat) {
-    // FUN_004285d7: dazed in the bat's grip; 12 input changes break free.
-    h_.grabbedBy = &bat;
-    h_.anim = "hyidazed"; h_.frame = 0;
-    h_.struggleLeft = 0xc;
-    h_.lastDirs = 0; h_.lastButtons = 0;
-    h_.nipTimer = int(random() & 7);
-    h_.dazedAnim = AnimCursor{};
-    h_.vx = 0; h_.vy = 0;
-    h_.onGround = false;
+void PlayLogic::h4311a5() {
+    h43112b();
+    h4310ca();
+    h_.w(0x465b47) -= 1;
+    if (h_.w(0x465b47) < 0) h430eb6();
 }
+
+void PlayLogic::h430eb6() {
+    // FUN_00430eb6: a life is lost (the level data restored, "*3" restarts the level).
+    if (deathTimer_) return;
+    deathTimer_ = 1;
+    if (level_ == 7) game_->stats().treasures = 0;
+    h_.damage() = 0;
+    ammo(0) = 0x14;
+    if (ammo(1) < 2) ammo(1) = 2;
+    if (ammo(2) == 0) ammo(2) = 1;
+    game_->loseLife();
+}
+
+// ---------------------------------------------------------------- the entry points the objects call
+
+void PlayLogic::harryCall(uint32_t addr) {
+    switch (addr) {
+    case 0x427148: h427148(); return;
+    case 0x42715b: h42715b(); return;
+    case 0x427167: h427167(); return;
+    case 0x428dfa: h428dfa(); return;
+    case 0x428cc5: h428cc5(); return;
+    case 0x428d7b: h428d7b(); return;
+    case 0x42a325: h42a325(); return;
+    case 0x42afe9: h_.setCont(0x42b049); h_.l(0x465b43) = 0; h_.l(0x465b47) = 0; h42b049(); return;
+    case 0x42c1ea: h42c1ea(); return;
+    case 0x42c490: h42c490(); return;
+    case 0x42e9b2: h42e9b2(); return;
+    case 0x42f0c4: h42f0c4(); return;
+    case 0x42f123: h42f123(); return;
+    case 0x42f2d2: h42f2d2(); return;
+    case 0x430912: h430912(); return;
+    default: notPorted(addr); return;
+    }
+}
+
+void PlayLogic::notPorted(uint32_t addr) {
+    static uint32_t last = 0;
+    if (addr != last) { std::fprintf(stderr, "harry: %#x not ported\n", addr); last = addr; }
+    if (addr >= 0x426eaa && addr < 0x431c99 && h_.cont() == addr) h428dfa();
+}
+
+// ---------------------------------------------------------------- services for the object handlers
 
 void PlayLogic::standOn(int y) {
-    // 0x415230: the platform sets Harry's height and puts him on the ground.
-    h_.y = y; h_.yFrac = 0; h_.vy = 0;
-    h_.platformTicks = 2; h_.platformY = y;
-    if (!h_.onGround) {
-        h_.onGround = true;
-        h_.anim = (h_.vx != 0) ? "hyirun" : "hyiready";
-        h_.animTick = 0; h_.scriptPos = 0;
-    }
+    // 0x40d96a: the platform holds Harry up; landing on it is the standing state.
+    h_.y() = int16_t(y);
+    h_.vy() = 0;
+    h_.b(0x465b73) = 0xff;
+    if (!h_.onGround()) { h_.onGround() = 0xff; h428dfa(); }
 }
+
+void PlayLogic::carryHarry(int32_t vx16) { addX(vx16); }
 
 void PlayLogic::bounce(int y, int32_t vx, int32_t vy, bool faceRight) {
     // 0x406d17: a web throws Harry back up (states 0x42c518 / 0x42cdb6).
-    h_.y = y; h_.yFrac = 0;
-    h_.onGround = false; h_.platformTicks = 0;
-    h_.vx = vx; h_.vy = vy; h_.jumpHold = 0;
-    h_.anim = vx ? "hyihjump" : "hyivjump"; h_.frame = 0; h_.animTick = 0;
-    if (vx) h_.facingLeft = !faceRight;
+    h_.y() = int16_t(y); h_.yFrac() = 0;
+    h_.onGround() = 0;
+    h_.vx() = vx; h_.vy() = vy;
+    if (vx) h_.facing() = faceRight ? 0 : 0xff;
+    h_.w(0x465b47) = 0;
+    h_.setCont(vx ? 0x42cdb6 : 0x42c518);
 }
 
 void PlayLogic::launch(int32_t vx, int32_t vy) {
     // 0x415a41: state 0x42c518 with the given velocity.
-    h_.onGround = false; h_.platformTicks = 0;
-    h_.vx = vx; h_.vy = vy; h_.jumpHold = 0;
-    h_.anim = "hyihjump"; h_.frame = 0; h_.animTick = 0;
+    h_.onGround() = 0;
+    h_.vx() = vx; h_.vy() = vy;
+    h_.w(0x465b47) = 0;
+    h_.setCont(0x42c518);
 }
 
 void PlayLogic::knockBack(bool toLeft, bool strong) {
-    // 0x427148 / 0x427207: pushed away at 7 (2) px/tick, falling with gravity.
-    h_.vx = strong ? 0x70000 : 0x20000;
-    if (toLeft) h_.vx = -h_.vx;
-    h_.knockDecel = strong ? 0x3e00 : 0xc00;
-    h_.onGround = false; h_.platformTicks = 0;
-    if (h_.vy > 0) h_.vy = 0;
-    h_.anim = "hyihjump"; h_.frame = 0; h_.animTick = 0;
-    h_.hurtTimer = kHurtTicks;
+    h_.b(0x465b55) = toLeft ? 0 : 0xff;
+    if (strong) h427167(); else h42715b();
+}
+
+void PlayLogic::sink(int y) { h_.y() = int16_t(y); h42a325(); }
+
+void PlayLogic::trip() {
+    // 0x41aaa0: FUN_0042e9b2 with the stumbling script
+    if (h_.cont() != 0x42e297 && h_.cont() != 0x42ea8b) return;
+    h_.setUl(0x465b4b, 0x46168e);
+    h_.w(0x465b4f) = 0;
+}
+
+void PlayLogic::somersault(int32_t vy) {
+    // 0x417c93
+    h_.onGround() = 0;
+    h_.vy() = vy;
+    h_.setSprite("hyisomr2");
+    h_.frame() = 0;
+    h_.w(0x465b47) = 0;
+    h_.setCont(0x42cdb6);
+}
+
+bool PlayLogic::running() const {
+    return h_.ul(0x465ba0) == spriteSlotOf("hyirun") && !(h_.w(0x465b9a) < 0x14);
 }
 
 void PlayLogic::pullLever(Obj& lever) {
-    h_.lever = &lever;
-    h_.leverTicks = 44;
-    h_.vx = 0;
+    // 0x40c42d
+    h_.setCont(0x42a6e7);
+    h_.setUl(0x465b41, addrOf(&lever));
+    h_.w(0x465b47) = 0;
+    h_.vx() = 0;
 }
 
 void PlayLogic::grabBungee(Obj& vine) {
-    // 0x40c784: harryCont = 0x429fe2; the vine owns Harry's position and sprite from here.
-    h_.bungee = &vine;
-    h_.vx = 0; h_.vy = 0; h_.jumpHold = 0;
-    h_.onGround = false; h_.platformTicks = 0;
-    h_.whipTimer = 0; h_.knockDecel = 0;
+    // 0x40c784
+    h_.setCont(0x429fe2);
+    h_.setUl(0x465b7e, addrOf(&vine));
+    h_.vx() = 0; h_.vy() = 0;
+    h_.onGround() = 0;
 }
-
-void PlayLogic::releaseHarry() {
-    if (!h_.grabbedBy) return;
-    h_.grabbedBy = nullptr;
-    h_.anim = "hyivjump"; h_.frame = 0;
-    h_.vy = 0;
-}
-
-void PlayLogic::tickGrabbed(Game& g, uint32_t pad) {
-    // 0x428625
-    Obj* bat = h_.grabbedBy;
-    if (!bat || bat->freed || bat->type != 0x12 || bat->w(0x4a) == 0) { releaseHarry(); return; }
-    h_.x = bat->x; h_.y = bat->y + 0x30;
-    if (--h_.nipTimer < 0) {
-        h_.nipTimer = int(random() & 0xf) + 10;
-        g.playSound(2);
-        h_.damage = std::min(h_.damage + 1, kDamageCap);
-        const int limit = g.stats().difficulty ? 100 : kDamageMax;
-        if (h_.damage >= limit) { releaseHarry(); die(g); return; }
-    }
-    // hyidazed frames 0..4 at 6 ticks (script 0x4619c1).
-    if (++h_.dazedAnim.tick > 6) { h_.dazedAnim.tick = 0; h_.dazedAnim.pos = uint8_t((h_.dazedAnim.pos + 1) % 5); }
-    h_.frame = h_.dazedAnim.pos;
-    const uint8_t buttons = uint8_t(((pad & engine::kJoyJump) ? 1 : 0) | ((pad & engine::kJoyWhip) ? 2 : 0) | ((pad & engine::kJoyShoot) ? 4 : 0)) ? 1 : 0;
-    if (buttons != h_.lastButtons) {
-        h_.lastButtons = buttons;
-        if (--h_.struggleLeft == 0) releaseHarry();
-        return;
-    }
-    const uint16_t dirs = uint16_t(pad & (engine::kJoyLeft | engine::kJoyRight | engine::kJoyUp | engine::kJoyDown));
-    if (dirs && dirs != h_.lastDirs) {
-        h_.lastDirs = dirs;
-        if (--h_.struggleLeft == 0) releaseHarry();
-    }
-}
-
-// ---------------------------------------------------------------- objects
-
-uint32_t PlayLogic::random() {
-    // FUN_0043387e is a 32-bit shift-and-xor generator over DAT_00466772..; any
-    // generator with the same use (low bits masked by the callers) behaves alike.
-    rng_ ^= rng_ << 13; rng_ ^= rng_ >> 17; rng_ ^= rng_ << 5;
-    return rng_;
-}
-
-int PlayLogic::physics_kChiliTicks() { return kChiliTicks; }
 
 void PlayLogic::markCollected(const Obj& o) { if (o.col >= 0) collected_.push_back({o.col, o.row}); }
 
@@ -537,6 +430,28 @@ bool PlayLogic::isGone(int col, int row, const Game& g) const {
     for (const auto& cr : collected_) if (cr.first == col && cr.second == row) return true;
     for (const auto& cr : const_cast<Game&>(g).permanentlyGone()) if (cr.first == col && cr.second == row) return true;
     return false;
+}
+
+// ---------------------------------------------------------------- camera, objects, display
+
+void PlayLogic::updateCamera(Game& g) {
+    // FUN_00404714 is not ported yet: a plain follow inside the camera locks.
+    FrameState& fs = g.state();
+    const int targetX = h_.x() + 0x10 - 160;
+    int sx = h_.w(0x4658b4);
+    if (targetX > sx + 24) sx = targetX - 24;
+    if (targetX < sx - 24) sx = targetX + 24;
+    const int targetY = h_.y() + 0x10 - 128 + h_.w(0x4658a6);
+    int sy = h_.w(0x4658b6);
+    if (targetY > sy + 32) sy = targetY - 32;
+    if (targetY < sy - 32) sy = targetY + 32;
+    const int maxX = std::min<int>(h_.w(0x465b0b), fs.maxScrollX);
+    sx = std::clamp(sx, std::min<int>(h_.w(0x465b09), maxX), std::max(0, maxX));
+    sy = std::clamp(sy, 0, std::max(0, fs.maxScrollY));
+    h_.w(0x4658b4) = int16_t(sx);
+    h_.w(0x4658b6) = int16_t(sy);
+    fs.scrollX = sx;
+    fs.scrollY = sy;
 }
 
 void PlayLogic::spawnObjects(Game& g) {
@@ -577,32 +492,34 @@ void PlayLogic::spawnObjects(Game& g) {
 void PlayLogic::runObjects(Game& g) {
     const FrameState& fs = g.state();
     // 0x40d9bd (called every tick from the main loop): the piston cycle steps every 5 ticks, 0x50 steps.
-    if (--pistonTick_ < 0) { pistonTick_ = 4; if (++pistonPhase_ == 0x50) pistonPhase_ = 0; }
-    h_.platformTicks = 0;      // 0x4051c4: DAT_00465b73 is cleared before every object pass; a platform re-sets it
-    trgClass_[3] = 0;          // 0x4051ab: trigger id 3 (a wall for Harry on the ground) never stops objects
+    h_.b(0x46650e) -= 1;
+    if (int8_t(h_.b(0x46650e)) < 0) { h_.b(0x46650e) = 4; h_.b(0x46650d) += 1; if (h_.b(0x46650d) == 0x50) h_.b(0x46650d) = 0; }
+    h_.b(0x465b73) = 0;        // 0x4051c4: DAT_00465b73 is cleared before every object pass; a platform sets it again
+    h_.b(0x4658c3) = 0;        // 0x4051ab: trigger id 3 (a wall for Harry on the ground) never stops objects
     ObjCtx ctx{g, *this, g.level(), h_};
-    ctx.levelNo = g.levelNumber();
+    ctx.levelNo = level_;
     ctx.camX = fs.scrollX; ctx.camY = fs.scrollY;
     ctx.pad = fs.joypad;
     ctx.padPressed = fs.joypad & ~fs.joypadPrev;
     ctx.hard = g.stats().difficulty != 0;
-    ctx.boss = boss_ != nullptr;
-    ctx.pistonPhase = pistonPhase_; ctx.pistonTick = pistonTick_;
-    ctx.freeze = false;
-    ctx.hstate = h_.dead ? (h_.drowning ? HarryState::Drowning : HarryState::Dead)
-               : h_.grabbedBy ? HarryState::Grabbed
-               : h_.bungee ? HarryState::OnBungee
-               : (h_.hurtTimer > 0 && !h_.onGround) ? HarryState::Hurt
-               : !h_.onGround ? HarryState::Jumping : HarryState::Normal;
-    ctx.harryUntouchable = h_.dead || exiting_;
-    ctx.harrySprite = h_.anim;
-    // Whip box (FUN_0042b2bc, table at 0x4612e0): hyiwhip frames 2 and 3 reach out.
-    if (h_.whipTimer > 0 && std::strcmp(h_.anim, "hyiwhip") == 0 && (h_.frame == 2 || h_.frame == 3)) {
-        const int x0 = h_.frame == 2 ? 6 : 7, x1 = h_.frame == 2 ? 76 : 45;
-        const int y0 = h_.frame == 2 ? -61 : -39, y1 = h_.frame == 2 ? -31 : -22;
-        if (h_.facingLeft) { ctx.whipX0 = h_.x - x1; ctx.whipX1 = h_.x - x0; }
-        else { ctx.whipX0 = h_.x + x0; ctx.whipX1 = h_.x + x1; }
-        ctx.whipY0 = h_.y + y0; ctx.whipY1 = h_.y + y1;
+    ctx.boss = h_.b(0x466507) != 0;
+    ctx.pistonPhase = h_.b(0x46650d); ctx.pistonTick = h_.b(0x46650e);
+    ctx.freeze = h_.w(0x46652f) != 0;
+    const uint32_t c = h_.cont();
+    const bool gone = h_.b(0x465b72) != 0;
+    ctx.hstate = gone || c == 0x430e3a || c == 0x4311a5 ? (c == 0x427528 ? HarryState::Drowning : HarryState::Dead)
+               : c == 0x427528 ? HarryState::Drowning
+               : c == 0x428625 ? HarryState::Grabbed
+               : c == 0x429fe2 ? HarryState::OnBungee
+               : c == 0x42f88c || c == 0x427207 ? HarryState::Hurt
+               : (c == 0x42bda7 || c == 0x42d781) ? HarryState::Swinging
+               : !h_.onGround() ? HarryState::Jumping : HarryState::Normal;
+    ctx.harryUntouchable = gone || exiting_;
+    ctx.harrySprite = h_.sprite();
+    // The whip box (DAT_00465aeb..af1, FUN_0042b2bc), 0 when the whip is not out.
+    if (h_.w(0x465aeb) != 0) {
+        ctx.whipX0 = h_.w(0x465aeb); ctx.whipX1 = h_.w(0x465aed);
+        ctx.whipY0 = h_.w(0x465aef); ctx.whipY1 = h_.w(0x465af1);
     }
     objects_.tick(ctx);
 }
@@ -614,19 +531,20 @@ void PlayLogic::emitSprites(Game& g) {
     auto emit = [&](const Obj& o) {
         if (o.freed || !o.sprite || o.frame == 0xff) return;
         engine::SpriteInstance s;
-        s.x = o.x + kDisplayOffset; s.y = o.y + kDisplayOffset - fs.bob; s.sprite = o.sprite;
+        s.x = o.x + 0x10; s.y = o.y + 0x10 - fs.bob; s.sprite = o.sprite;
         s.frame = uint32_t(o.frame % std::max(1, o.sprite->frameCount()));
         s.flags = engine::kSprVisible | (o.facing ? engine::kSprHFlip : 0u) | (o.vflip ? engine::kSprVFlip : 0u)
                 | ((o.flags & 0x8000) ? engine::kSprFront : 0u);
         fs.displayList.push_back(s);
     };
     for (const auto& p : objects_.objects()) if (p->behind) emit(*p);
-    if (!(h_.invulnerable > 0 && !h_.dead && (fs.globalFrame & 2))) {   // hit flicker
-        if (const ph::Sprite* spr = g.findSprite(h_.anim)) {
+    if (h_.frame() != 0xff && !(h_.w(0x46652d) > 0 && h_.b(0x465b72) == 0 && (fs.globalFrame & 2))) {
+        if (const ph::Sprite* spr = g.findSprite(h_.sprite())) {
             engine::SpriteInstance s;
-            s.x = h_.x + kDisplayOffset; s.y = h_.y + kDisplayOffset - fs.bob; s.sprite = spr;
-            s.frame = uint32_t(std::min(h_.frame, spr->frameCount() - 1));
-            s.flags = engine::kSprVisible | (h_.facingLeft ? engine::kSprHFlip : 0u);
+            s.x = h_.x() + 0x10; s.y = h_.y() + 0x10 - fs.bob; s.sprite = spr;
+            s.frame = uint32_t(std::min<int>(h_.frame(), spr->frameCount() - 1));
+            s.flags = engine::kSprVisible | (h_.facing() ? engine::kSprHFlip : 0u) | (h_.b(0x465b38) ? engine::kSprVFlip : 0u)
+                    | ((h_.flags() & 0x8000) ? engine::kSprFront : 0u);
             fs.displayList.push_back(s);
         }
     }

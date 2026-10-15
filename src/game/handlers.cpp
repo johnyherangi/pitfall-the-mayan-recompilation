@@ -194,7 +194,7 @@ void h_static(ObjCtx& ctx, Obj& o) { exitDespawnFar(ctx, o); }
 // fall down the temple shaft - unless this level's hidden 1-up has already been revealed.
 void h_hidden1up(ObjCtx& ctx, Obj& o) {
     if (!ctx.g.stats().secret1up) {
-        if (ctx.harry.onGround) { o.w(0x32) = 0; exitDespawnWide(ctx, o); return; }
+        if (ctx.harry.onGround()) { o.w(0x32) = 0; exitDespawnWide(ctx, o); return; }
         o.w(0x32) += 1;
         if (o.w(0x32) >= 0x258) {
             o.w(0x32) = 0;
@@ -230,8 +230,8 @@ void h_leanLever(ObjCtx& ctx, Obj& o) {
         ctx.sound(0xed);                                   // FUN_004261e2, priority 0x14
         return;
     }
-    if (std::strcmp(ctx.harrySprite, "hyilean") == 0 && ctx.harry.x - o.x >= 0) {
-        const int dy = ctx.harry.y - o.y;
+    if (std::strcmp(ctx.harrySprite, "hyilean") == 0 && ctx.harry.x() - o.x >= 0) {
+        const int dy = ctx.harry.y() - o.y;
         if (dy < 0x40 && dy >= -0x30) o.frame = 1;
     }
     exitDespawnFar(ctx, o);
@@ -349,10 +349,10 @@ void h_oneUpFly(ObjCtx& ctx, Obj& o) {
 
 // 0x419595: is Harry 0x28..0x38 px in front of the snake's head and level with it?
 bool snakeBiteRange(ObjCtx& ctx, Obj& o) {
-    const int dx = o.x - ctx.harry.x;
+    const int dx = o.x - ctx.harry.x();
     if (o.facing) { if (dx < 0x28 || dx >= 0x38) return false; }
     else          { if (dx >= -0x28 || dx < -0x38) return false; }
-    const int dy = ctx.harry.y - o.y;
+    const int dy = ctx.harry.y() - o.y;
     return dy >= -0x20 && dy < 0x14;
 }
 
@@ -371,7 +371,7 @@ void h_snake(ObjCtx& ctx, Obj& o) {
     if (o.b(0x33) == 0) {
         // Still in the hole: emerge when Harry comes within 0xc0 x / 0xa0 y.
         if (o.w(0x34) == 0) {
-            const int dx = o.x - ctx.harry.x, dy = ctx.harry.y - o.y;
+            const int dx = o.x - ctx.harry.x(), dy = ctx.harry.y() - o.y;
             if (!between(dx, -0xc0, 0xc0) || !between(dy, -0xa0, 0xa0)) { exitDespawnFar(ctx, o); return; }
         }
         if (!animStep(ctx, o, o.anim(0x34), kAnim_snakeEmerge, 3)) { exitDespawnFar(ctx, o); return; }
@@ -423,7 +423,7 @@ void h_snake(ObjCtx& ctx, Obj& o) {
     moveX(o, o.l(0x4a));
     if (o.w(0x66)) { o.w(0x66) -= 1; moveX(o, o.l(0x4a)); }   // hurries while Harry is close
     {
-        const int dx = ctx.harry.x - o.x;
+        const int dx = ctx.harry.x() - o.x;
         if (dx < 0x88 && dx >= -0x88) o.w(0x66) = 0x32;
     }
     { int y = o.y + 0xe; if (ctx.floorSnap(o.x, y)) o.y = int16_t(y - 0xe); }
@@ -437,7 +437,7 @@ void h_snake(ObjCtx& ctx, Obj& o) {
     if (!turn && ctx.hstate != HarryState::Dead) {
         if (o.w(0x6a)) o.w(0x6a) -= 1;
         else {
-            const int dx = ctx.harry.x - o.x;
+            const int dx = ctx.harry.x() - o.x;
             if (dx < -0x50) { if (o.w(0x4c) >= 0) turn = true; }          // Harry left, moving right
             else if (dx >= 0x50) { if (o.w(0x4c) < 0) turn = true; }      // Harry right, moving left
         }
@@ -541,7 +541,7 @@ void h_monkey(ObjCtx& ctx, Obj& o) {
     } else {
         // Running; faster when Harry is just ahead.
         int32_t speed = 0x12000;
-        const int dy = ctx.harry.y - o.y, dx = ctx.harry.x - o.x;
+        const int dy = ctx.harry.y() - o.y, dx = ctx.harry.x() - o.x;
         if (between(dy, -0x18, 0x38)) {
             if (o.facing ? between(dx, -0xa0, 0) : between(dx, 0, 0x60)) speed = 0x21000;
         }
@@ -553,7 +553,7 @@ void h_monkey(ObjCtx& ctx, Obj& o) {
         }
         // Harry jumping right at the monkey: hop at him.
         if (ctx.hstate == HarryState::Jumping && between(dy, -0x18, 0x38)) {
-            const int d = ctx.harry.x - o.x;
+            const int d = ctx.harry.x() - o.x;
             bool hop = false;
             if (d < 0) { if (o.facing == 0 && between(d, -0x2c, -0x28)) hop = true; }
             else if (o.facing && between(d, 0x28, 0x2c)) hop = true;
@@ -574,16 +574,16 @@ void h_monkey(ObjCtx& ctx, Obj& o) {
     }
     if (ctx.hstate == HarryState::Dead) { exitDespawnWide(ctx, o); return; }
     {
-        const int dy = ctx.harry.y - o.y, dx = ctx.harry.x - o.x;
+        const int dy = ctx.harry.y() - o.y, dx = ctx.harry.x() - o.x;
         if (between(dy, -0x18, 0x38) && between(dx, -0xa0, 0x60)) { exitDespawnWide(ctx, o); return; }
     }
     o.b(0x46) -= 1;
     if (int8_t(o.b(0x46)) >= 0) { exitDespawnWide(ctx, o); return; }
     o.b(0x46) = uint8_t((ctx.rnd() & 7) + 0x16);
     {
-        const int dx = ctx.harry.x - o.x, dy = ctx.harry.y - o.y;
+        const int dx = ctx.harry.x() - o.x, dy = ctx.harry.y() - o.y;
         if (!between(dx, -0xc0, 0xc0) || !between(dy, -0x18, 0x70)) { exitDespawnWide(ctx, o); return; }
-        if (ctx.harry.x < o.x ? o.facing != 0 : o.facing == 0) { exitDespawnWide(ctx, o); return; }   // must face Harry (facing 0 = left)
+        if (ctx.harry.x() < o.x ? o.facing != 0 : o.facing == 0) { exitDespawnWide(ctx, o); return; }   // must face Harry (facing 0 = left)
         if (!between(dy, -0x40, 0xa0)) { exitDespawnWide(ctx, o); return; }
         // Wind up a throw.
         o.w(0x64) = int16_t((ctx.rnd() & 0x3f) + 8);
@@ -611,7 +611,7 @@ void h_fly(ObjCtx& ctx, Obj& o) {
     harryContact(ctx, o, 0xc);
     if (o.b(0x46) == 0) {
         // Resting until Harry comes close.
-        const int dx = ctx.harry.x - o.x, dy = ctx.harry.y - 0x20 - o.y;
+        const int dx = ctx.harry.x() - o.x, dy = ctx.harry.y() - 0x20 - o.y;
         if (between(dx, -0x80, 0x80) && between(dy, -0x50, 0x50)) {
             o.frame = 1; o.b(0x33) = 0xa; o.b(0x46) = 0xff; o.w(0x34) = 0;
         } else {
@@ -626,14 +626,14 @@ void h_fly(ObjCtx& ctx, Obj& o) {
         }
     }
     animStep(ctx, o, o.anim(0x34), kAnim_flyWings, 3);
-    const bool steer = ctx.hstate != HarryState::Dead && !(ctx.levelNo == 6 && ctx.harry.y >= 0x1ca);
+    const bool steer = ctx.hstate != HarryState::Dead && !(ctx.levelNo == 6 && ctx.harry.y() >= 0x1ca);
     o.b(0x36) -= 1;
     if (o.b(0x36) == 0) {
         o.b(0x36) = uint8_t((ctx.rnd() & 3) + 8);
         int32_t v = int32_t(ctx.rnd() & 0x7fff) + 0xc000;
         if (v & 1) v = -v;
         if (steer) {
-            if (o.x - ctx.harry.x >= 0) { o.facing = 0xff; v -= 0x12000; }
+            if (o.x - ctx.harry.x() >= 0) { o.facing = 0xff; v -= 0x12000; }
             else { v += 0x12000; o.facing = 0; }
         }
         o.l(0x38) = v;
@@ -650,17 +650,17 @@ void h_fly(ObjCtx& ctx, Obj& o) {
                 o.w(0x62) -= 1;
                 if (o.w(0x62) != 0) {
                     v += 0x30000;
-                    if (ctx.harry.y - o.y < 0x30) { o.w(0x62) = 0; o.w(0x50) = 0; }
+                    if (ctx.harry.y() - o.y < 0x30) { o.w(0x62) = 0; o.w(0x50) = 0; }
                 } else {
                     o.w(0x50) = 0;
                 }
             } else {
-                const int dx = ctx.harry.x - o.x;
+                const int dx = ctx.harry.x() - o.x;
                 if (dx < 0x10 && dx >= -0x10) {
                     o.w(0x6c) -= 1;
                     if (o.w(0x6c) == 0) { o.w(0x62) = 0xf; o.w(0x6c) = 0x14; }
                 }
-                if (o.y + 0x54 - ctx.harry.y >= 0) v -= 0x10000; else v += 0x10000;   // hover 0x54 above Harry
+                if (o.y + 0x54 - ctx.harry.y() >= 0) v -= 0x10000; else v += 0x10000;   // hover 0x54 above Harry
             }
         }
         o.l(0x3c) = v;
@@ -716,7 +716,7 @@ void condorStun(ObjCtx& ctx, Obj& o) {
     o.l(0x64) = o.l(0x38);
     o.l(0x38) = kCdStun;
     o.l(0x5e) = -0x20000;
-    o.l(0x34) = ctx.harry.facingLeft ? -0x30000 : 0x30000;
+    o.l(0x34) = ctx.harry.facingLeft() ? -0x30000 : 0x30000;
     o.w(0x62) = 0;
     for (int d7 = 3; d7 >= 0; --d7) {
         Obj* f = ctx.spawn();                 // FUN_0043546e
@@ -746,7 +746,7 @@ void condorStates(ObjCtx& ctx, Obj& o) {
             condorWallCheck(ctx, o);
             if (o.y - o.w(0x3e) < 0) o.l(0x40) += 0x2000; else o.l(0x40) -= 0x2000;
             moveY(o, o.l(0x40));
-            const int d = ctx.harry.x + (o.facing ? 0x50 : -0x50) - o.x;
+            const int d = ctx.harry.x() + (o.facing ? 0x50 : -0x50) - o.x;
             if (between(d, -0x20, 0x20)) {
                 o.sprite = ctx.spr("hkiturn"); o.frame = 0;
                 o.l(0x38) = kCdTurn; o.w(0x3c) = 0;
@@ -788,7 +788,7 @@ void condorStates(ObjCtx& ctx, Obj& o) {
             }
             if (o.w(0x48) != 4) o.l(0x46) += 0x2200;
             // Pulls out after 0x68 px, or once level with Harry (0x40 / 0x30 above his feet).
-            if (o.y - o.w(0x6a) >= 0x68 || ctx.harry.y - (hawk ? 0x30 : 0x40) - o.y < 0) {
+            if (o.y - o.w(0x6a) >= 0x68 || ctx.harry.y() - (hawk ? 0x30 : 0x40) - o.y < 0) {
                 o.b(0x4a) = 0xff;
                 condorFlyAway(ctx, o);
                 continue;
@@ -827,7 +827,7 @@ void condorStates(ObjCtx& ctx, Obj& o) {
             condorWallCheck(ctx, o);
             if (o.y - o.w(0x3e) < 0) o.l(0x40) += 0x1000; else o.l(0x40) -= 0x1000;
             moveY(o, o.l(0x40));
-            const int d = ctx.harry.x + (o.facing ? -0x70 : 0x70) - o.x;
+            const int d = ctx.harry.x() + (o.facing ? -0x70 : 0x70) - o.x;
             if (between(d, -0x10, 0x10)) {
                 o.w(0x6a) = o.y;
                 o.sprite = ctx.spr("hkidive");
@@ -873,8 +873,8 @@ void condorTick(ObjCtx& ctx, Obj& o) {
 void h_condor(ObjCtx& ctx, Obj& o) {
     if (o.b(0x32) == 0) {
         // Enters from the side Harry is not looking at, above him.
-        if (o.y - ctx.harry.y >= 0) { ctx.pl.restoreEntry(o); ctx.release(o); return; }
-        if (ctx.harry.facingLeft) {
+        if (o.y - ctx.harry.y() >= 0) { ctx.pl.restoreEntry(o); ctx.release(o); return; }
+        if (ctx.harry.facingLeft()) {
             if (ctx.camX + 0x15e - o.x >= 0) { exitDespawnWide(ctx, o); return; }
             o.l(0x34) = -0x40000;
         } else {
@@ -893,12 +893,12 @@ void h_condor(ObjCtx& ctx, Obj& o) {
 // that is above him), dives at him from 0x70 px out and climbs away.
 void h_hawk(ObjCtx& ctx, Obj& o) {
     if (o.b(0x32) == 0) {
-        if (o.y - ctx.harry.y >= 0) { ctx.pl.restoreEntry(o); ctx.release(o); return; }
+        if (o.y - ctx.harry.y() >= 0) { ctx.pl.restoreEntry(o); ctx.release(o); return; }
         o.b(0x32) = 0xff;
         o.frame = 0;
         o.w(0x3e) = int16_t(o.y + 0xc);
         o.l(0x38) = kHkGlide;
-        if (ctx.harry.x - o.x < 0) o.l(0x34) = -0x30000;
+        if (ctx.harry.x() - o.x < 0) o.l(0x34) = -0x30000;
         else { o.l(0x34) = 0x30000; o.facing = 1; }
     }
     condorTick(ctx, o);
@@ -916,7 +916,7 @@ void h_feather(ObjCtx& ctx, Obj& o) {
             if (ctx.floorSnap(o.x, y)) { ctx.release(o); return; }
         }
     }
-    if (ctx.touchesHarry(o)) o.l(0x50) += ctx.harry.vx >> 5;
+    if (ctx.touchesHarry(o)) o.l(0x50) += ctx.harry.vx() >> 5;
     o.l(0x50) = std::clamp(int32_t(o.l(0x50)), int32_t(-0x15000), int32_t(0x15000));
     moveX(o, o.l(0x50));
     if (o.l(0x50) < 0) o.l(0x50) += 0x400; else o.l(0x50) -= 0x400;
@@ -936,7 +936,7 @@ void h_rat(ObjCtx& ctx, Obj& o) {
         o.frame = 0;
         o.l(0x32) = -0x20000; o.facing = 1;
         { int y = o.y + 0x19; if (ctx.floorSnap(o.x - 0xc, y)) o.y = int16_t(y - 0x19); }
-        if (ctx.harry.x - o.x >= 0) { o.facing = 0; o.l(0x32) = 0x20000; }
+        if (ctx.harry.x() - o.x >= 0) { o.facing = 0; o.l(0x32) = 0x20000; }
     }
     bool killed = false;
     if (weaponHits(ctx, o, 9, &killed) && killed) { killObject(ctx, o); return; }
@@ -983,10 +983,10 @@ void h_bat(ObjCtx& ctx, Obj& o) {
     o.behind = 0xff;
     if (o.b(0x32) == 0) {
         // Hanging: drop when Harry passes 20..200 px below.
-        const int dx = o.x - ctx.harry.x;
+        const int dx = o.x - ctx.harry.x();
         if (dx < -0x96) { o.facing = 0xff; exitDespawnFar(ctx, o); return; }
         if (dx >= 0x96) { o.facing = 0; exitDespawnFar(ctx, o); return; }
-        const int dy = o.y - ctx.harry.y;
+        const int dy = o.y - ctx.harry.y();
         if (dy < -0xc8 || dy >= -0x14) { exitDespawnFar(ctx, o); return; }
         o.b(0x32) = 1;
     }
@@ -1003,10 +1003,10 @@ void h_bat(ObjCtx& ctx, Obj& o) {
             harryContact(ctx, o, 0xc);
             // Latch onto Harry's head when he jumps into it.
             if (ctx.hstate == HarryState::Jumping && !ctx.pl.harryBusy()) {
-                const int dx = ctx.harry.x - o.x, dy = ctx.harry.y - 0x20 - o.y;
+                const int dx = ctx.harry.x() - o.x, dy = ctx.harry.y() - 0x20 - o.y;
                 if (between(dx, -0x14, 0x14) && between(dy, -0x16, 0x16)) {
                     o.w(0x4a) = 0x64; o.w(0x4c) = int16_t(0xff00);
-                    o.x = int16_t(ctx.harry.x); o.y = int16_t(ctx.harry.y - 0x30);
+                    o.x = int16_t(ctx.harry.x()); o.y = int16_t(ctx.harry.y() - 0x30);
                     ctx.pl.grabHarry(o);
                 }
             }
@@ -1030,7 +1030,7 @@ void h_bat(ObjCtx& ctx, Obj& o) {
     animStep(ctx, o, o.anim(0x34), kAnim_batFly, 4);
     const int jitter = int(ctx.rnd() & 0x3f) - 0x20;
     const bool swinging = ctx.hstate == HarryState::Swinging;
-    if (o.x - ctx.harry.x + jitter - 0x14 < 0) {
+    if (o.x - ctx.harry.x() + jitter - 0x14 < 0) {
         if (o.w(0x38) >= (swinging ? -4 : -2)) o.l(0x36) -= 0x3000; else o.l(0x36) += 0x3000;
     } else {
         if (o.w(0x38) >= (swinging ? 4 : 2)) o.l(0x36) -= 0x3000; else o.l(0x36) += 0x3000;
@@ -1038,7 +1038,7 @@ void h_bat(ObjCtx& ctx, Obj& o) {
     o.w(0x42) += 1;
     if (o.w(0x42) >= 0x15e) {
         if (o.w(0x3c) != 4) o.l(0x3a) += 0x4000;           // climbs back to the ceiling
-    } else if (o.y - ctx.harry.y + jitter + 0x20 < 0) {
+    } else if (o.y - ctx.harry.y() + jitter + 0x20 < 0) {
         if (o.w(0x3c) != -2) o.l(0x3a) -= 0x3000;
     } else {
         if (o.w(0x3c) != 1) o.l(0x3a) += 0x3000;
@@ -1122,7 +1122,7 @@ void h_spider(ObjCtx& ctx, Obj& o) {
                 check = true;
             }
             if (check) {
-                const int dx = ctx.harry.x - o.x;
+                const int dx = ctx.harry.x() - o.x;
                 if (!between(dx, -0x68, 0x68)) { walkFrame(); return; }
                 o.b(0x3e) = 1; o.w(0x3c) = 0; o.l(0x40) = 0; o.b(0x46) = 0x17;
             }
@@ -1148,7 +1148,7 @@ void h_spider(ObjCtx& ctx, Obj& o) {
         o.w(0x54) -= 1;
         if (o.w(0x54) < 0) {
             o.w(0x54) = int16_t((ctx.rnd() & 0xf) + 0x1c);
-            const int dx = ctx.harry.x - o.x;
+            const int dx = ctx.harry.x() - o.x;
             if (between(dx, -0x30, 0x30)) {
                 o.w(0x52) = o.y;
                 o.l(0x56) = int32_t(ctx.rnd() & 0x1ffff) - 0x50000;
@@ -1160,7 +1160,7 @@ void h_spider(ObjCtx& ctx, Obj& o) {
         o.w(0x64) -= 1;
         if (o.w(0x64) < 0) {
             o.w(0x64) = int16_t((ctx.rnd() & 0x1f) + 0x10);
-            const int d = o.x - ctx.harry.x;
+            const int d = o.x - ctx.harry.x();
             if (d >= 0x10) { if (o.facing) { o.facing ^= 1; o.l(0x36) = -o.l(0x36); } }
             else if (d < -0x10) { if (o.facing == 0) { o.facing ^= 1; o.l(0x36) = -o.l(0x36); } }
         }
@@ -1200,8 +1200,8 @@ void h_scorpion(ObjCtx& ctx, Obj& o) {
     if (int8_t(o.b(0x33)) < 0) {
         // Shuffles two pixels towards Harry every 8 ticks, stopping at wall markers.
         o.b(0x33) = 7;
-        if (ctx.harry.x != o.x && ctx.harry.x + 1 != o.x) {
-            if (ctx.harry.x + 1 > o.x) {
+        if (ctx.harry.x() != o.x && ctx.harry.x() + 1 != o.x) {
+            if (ctx.harry.x() + 1 > o.x) {
                 o.facing = 0xff;
                 if (!(ctx.triggerClass(o.x + 8, o.y - 0x10) & 1)) { o.x += 2; o.frame ^= 1; }
             } else {
@@ -1217,7 +1217,7 @@ void h_scorpion(ObjCtx& ctx, Obj& o) {
 
 // 0x424cd4: is Harry standing inside the platform box {x0, x1, y0, y1} relative to the object?
 bool harryOnBox(ObjCtx& ctx, const Obj& o, int x0, int x1, int y0, int y1) {
-    const int dx = ctx.harry.x - o.x, dy = ctx.harry.y - o.y;
+    const int dx = ctx.harry.x() - o.x, dy = ctx.harry.y() - o.y;
     return dx >= x0 && dx < x1 && dy >= y0 && dy < y1;
 }
 
@@ -1237,7 +1237,7 @@ void h_fallingRock(ObjCtx& ctx, Obj& o) {
         o.frame = kRockShake[o.b(0x32)];
     }
     // Harry landing on it starts the countdown (and rides it down).
-    if (!ctx.pl.harryOnPlatform() && ctx.harry.vy >= 0 && harryOnBox(ctx, o, -25, 25, -30, 5)) {
+    if (!ctx.pl.harryOnPlatform() && ctx.harry.vy() >= 0 && harryOnBox(ctx, o, -25, 25, -30, 5)) {
         ctx.pl.standOn(o.y - 0x12);
         if (o.b(0x32) == 0x20) { o.b(0x32) = 0x1f; ctx.rnd(); ctx.sound(0xe); }
     }
@@ -1268,14 +1268,14 @@ void h_web(ObjCtx& ctx, Obj& o) {
         o.link = half;
     }
     if (o.w(0x36)) animStep(ctx, o, o.anim(0x36), o.script ? o.script : kAnim_webBounceH, 1);
-    if (!ctx.pl.harryOnPlatform() && ctx.harry.vy >= 0 && harryOnBox(ctx, o, -40, 40, 12, 28)) {
+    if (!ctx.pl.harryOnPlatform() && ctx.harry.vy() >= 0 && harryOnBox(ctx, o, -40, 40, 12, 28)) {
         o.w(0x36) = 1;
         ctx.rnd();
         ctx.sound((ctx.rnd() & 0x80) ? 0xca : 0x46);
         // The angled webs fling Harry backwards (he keeps facing the web).
         if (o.b(0x47)) ctx.pl.bounce(o.y + 3, -0x4a000, -0xb0000, true);
         else if (o.b(0x46)) ctx.pl.bounce(o.y + 3, 0x4a000, -0xb0000, false);
-        else ctx.pl.bounce(o.y + 3, 0, -0xb4000, ctx.harry.facingLeft);
+        else ctx.pl.bounce(o.y + 3, 0, -0xb4000, ctx.harry.facingLeft());
     }
     if (o.link && !o.link->freed) {
         o.link->frame = o.frame;
@@ -1375,7 +1375,7 @@ void h_branchTip(ObjCtx& ctx, Obj& o) {
         o.b(0x32) -= 1;
         if (o.b(0x32) < 0xc) o.frame = 2;
     }
-    const bool on = !ctx.pl.harryOnPlatform() && ctx.harry.vy >= 0 &&
+    const bool on = !ctx.pl.harryOnPlatform() && ctx.harry.vy() >= 0 &&
                     (o.facing ? harryOnBox(ctx, o, -50, 18, -5, 16) : harryOnBox(ctx, o, -18, 50, -5, 16));
     if (on) {
         ctx.pl.standOn(o.y + 5 + (o.frame == 2 ? 5 : 0));
@@ -1425,12 +1425,12 @@ void h_checkpoint(ObjCtx& ctx, Obj& o) {
         return;
     }
     animStep(ctx, o, o.anim(0x40), kAnim_marker, 4);
-    if (ctx.harry.onGround && ctx.touchesHarry(o)) {
+    if (ctx.harry.onGround() && ctx.touchesHarry(o)) {
         ctx.sound(0xeb);
         Game::Checkpoint& cp = ctx.g.checkpoint();
         cp.valid = true;
         cp.x = o.x + 4 + 0x18 - (o.facing == 0 ? 0x30 : 0);
-        cp.y = ctx.harry.y;
+        cp.y = ctx.harry.y();
         cp.markerX = o.x;
         cp.facingLeft = o.facing != 0;
         o.frame = 8;
@@ -1462,7 +1462,7 @@ void h_vineMonkey(ObjCtx& ctx, Obj& o) {
     harryContact(ctx, o, 10);
     if (o.b(0x36) == 0) {
         o.b(0x36) = 0xff;
-        if (ctx.harry.x - o.x >= 0) { o.x -= 1; o.facing = 0xff; }
+        if (ctx.harry.x() - o.x >= 0) { o.x -= 1; o.facing = 0xff; }
     }
     bool animate = true;
     if (o.frame == 6) {
@@ -1470,7 +1470,7 @@ void h_vineMonkey(ObjCtx& ctx, Obj& o) {
         const int dx = o.x - ctx.camX, dy = o.y - ctx.camY;
         if (dx < -0x20 || dx >= 0x160 || dy < -0x20 || dy >= 0xe8) animate = false;
         else if (o.w(0x60)) { o.w(0x60) -= 1; animate = false; }
-        else if (!between(ctx.harry.y - o.y, -0x10, 0x90)) animate = false;
+        else if (!between(ctx.harry.y() - o.y, -0x10, 0x90)) animate = false;
     }
     if (animate) animStep(ctx, o, o.anim(0x32), kAnim_vineMonkey, 4);
     if (o.anim(0x32).tick == 0 && o.anim(0x32).pos == 0xb) {
@@ -1492,8 +1492,8 @@ void h_vineMonkey(ObjCtx& ctx, Obj& o) {
 
 // 0x420530: Harry within reach of the hanging head?
 bool treeSnakeBiteRange(ObjCtx& ctx, const Obj& o) {
-    const int dx = o.x + (o.facing ? -0x20 : 0x20) - ctx.harry.x;
-    const int dy = o.y + 0x1e - ctx.harry.y + 0x18;
+    const int dx = o.x + (o.facing ? -0x20 : 0x20) - ctx.harry.x();
+    const int dy = o.y + 0x1e - ctx.harry.y() + 0x18;
     return between(dx, -0x10, 0x10) && between(dy, -0x28, 0x28);
 }
 
@@ -1546,7 +1546,7 @@ void h_treeSnake(ObjCtx& ctx, Obj& o) {
             o.sprite = ctx.spr("tszup");
             if (!animStep(ctx, o, o.anim(0x64), kAnim_treeSnakeUp, 5)) {
                 if (o.frame == 3) {
-                    const int dx = ctx.harry.x - o.x, dy = ctx.harry.y - 0x1c - o.y - 0x28;
+                    const int dx = ctx.harry.x() - o.x, dy = ctx.harry.y() - 0x1c - o.y - 0x28;
                     if (between(dx, -0x90, 0x90) && between(dy, -0x50, 0x50)) { o.w(0x36) = 1; o.facing ^= 1; continue; }
                 }
                 leave();
@@ -1562,7 +1562,7 @@ void h_treeSnake(ObjCtx& ctx, Obj& o) {
     animStep(ctx, o, o.anim(0x34), kAnim_treeSnakeHang, 6);
     o.w(0x64) = 0; o.w(0x36) = 0; o.w(0x38) = 0;
     if (o.w(0x66)) { o.w(0x66) -= 1; leave(); return; }
-    const int dx = ctx.harry.x - o.x, dy = ctx.harry.y - 0x1c - o.y - 0x28;
+    const int dx = ctx.harry.x() - o.x, dy = ctx.harry.y() - 0x1c - o.y - 0x28;
     if (between(dx, -0xb0, 0xb0) && between(dy, -0x90, 0x90)) {
         const bool facingHarry = dx >= 0 ? o.facing != 0 : o.facing == 0;
         if (facingHarry && o.frame == 0) o.w(0x64) = 1;
@@ -1594,7 +1594,7 @@ void h_explodingPlant(ObjCtx& ctx, Obj& o) {
         o.frame = 0; o.w(0x34) = 0; o.w(0x50) = 0;
         rearm();
     }
-    if (o.frame == 0 && !between(ctx.harry.x - o.x, -0xc0, 0xc0)) { exitDespawnFar(ctx, o); return; }
+    if (o.frame == 0 && !between(ctx.harry.x() - o.x, -0xc0, 0xc0)) { exitDespawnFar(ctx, o); return; }
     bool checkBurst = true;
     if (o.frame == 0 && o.w(0x64) == 3) {
         o.w(0x32) = 0x30;                     // three hits: it stays shut
@@ -1644,7 +1644,7 @@ void h_boar(ObjCtx& ctx, Obj& o) {
     if (o.b(0x56) == 0) {
         o.b(0x56) = 0xff; o.b(0x64) = 0xff; o.w(0x68) = 1; o.w(0x62) = 0;
         o.frame = 0; o.facing = 0; o.y += 0x10;
-        if (ctx.harry.x - o.x >= 0) o.facing = 1;
+        if (ctx.harry.x() - o.x >= 0) o.facing = 1;
     }
     { int y = o.y + 0xb; if (ctx.floorSnap(o.x - 0xc, y)) o.y = int16_t(y - 0xb); }
     bool killed = false;
@@ -1652,7 +1652,7 @@ void h_boar(ObjCtx& ctx, Obj& o) {
     if (hit) {
         if (killed) { killObject(ctx, o); return; }
         if (o.b(0x64) == 0 && o.w(0x3c) == 0) {
-            const int d = ctx.harry.x - o.x;
+            const int d = ctx.harry.x() - o.x;
             if (d >= 0 ? o.facing != 0 : o.facing == 0) { o.w(0x58) = 1; o.w(0x3e) = 0; }   // whipped head-on: tumbles
         }
     }
@@ -1663,7 +1663,7 @@ void h_boar(ObjCtx& ctx, Obj& o) {
         if (o.w(0x68) < 0) o.w(0x68) = int16_t((ctx.rnd() & 0x3f) + 0x30);
         o.sprite = ctx.spr("whitoss");
         animStep(ctx, o, o.anim(0x62), kAnim_boarGraze, 4);
-        const int d = ctx.harry.x - o.x;
+        const int d = ctx.harry.x() - o.x;
         if (!hit && !between(d, -0x80, 0x80)) { exitDespawnWide(ctx, o); return; }
         o.b(0x64) = 0;
         if (!between(d, -0x80, 0x80)) o.facing ^= 1;
@@ -1694,7 +1694,7 @@ void h_boar(ObjCtx& ctx, Obj& o) {
             if (!animStep(ctx, o, o.anim(0x50), kAnim_boarToss, 3)) { exitDespawnWide(ctx, o); return; }
             o.sprite = ctx.spr("whirun"); o.frame = 0;
         } else if (ctx.hstate != HarryState::Dead && harryContact(ctx, o, 0xf)) {
-            const int d = ctx.harry.x - o.x;
+            const int d = ctx.harry.x() - o.x;
             if (o.facing ? d >= 0 : d < 0) {
                 ctx.pl.launch(o.facing ? 0x48000 : -0x48000, -0x35000);
                 o.w(0x50) = 1;
@@ -1705,7 +1705,7 @@ void h_boar(ObjCtx& ctx, Obj& o) {
     // 0x415abb: turn when Harry is behind, or at a type-2 marker ahead.
     if (o.w(0x44)) o.w(0x44) -= 1;
     else {
-        const int d = ctx.harry.x - o.x;
+        const int d = ctx.harry.x() - o.x;
         bool turn = d >= 0 ? o.facing == 0 : o.facing != 0;
         if (!turn) {
             uint8_t id = 0;
@@ -1725,7 +1725,7 @@ void h_boar(ObjCtx& ctx, Obj& o) {
 void h_rat2(ObjCtx& ctx, Obj& o) {
     if (o.frame == 0xff) {
         o.frame = 0; o.l(0x32) = -0x28000; o.facing = 1;
-        if (ctx.harry.x - o.x >= 0) { o.facing = 0; o.l(0x32) = 0x28000; }
+        if (ctx.harry.x() - o.x >= 0) { o.facing = 0; o.l(0x32) = 0x28000; }
     }
     bool killed = false;
     if (weaponHits(ctx, o, 9, &killed) && killed) { killObject(ctx, o); return; }
@@ -1785,11 +1785,11 @@ void h_batRoost(ObjCtx& ctx, Obj& o) {
         if (o.w(0x34) == 0) { wake(o.link2); ctx.release(o); }
         return;
     }
-    const int dx = o.x - ctx.harry.x;
+    const int dx = o.x - ctx.harry.x();
     if (dx < -0x8c) o.facing = 0xff;
     else if (dx >= 0x5a) o.facing = 0;
     else {
-        const int dy = o.y - ctx.harry.y;
+        const int dy = o.y - ctx.harry.y();
         if (dy >= -0xc8 && dy < 0x14) {
             wake(o.link); o.link = nullptr;
             o.w(0x34) = 0x32;
@@ -1857,7 +1857,7 @@ void h_ceilingRock(ObjCtx& ctx, Obj& o) {
 
 void h_tnt(ObjCtx& ctx, Obj& o) {
     // (The 0x18 = Jaguar-boss variant that uses ew_ready is not ported.)
-    if (!ctx.pl.harryOnPlatform() && ctx.harry.vy >= 0 && harryOnBox(ctx, o, -15, 15, -32, -16))
+    if (!ctx.pl.harryOnPlatform() && ctx.harry.vy() >= 0 && harryOnBox(ctx, o, -15, 15, -32, -16))
         ctx.pl.standOn(o.y - 0x18);
     bool killed = false;
     if (!weaponHits(ctx, o, 0, &killed)) { exitDespawnFar(ctx, o); return; }
@@ -1888,7 +1888,7 @@ void h_explosion(ObjCtx& ctx, Obj& o) {
     if (o.link && !o.link->freed) o.link->frame = o.frame;
     if (o.frame >= 3) {
         o.touchTick = 0;
-        if (harryContact(ctx, o, 0x28)) ctx.pl.launch(ctx.harry.x - o.x >= 0 ? 0x30000 : -0x30000, -0x40000);
+        if (harryContact(ctx, o, 0x28)) ctx.pl.launch(ctx.harry.x() - o.x >= 0 ? 0x30000 : -0x30000, -0x40000);
     }
 }
 
@@ -1907,7 +1907,7 @@ void h_verticalWeb(ObjCtx& ctx, Obj& o) {
     if (weaponHits(ctx, o, 0, &killed)) {
         // Whipped through: torn down.
         o.w(0x3c) = 1;
-        o.facing = (o.x - ctx.harry.x >= 0) ? 0xff : 0;
+        o.facing = (o.x - ctx.harry.x() >= 0) ? 0xff : 0;
         if (o.link && !o.link->freed) ctx.release(*o.link);
         killObject(ctx, o);
         return;
@@ -1918,7 +1918,7 @@ void h_verticalWeb(ObjCtx& ctx, Obj& o) {
     if (harryOnBox(ctx, o, -20, 20, -45, 45)) {
         ctx.rnd();
         ctx.sound((ctx.rnd() & 0x80) ? 0xcb : 0x47);
-        const bool pushLeft = o.x - ctx.harry.x >= 0;
+        const bool pushLeft = o.x - ctx.harry.x() >= 0;
         o.facing = pushLeft ? 0xff : 0;
         ctx.pl.knockBack(pushLeft, true);
         o.w(0x3c) = 1;
@@ -1962,11 +1962,11 @@ void h_pit(ObjCtx& ctx, Obj& o) {
                 o.w(0x60) = int16_t((ctx.rnd() & 0x7f) + 0x65);
             }
         }
-        if (o.frame == 6 && between(ctx.harry.y - o.y, -8, 8)) {
-            const int dx = ctx.harry.x - o.x;
+        if (o.frame == 6 && between(ctx.harry.y() - o.y, -8, 8)) {
+            const int dx = ctx.harry.x() - o.x;
             if (dx < 0x3c && dx >= -0x3c) {
-                if (dx >= 0x34) ctx.harry.x -= 1;
-                else if (dx < -0x34) ctx.harry.x += 1;
+                if (dx >= 0x34) ctx.harry.x() -= 1;
+                else if (dx < -0x34) ctx.harry.x() += 1;
                 else { o.b(0x36) = 0xff; ctx.pl.sink(o.y + 3); }
             }
         }
@@ -2125,16 +2125,16 @@ void h_lever(ObjCtx& ctx, Obj& o) {
         }
     }
     if (o.b(0x34)) { exitDespawnFar(ctx, o); return; }
-    if ((ctx.pad & engine::kJoyUp) && o.frame != 4 && ctx.hstate == HarryState::Normal && ctx.harry.vx == 0 && ctx.harry.vy == 0
-        && ctx.harry.onGround && between(ctx.harry.y - o.y, 0x18, 0x30) && between(ctx.harry.x - o.x, -0x22, 0x22)) {
+    if ((ctx.pad & engine::kJoyUp) && o.frame != 4 && ctx.hstate == HarryState::Normal && ctx.harry.vx() == 0 && ctx.harry.vy() == 0
+        && ctx.harry.onGround() && between(ctx.harry.y() - o.y, 0x18, 0x30) && between(ctx.harry.x() - o.x, -0x22, 0x22)) {
         // 0x40c4ba: step up to the lever, facing it
-        if (ctx.harry.x - o.x < 0) { ctx.harry.facingLeft = false; ctx.harry.x = o.x - 0x14; }
-        else { ctx.harry.facingLeft = true; ctx.harry.x = o.x + 0x14; }
+        if (ctx.harry.x() - o.x < 0) { ctx.harry.facing() = 0; ctx.harry.x() = o.x - 0x14; }
+        else { ctx.harry.facing() = 1; ctx.harry.x() = o.x + 0x14; }
         o.b(0x34) = 0xff;
         levelScriptPull(ctx, triggerIdAt(ctx, o.x - 0x18, o.w(0x6c) + 0x18));
         ctx.pl.pullLever(o);
         ctx.rnd(); ctx.sound(0x1d);
-        o.facing = ctx.harry.facingLeft ? 0xff : 0;
+        o.facing = ctx.harry.facingLeft() ? 0xff : 0;
     }
     exitDespawnFar(ctx, o);
 }
@@ -2197,7 +2197,7 @@ void h_chute(ObjCtx& ctx, Obj& o) {
     o.b(0x34) -= 1;
     if (int8_t(o.b(0x34)) < 0) {
         o.b(0x34) = 7;
-        const bool near = between(ctx.harry.y - o.y, -0x80, 0x30) && between(ctx.harry.x - o.x, -0x80, 0x80);
+        const bool near = between(ctx.harry.y() - o.y, -0x80, 0x30) && between(ctx.harry.x() - o.x, -0x80, 0x80);
         if (near && o.b(0x36)) {
             if (o.frame != 5) {
                 if (o.frame == 0) { ctx.rnd(); ctx.sound(0x16); }
@@ -2209,7 +2209,7 @@ void h_chute(ObjCtx& ctx, Obj& o) {
         }
     }
     half->frame = o.frame;
-    if (o.frame == 0 && !ctx.pl.harryBusy() && !ctx.pl.harryOnPlatform() && ctx.harry.vy >= 0 && harryOnBox(ctx, o, -48, 48, -11, 7))
+    if (o.frame == 0 && !ctx.pl.harryBusy() && !ctx.pl.harryOnPlatform() && ctx.harry.vy() >= 0 && harryOnBox(ctx, o, -48, 48, -11, 7))
         ctx.pl.standOn(o.y - 6);
     if (farFromCamera(ctx, o)) {
         ctx.pl.restoreEntry(o);
@@ -2234,8 +2234,8 @@ void h_oneWayDoor(ObjCtx& ctx, Obj& o) {
         if (ctx.pl.triggerClassOf(id) != 0) o.frame = 0;        // already shut
     }
     if (o.frame != 0) {
-        if (!between(ctx.harry.y - o.y, -0x60, 0x60)) return;
-        int d = ctx.harry.x - o.x;
+        if (!between(ctx.harry.y() - o.y, -0x60, 0x60)) return;
+        int d = ctx.harry.x() - o.x;
         if (o.b(0x33)) d = -d;
         if (!between(d, 0x28, 0x90)) return;
         o.frame = 0;                                             // 0x420831: shut it
@@ -2286,20 +2286,20 @@ void h_gargoyle(ObjCtx& ctx, Obj& o) {
     if (weaponHits(ctx, o, 0x28, &killed) && killed) { killObject(ctx, o); return; }   // (0x412987: the sling-stone chip is not ported)
     if (ctx.freeze) { freezeSparkle(ctx, o); return; }
     if (o.frame == 5) harryContact(ctx, o, 0x14);
-    if (o.frame == 0 && !between(ctx.harry.y - o.y, -0x60, 0x90)) { exitDespawnFar(ctx, o); return; }
+    if (o.frame == 0 && !between(ctx.harry.y() - o.y, -0x60, 0x90)) { exitDespawnFar(ctx, o); return; }
     if (animStep(ctx, o, o.anim(0x36), kAnim_gargoyle, 6)) o.b(0x64) ^= 1;
     const uint8_t was = o.facing;
     AnimCursor& cur = o.anim(0x36);
     if (cur.tick == 0 && cur.pos < 0xc) {
-        if (ctx.harry.vx == 0 && between(ctx.harry.x - o.x, -0x18, 0x18)) o.facing = o.b(0x64);
-        else o.facing = ctx.harry.x >= o.x ? 1 : 0;
+        if (ctx.harry.vx() == 0 && between(ctx.harry.x() - o.x, -0x18, 0x18)) o.facing = o.b(0x64);
+        else o.facing = ctx.harry.x() >= o.x ? 1 : 0;
     }
     if (o.facing != was) { cur.tick = 0; cur.pos = 0xc; }   // skip straight to the throw
     if (cur.tick == 0 && cur.pos == 0x13) {                 // 0x412891: release the axe
         if (Obj* a = ctx.spawn()) {
             a->x = o.x; a->y = int16_t(o.y + 10); a->w(0x26) = 0x6663;
             a->sprite = ctx.spr("obzaxe"); a->type = 0x3e;
-            const int d = ctx.harry.x - o.x;
+            const int d = ctx.harry.x() - o.x;
             if (between(d, -0x50, 0x50)) { a->l(0x32) = -0x40000; a->l(0x46) = 0x18000; }
             else if (between(d, -0xa0, 0xa0)) { a->l(0x32) = -0x60000; a->l(0x46) = 0; }
             else { a->l(0x32) = -0x61000; a->l(0x46) = -0x30000; }
@@ -2319,7 +2319,7 @@ void h_gargoyle(ObjCtx& ctx, Obj& o) {
 // a cursor at position 0 means "not playing", so the scripts are started at position 1.
 void h_tonguePlant(ObjCtx& ctx, Obj& o) {
     if (ctx.boss) { exitDespawnFar(ctx, o); return; }
-    if (ctx.harry.vy >= 0 && harryOnBox(ctx, o, -16, 19, 0, 30)) {   // 0x417c6d
+    if (ctx.harry.vy() >= 0 && harryOnBox(ctx, o, -16, 19, 0, 30)) {   // 0x417c6d
         ctx.pl.somersault(-0xc0000);
         ctx.sound((ctx.rnd() & 0x80) ? 0xca : 0x46);
         o.w(0x50) = 1; o.w(0x34) = 0; o.l(0x36) = 0;
@@ -2328,7 +2328,7 @@ void h_tonguePlant(ObjCtx& ctx, Obj& o) {
     if (o.w(0x34)) { if (!animStep(ctx, o, o.anim(0x34), kAnim_turn4, 4)) { exitDespawnFar(ctx, o); return; } o.frame = 3; }
     if (o.w(0x36)) { if (!animStep(ctx, o, o.anim(0x36), kAnim_tongueClose, 4)) { exitDespawnFar(ctx, o); return; } o.frame = 0; }
     if (o.w(0x38)) { if (!animStep(ctx, o, o.anim(0x38), kAnim_tongueBounce, 4)) { exitDespawnFar(ctx, o); return; } o.frame = 0; }
-    const int dx = o.x - ctx.harry.x, dy = o.y - ctx.harry.y;
+    const int dx = o.x - ctx.harry.x(), dy = o.y - ctx.harry.y();
     if (o.b(0x32)) {
         if (!(between(dx, -0x50, 0x50) && between(dy, -0xa0, 0xa0))) { o.w(0x36) = 1; o.w(0x34) = 0; o.b(0x32) = 0; }
     } else if (between(dx, -0x50, 0x50) && between(dy, -0x80, 0x80)) {
@@ -2596,10 +2596,10 @@ void h_piston(ObjCtx& ctx, Obj& o) {
     int idx = ctx.pistonPhase + o.w(0x48);
     if (idx >= 0x50) idx -= 0x50;
     o.frame = kPistonFrames[idx];
-    if (ctx.pistonTick == 3 && idx == 0x10 && between(o.x - ctx.harry.x, -0xa0, 0xa0) && between(o.y - ctx.harry.y, -0xa0, 0xa0)) {
+    if (ctx.pistonTick == 3 && idx == 0x10 && between(o.x - ctx.harry.x(), -0xa0, 0xa0) && between(o.y - ctx.harry.y(), -0xa0, 0xa0)) {
         ctx.rnd(); ctx.sound(0x16);                                       // FUN_0042633d(0x16, 0x60, 6)
     }
-    if (o.frame == 3 && !ctx.pl.harryBusy() && !ctx.pl.harryOnPlatform() && ctx.harry.vy >= 0 && harryOnBox(ctx, o, -10, 38, -2, 15))
+    if (o.frame == 3 && !ctx.pl.harryBusy() && !ctx.pl.harryOnPlatform() && ctx.harry.vy() >= 0 && harryOnBox(ctx, o, -10, 38, -2, 15))
         ctx.pl.standOn(o.y + 6);                                          // 0x40d96a
     exitDespawnFar(ctx, o);
 }
@@ -2725,17 +2725,17 @@ const char* const kSprites[7] = {"hyibngab", "hyibung2", "hyibung1", "hyibngbc",
 void enterTriple(ObjCtx& ctx, Obj& o) {
     for (int guard = 0; guard < 16; ++guard) {
         const uint8_t* t = kData_bungeeScripts + o.w(0x4c);
-        ctx.harry.frame = t[2];
+        ctx.harry.frame() = t[2];
         const uint8_t op = t[1];
         if (op == 0) return;
         if (op == 0xf3) { o.b(0x49) = 2; return; }
-        if (op == 0xf7) { ctx.harry.facingLeft = !ctx.harry.facingLeft; return; }
+        if (op == 0xf7) { ctx.harry.facing() = uint8_t((ctx.harry.facing() & 1) ^ 1); return; }   // and 1 / xor 1
         const int hi = op & 0xf0, x = op & 0xf;
         if (hi == 0) {
             if (o.b(0x49)) { o.b(0x49) -= 1; return; }
             if ((ctx.rnd() & 3) == 0) return;
         } else if (hi == 0x40) {
-            ctx.harry.anim = kSprites[x < 7 ? x : 0];
+            ctx.harry.setSprite(kSprites[x < 7 ? x : 0]);
             return;
         } else if (hi != 0x60) {
             o.w(0x42) = kScriptOffset[x];
@@ -2811,7 +2811,7 @@ void h_bungee(ObjCtx& ctx, Obj& o) {
     if (o.y == o.w(0x38)) {                       // 0x40c70d: hanging still
         if (o.b(0x3a)) {
             o.b(0x3a) -= 1;
-        } else if (!ctx.harry.bungee && !ctx.harry.onGround && ctx.harry.vy >= 0 && ctx.touchesHarry(o, true)) {
+        } else if (!ctx.pl.harryBusy() && !ctx.harry.onGround() && ctx.harry.vy() >= 0 && ctx.touchesHarry(o, true)) {
             // 0x40c784: Harry catches the end
             o.y += 1;
             ctx.pl.grabBungee(o);
@@ -2820,8 +2820,8 @@ void h_bungee(ObjCtx& ctx, Obj& o) {
             uint32_t r;
             do { r = ctx.rnd() & 3; } while (r == 3);
             o.w(0x42) = r == 0 ? kScriptOffset[4] : r == 1 ? kScriptOffset[2] : kScriptOffset[6];   // 0x45aadd / 0x45ab0d / 0x45ab37
-            ctx.harry.anim = r == 0 ? "hyibung1" : r == 1 ? "hyibung2" : "hyibung3";
-            ctx.harry.frame = 0;
+            ctx.harry.setSprite(r == 0 ? "hyibung1" : r == 1 ? "hyibung2" : "hyibung3");
+            ctx.harry.frame() = 0;
             restartScript(ctx, o);
             physics = true;
         }
@@ -2830,7 +2830,7 @@ void h_bungee(ObjCtx& ctx, Obj& o) {
             o.b(0x48) += 1;
             const uint8_t* t = kData_bungeeScripts + o.w(0x4c);
             if (o.b(0x48) != t[0]) {
-                ctx.harry.frame = t[2];
+                ctx.harry.frame() = t[2];
             } else {
                 o.b(0x48) = 0;
                 o.w(0x4c) += 3;
@@ -2916,8 +2916,8 @@ void h_bungee(ObjCtx& ctx, Obj& o) {
             o.b(0x32) = 0;
             if (ctx.pl.onBungee(o)) { o.y += 1; restartScript(ctx, o); continue; }
         } else if (ctx.pl.onBungee(o)) {
-            ctx.harry.x = o.x; ctx.harry.xFrac = o.xFrac;
-            ctx.harry.y = o.y; ctx.harry.yFrac = o.yFrac;
+            ctx.harry.x() = o.x; ctx.harry.xFrac() = o.xFrac;
+            ctx.harry.y() = o.y; ctx.harry.yFrac() = o.yFrac;
         }
         break;
     }
@@ -3114,10 +3114,10 @@ void h_jaguar(ObjCtx& ctx, Obj& o) {
         if (o.w(0x58) != 0x960) o.w(0x58) += 1;
         if (o.frame == 0xff) {
             // Dormant (released, and respawned by the .als scan) until Harry is in the arena.
-            if (ctx.harry.y < 0x368 || ctx.harry.x < 0xbce) { ctx.pl.restoreEntry(o); ctx.release(o); return; }
+            if (ctx.harry.y() < 0x368 || ctx.harry.x() < 0xbce) { ctx.pl.restoreEntry(o); ctx.release(o); return; }
             o.b(0x5b) = 0;
             ctx.pl.lockCameraLeft(0x9fa);           // DAT_00465b09
-            ctx.harry.facingLeft = true;
+            ctx.harry.facing() = 1;
             ctx.pl.setBoss(&o);                     // DAT_00466507 = 0xff, trg+0x1f4 = this
             o.w(0x5c) = 0x50;                       // trg+0x1ea = 0x5000 (big-endian 80)
             o.b(0x3c) = uint8_t((ctx.rnd() & 3) + 2);
@@ -3140,7 +3140,7 @@ void h_jaguar(ObjCtx& ctx, Obj& o) {
             h_bossDeathBurst(ctx, o);               // 0x415b92 runs straight into the 0x51 handler
             return;
         }
-        if (ctx.harry.invulnerable == 0 && harryContact(ctx, o, 0xf) && o.b(0x32) == kPounce)
+        if (ctx.harry.invulnerable() == 0 && harryContact(ctx, o, 0xf) && o.b(0x32) == kPounce)
             ctx.pl.knockBack(o.facing == 0, true);  // 0x427167: shoved the way the jaguar is going
         if (o.b(0x32) != kPounce) { int y = o.y + 0xd; ctx.floorSnap(o.x, y); o.y = int16_t(y - 0xd); }
 
@@ -3222,7 +3222,7 @@ void h_jaguar(ObjCtx& ctx, Obj& o) {
                 o.w(0x4c) += 1;
             } else if (aggressive(o) && o.hits < 0x14) {
                 // 0x4117ab: Harry about w5c px ahead at speed -> crouch and leap at him
-                int d = ctx.harry.x - o.x;
+                int d = ctx.harry.x() - o.x;
                 bool fast = o.w(0x3a) >= 3;
                 if (!fast && o.w(0x3a) < -3) { fast = true; d = -d; }
                 if (fast && between(d - o.w(0x5c), -10, 10)) {
@@ -3238,7 +3238,7 @@ void h_jaguar(ObjCtx& ctx, Obj& o) {
             }
             // 0x41189e: Harry 80 px behind at speed -> turn around
             if (o.w(0x3a) >= 4 || o.w(0x3a) < -5) {
-                const int d = ctx.harry.x - o.x;
+                const int d = ctx.harry.x() - o.x;
                 if (o.facing ? d < -0x50 : d >= 0x50) { toReverse(ctx, o); continue; }
             }
             return;
@@ -3254,9 +3254,9 @@ void h_jaguar(ObjCtx& ctx, Obj& o) {
                 continue;
             }
             if (!anim2Step(ctx, o, 0x3e, 4)) return;
-            const int d = ctx.harry.x - o.x;
+            const int d = ctx.harry.x() - o.x;
             const bool behind = (d >= 0) == (o.facing == 0);
-            if (behind || (ctx.harry.onGround && (ctx.rnd() & 1) == 0)) {
+            if (behind || (ctx.harry.onGround() && (ctx.rnd() & 1) == 0)) {
                 toRun(ctx, o, -0x50, 4);
                 o.l(0x38) = o.facing ? 0x30000 : -0x30000;
                 continue;
@@ -3273,7 +3273,7 @@ void h_jaguar(ObjCtx& ctx, Obj& o) {
                 if (hitNow) o.b(0x4d) = 0xff;
                 const bool roaring = o.sprite && o.sprite->name() == "jguroar";
                 if (roaring && o.frame != 5) return;
-                resume = o.b(0x4d) != 0 || between(o.x - ctx.harry.x, -0x68, 0x68);
+                resume = o.b(0x4d) != 0 || between(o.x - ctx.harry.x(), -0x68, 0x68);
             }
             if (!resume) return;
             toRun(ctx, o, 0, 4);                    // 0x411222
@@ -3285,7 +3285,7 @@ void h_jaguar(ObjCtx& ctx, Obj& o) {
             if (o.w(0x50) == 0x18) { ctx.rnd(); ctx.sound(0xf); }       // FUN_0042633d(0xf, 0x60, 9)
             if (o.w(0x50) < 0x30) return;
             moveX(o, o.l(0x38));
-            if (between(ctx.harry.x - o.x, -0xc0, 0xc0) || o.w(0x50) == 0x50) {
+            if (between(ctx.harry.x() - o.x, -0xc0, 0xc0) || o.w(0x50) == 0x50) {
                 startLeap(ctx, o);
                 o.l(0x50) = 0;
                 continue;
@@ -3320,8 +3320,8 @@ enum : uint8_t { kIdle, kAssemble, kReady, kTurn, kMorph, kRoll, kThrow, kChop, 
 void idle(ObjCtx&, Obj&); void ready(ObjCtx&, Obj&); void roll(ObjCtx&, Obj&); void reform(ObjCtx&, Obj&);
 void walk(ObjCtx&, Obj&); void rollHome(ObjCtx&, Obj&); void dying(ObjCtx&, Obj&);
 
-int harryDx(const ObjCtx& ctx, const Obj& o) { return int16_t(ctx.harry.x - o.x); }
-bool harryBehind(const ObjCtx& ctx, const Obj& o) { return ctx.harry.x < o.x ? o.facing != 0 : o.facing == 0; }
+int harryDx(const ObjCtx& ctx, const Obj& o) { return int16_t(ctx.harry.x() - o.x); }
+bool harryBehind(const ObjCtx& ctx, const Obj& o) { return ctx.harry.x() < o.x ? o.facing != 0 : o.facing == 0; }
 bool spriteIs(const Obj& o, const char* name) { return o.sprite && o.sprite->name() == name; }
 
 // 0x413a5b
@@ -3689,7 +3689,7 @@ void h_swingBall(ObjCtx& ctx, Obj& o) {
         o.frame = uint8_t(i >> 1);
         o.x = int16_t(o.w(0x50) + 3 + (o.facing ? -kSwing[i][0] : kSwing[i][0]));
         o.y = int16_t(o.w(0x52) + kSwing[i][1]);
-        if (ctx.harry.invulnerable == 0 && (o.frame == 4 || o.frame == 5)) {
+        if (ctx.harry.invulnerable() == 0 && (o.frame == 4 || o.frame == 5)) {
             ctx.rnd(); ctx.sound(0xc3);                                  // FUN_0042633d(0xc3, 0x60, 8)
             if (ctx.touchesHarry(o)) {
                 bool pushRight = o.b(0x5a) != 0;                        // DAT_00465b55
@@ -3740,7 +3740,7 @@ void h_turtle(ObjCtx& ctx, Obj& o) {
     if (o.b(0x34) == 0) o.b(0x34) = 0xff;
     static const uint8_t kSink[9] = {0, 0, 0, 0, 1, 1, 1, 1, 1};           // 0x45b7e4
     o.frame = kSink[std::min<int>(o.w(0x32), 8)];
-    if (!ctx.pl.harryOnPlatform() && !ctx.pl.harryBusy() && ctx.harry.vy >= 0 && harryOnBox(ctx, o, -20, 20, -12, 10)) {
+    if (!ctx.pl.harryOnPlatform() && !ctx.pl.harryBusy() && ctx.harry.vy() >= 0 && harryOnBox(ctx, o, -20, 20, -12, 10)) {
         ctx.pl.standOn(o.y);                                              // 0x465b73 = 0xff, vy = 0
         if (o.w(0x32) != 8) {
             if (o.w(0x32) == 0) { spawnRipple(ctx, o, -1, -1); ctx.sound(0xbb); }
@@ -3851,7 +3851,7 @@ void h_wheel(ObjCtx& ctx, Obj& o) {
         o.b(0x6c) = 0xff; o.l(0x54) = 0;
         if (o.b(0x39) == 0) o.l(0x4c) = 0x40000;
     }
-    if (ctx.harry.invulnerable == 0 && harryContact(ctx, o, 0xa0))
+    if (ctx.harry.invulnerable() == 0 && harryContact(ctx, o, 0xa0))
         ctx.pl.knockBack(o.l(0x50) < 0, false);                           // 0x42715b
     bool grounded = false;
     if (o.w(0x38) < 0xc8) {                                              // not yet fallen 200 px (l36)
@@ -3902,7 +3902,7 @@ void h_pitWheel(ObjCtx& ctx, Obj& o) {
     const int first = wheel::init(ctx, o);
     if (first < 0) return;
     if (first) { o.l(0x50) = 0x40000; o.l(0x54) = 0x40000; o.b(0x4f) = 0xff; }
-    if (ctx.harry.invulnerable == 0 && harryContact(ctx, o, 0xa0))
+    if (ctx.harry.invulnerable() == 0 && harryContact(ctx, o, 0xa0))
         ctx.pl.knockBack(o.l(0x50) < 0, false);                           // 0x42715b
     const ph::FloorHit f = ph::probeNear(ctx.det(), o.x, o.y + 0x3c);    // FUN_00425d6f
     if (f.hit) {
@@ -3920,7 +3920,7 @@ void h_pitWheel(ObjCtx& ctx, Obj& o) {
 // (template 0x4680f4: type 67, obrwhee1, rolling left) 0x260 px to the right and 0x20 px
 // up every 0xe0 ticks.
 void h_wheelSpawner(ObjCtx& ctx, Obj& o) {
-    if (ctx.harry.y < 0x124) {
+    if (ctx.harry.y() < 0x124) {
         if (o.b(0x5a) == 0) { o.b(0x5a) = 0xff; o.w(0x32) = 2; }
         o.w(0x32) -= 1;
         if (o.w(0x32) < 0) {
@@ -3955,7 +3955,7 @@ void h_stoneBlock(ObjCtx& ctx, Obj& o) {
         }
         o.b(0x32) -= 1;
     }
-    if (!ctx.pl.harryOnPlatform() && !ctx.pl.harryBusy() && ctx.harry.vy >= 0 && harryOnBox(ctx, o, -6, 64, -7, 9)) {
+    if (!ctx.pl.harryOnPlatform() && !ctx.pl.harryBusy() && ctx.harry.vy() >= 0 && harryOnBox(ctx, o, -6, 64, -7, 9)) {
         ctx.pl.standOn(o.y + 7);                                          // (FUN_00428dfa on landing: the landing routine)
         if (o.b(0x32) == 0x20) { o.b(0x32) = 0x1f; ctx.rnd(); ctx.sound(0xe); }
     }
@@ -4127,7 +4127,7 @@ void h_roamingSnake(ObjCtx& ctx, Obj& o) {
     if (!o.sprite || o.sprite->name() != "snimiss") harryContact(ctx, o, 10);
     if (o.b(0x33) == 0) {                                                // still a dot: rear up when Harry nears
         if (o.w(0x34) == 0) {
-            const int dx = o.x - ctx.harry.x, dy = ctx.harry.y - o.y;
+            const int dx = o.x - ctx.harry.x(), dy = ctx.harry.y() - o.y;
             if (!between(dx, -0xc0, 0xc0) || !between(dy, -0xa0, 0xa0)) { exitDespawnFar(ctx, o); return; }
         }
         o.sprite = ctx.spr("snix_dot");
@@ -4176,7 +4176,7 @@ void h_roamingSnake(ObjCtx& ctx, Obj& o) {
     o.w(0x4c) -= 1;
     if (o.w(0x4c) < 0) {
         o.w(0x4c) = int16_t((ctx.rnd() & 0x1f) + 0x10);
-        const bool ahead = (ctx.harry.x - o.x >= 0) ? o.l(0x54) >= 0 : o.l(0x54) < 0;
+        const bool ahead = (ctx.harry.x() - o.x >= 0) ? o.l(0x54) >= 0 : o.l(0x54) < 0;
         if (ahead) { o.b(0x38) = 0xfb; o.w(0x3c) = 0; }
     }
     { int y = o.y + 0xe; ctx.floorSnap(o.x, y); o.y = int16_t(y - 0xe); }
@@ -4224,7 +4224,7 @@ void h_crocSwimmer(ObjCtx& ctx, Obj& o) {
     else if (o.frame == 0xfe) { o.facing = 0xff; o.w(0x46) = int16_t(o.x - 0x30); o.l(0x36) = 0x12000; surface(); }
     const bool moving = between(o.w(0x32), 0x16, 0x7a);
     auto carry = [&] {                                                   // 0x11d654: Harry rides it
-        if (ctx.pl.harryOnPlatform() || ctx.pl.harryBusy() || ctx.harry.vy < 0) return;
+        if (ctx.pl.harryOnPlatform() || ctx.pl.harryBusy() || ctx.harry.vy() < 0) return;
         if (!harryOnBox(ctx, o, -26, 43, -5, 5)) return;
         if (moving) ctx.pl.carryHarry(o.l(0x36));
         int y = o.y - 1;
@@ -4268,7 +4268,7 @@ void h_crocLurker(ObjCtx& ctx, Obj& o) {
         o.w(0x32) = int16_t((ctx.rnd() & 0x3f) + 0x54);
     }
     const bool diving = o.sprite && o.sprite->name() == "crzdive";
-    if (!diving && ctx.hstate == HarryState::Drowning && between(ctx.harry.x - o.x, -0x50, 0x50)) {
+    if (!diving && ctx.hstate == HarryState::Drowning && between(ctx.harry.x() - o.x, -0x50, 0x50)) {
         if (o.w(0x56)) { o.w(0x56) -= 1; exitDespawnFar(ctx, o); return; }
         o.sprite = ctx.spr("crzdive");                                   // (FUN_00437502 / FUN_00437530(5): sound channel)
     }
@@ -4281,7 +4281,7 @@ void h_crocLurker(ObjCtx& ctx, Obj& o) {
         exitDespawnFar(ctx, o);
         return;
     }
-    if (o.frame < 4 && ctx.harry.vy >= 0 && harryOnBox(ctx, o, -26, 32, -5, 5)) {
+    if (o.frame < 4 && ctx.harry.vy() >= 0 && harryOnBox(ctx, o, -26, 32, -5, 5)) {
         ctx.pl.standOn(o.y - 4);
         o.w(0x34) = 0;
         ctx.rnd();                                                       // (sic: a new snap timer is drawn but never stored)
@@ -4337,9 +4337,9 @@ void h_fireball(ObjCtx& ctx, Obj& o) {
     if (!between(o.w(0x64) - o.y, -0x28, 0x40)) { die(); return; }
     moveX(o, o.l(0x5a));
     moveY(o, o.l(0x5e));
-    if (ctx.harry.y - 0x20 - o.y >= 0) { if (o.l(0x5e) < 0x10000) o.l(0x5e) += 0x1000; }
+    if (ctx.harry.y() - 0x20 - o.y >= 0) { if (o.l(0x5e) < 0x10000) o.l(0x5e) += 0x1000; }
     else                                { if (o.l(0x5e) >= -0x10000) o.l(0x5e) -= 0x1000; }
-    if (ctx.harry.x - o.x >= 0) { if (o.l(0x5a) < 0x70000) o.l(0x5a) += 0x5000; }
+    if (ctx.harry.x() - o.x >= 0) { if (o.l(0x5a) < 0x70000) o.l(0x5a) += 0x5000; }
     else                         { if (o.l(0x5a) >= -0x70000) o.l(0x5a) -= 0x5000; }
     if (ctx.triggerClass(o.x, o.y) & 1) { die(); return; }
     exitDespawnWide(ctx, o);
@@ -4359,7 +4359,7 @@ void h_firePriest(ObjCtx& ctx, Obj& o) {
         o.frame = 0xff;
         o.l(0x36) = 0; o.b(0x3a) = 0;                                    // main script (0x45a82f)
         o.l(0x46) = 0; o.b(0x4a) = 0; o.b(0x4b) = 0xff;                  // rising script (0x45a814) running
-        if (ctx.harry.x - o.x < 0) o.facing = 1;
+        if (ctx.harry.x() - o.x < 0) o.facing = 1;
     }
     if (!spriteIs("tpzhit")) harryContact(ctx, o, 0xf);
     if (o.w(0x52)) {                                                     // turning
@@ -4398,7 +4398,7 @@ void h_firePriest(ObjCtx& ctx, Obj& o) {
         o.sprite = ctx.spr("tprhigh"); o.frame = o.b(0x6a);
     }
     if (o.frame == 6) {
-        const bool behind = ctx.harry.x < o.x ? o.facing == 0 : o.facing != 0;
+        const bool behind = ctx.harry.x() < o.x ? o.facing == 0 : o.facing != 0;
         if (behind) { o.w(0x52) = 0x100; exitDespawnFar(ctx, o); return; }
         Obj* f = o.link2;
         if (f && !f->freed && f->type == 0x2c) { exitDespawnFar(ctx, o); return; }   // its fireball still burns
@@ -4469,7 +4469,7 @@ void h_templeArcher(ObjCtx& ctx, Obj& o) {
         if (o.b(0x32) == 0) {                                            // still in the wall
             o.w(0x64) = 1; o.w(0x66) = 4;
             o.facing = uint8_t((o.x >> 4) & 1);
-            if (!between(o.x - ctx.harry.x, -0xd8, 0xd8) || !between(o.y - ctx.harry.y, -0x90, 0x90)) {
+            if (!between(o.x - ctx.harry.x(), -0xd8, 0xd8) || !between(o.y - ctx.harry.y(), -0x90, 0x90)) {
                 exitDespawnMid(ctx, o);
                 return;
             }
@@ -4536,7 +4536,7 @@ void h_templeArcher(ObjCtx& ctx, Obj& o) {
         o.w(0x38) -= 1;
         if (o.w(0x38) < 0) {
             o.w(0x38) = int16_t((ctx.rnd() & 0x1f) + 0x30);
-            turn = ctx.harry.x < o.x ? o.facing == 0 : o.facing != 0;
+            turn = ctx.harry.x() < o.x ? o.facing == 0 : o.facing != 0;
         }
         if (!turn) {
             o.sprite = ctx.spr("tgrwalk"); o.frame = 0;

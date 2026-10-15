@@ -134,10 +134,10 @@ int jaguarTest(const std::string& dir) {
     if (!pl) { std::printf("FAIL: no play logic for level 0\n"); return 1; }
     for (int i = 0; i < 3000; ++i) {                      // fly to the arena's right end
         const game::Harry& h = pl->harry();
-        if (std::abs(h.x - 3030) <= 7 && std::abs(h.y - 940) <= 7) break;
+        if (std::abs(h.x() - 3030) <= 7 && std::abs(h.y() - 940) <= 7) break;
         engine::HostInput fly; fly.ctrlDown = true;
-        fly.keyDown[h.x < 3030 ? 0x27 : 0x25] = std::abs(h.x - 3030) > 7;
-        fly.keyDown[h.y < 940 ? 0x28 : 0x26] = std::abs(h.y - 940) > 7;
+        fly.keyDown[h.x() < 3030 ? 0x27 : 0x25] = std::abs(h.x() - 3030) > 7;
+        fly.keyDown[h.y() < 940 ? 0x28 : 0x26] = std::abs(h.y() - 940) > 7;
         g.tick(fly);
     }
     bool sawMeter = false, sawBoss = false;
@@ -151,7 +151,7 @@ int jaguarTest(const std::string& dir) {
         }
         if (jag) sawBoss = true;
         engine::HostInput in;
-        if (jag && std::abs(jag->x - pl->harry().x) < 70 && ticks % 3 == 0) in.keyDown['Q'] = true;
+        if (jag && std::abs(jag->x - pl->harry().x()) < 70 && ticks % 3 == 0) in.keyDown['Q'] = true;
         pl->healHarry();
         g.tick(in);
     }
@@ -178,10 +178,10 @@ int bungeeTest(const std::string& dir) {
     if (!pl) return 1;
     for (int i = 0; i < 3000; ++i) {                      // fly to the branch
         const game::Harry& h = pl->harry();
-        if (std::abs(h.x - 24) <= 7 && std::abs(h.y - 650) <= 7) break;
+        if (std::abs(h.x() - 24) <= 7 && std::abs(h.y() - 650) <= 7) break;
         engine::HostInput fly; fly.ctrlDown = true;
-        fly.keyDown[h.x < 24 ? 0x27 : 0x25] = std::abs(h.x - 24) > 7;
-        fly.keyDown[h.y < 650 ? 0x28 : 0x26] = std::abs(h.y - 650) > 7;
+        fly.keyDown[h.x() < 24 ? 0x27 : 0x25] = std::abs(h.x() - 24) > 7;
+        fly.keyDown[h.y() < 650 ? 0x28 : 0x26] = std::abs(h.y() - 650) > 7;
         g.tick(fly);
     }
     int grabbed = -1, lowest = 0, highest = 100000, released = -1;
@@ -190,11 +190,11 @@ int bungeeTest(const std::string& dir) {
         engine::HostInput in;
         if (grabbed < 0) in.keyDown[0x27] = true;                       // run right
         if (i >= 14 && i < 24) in.keyDown['W'] = true;                  // jump, held
-        if (grabbed >= 0 && h.bungee && h.vy == 0 && h.bungee->l(0x34) < -0x70000 && released < 0) { in.keyDown['W'] = true; released = i; }
+        if (grabbed >= 0 && pl->harryBungee() && h.vy() == 0 && pl->harryBungee()->l(0x34) < -0x70000 && released < 0) { in.keyDown['W'] = true; released = i; }
         g.tick(in);
-        if (h.bungee && grabbed < 0) grabbed = i;
-        if (h.bungee) lowest = std::max(lowest, int(h.y));
-        if (released >= 0) highest = std::min(highest, int(h.y));
+        if (pl->harryBungee() && grabbed < 0) grabbed = i;
+        if (pl->harryBungee()) lowest = std::max(lowest, int(h.y()));
+        if (released >= 0) highest = std::min(highest, int(h.y()));
     }
     if (grabbed < 0) { std::printf("FAIL: Harry did not catch the bungee vine\n"); ++fails; }
     if (lowest < 700) { std::printf("FAIL: the bungee vine did not stretch (lowest y %d)\n", lowest); ++fails; }

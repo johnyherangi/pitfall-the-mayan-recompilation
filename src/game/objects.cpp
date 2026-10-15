@@ -18,7 +18,7 @@ void ObjCtx::sound(int id) { if (id) g.playSound(id); }
 
 void ObjCtx::soundNear(const Obj& o, int id) {
     // FUN_00423134 opcodes 0xee/0xef: within 128 px horizontally, -0x60..0x80 vertically.
-    const int dx = o.x - harry.x, dy = o.y - harry.y;
+    const int dx = o.x - harry.x(), dy = o.y - harry.y();
     if (dx >= -0x80 && dx < 0x80 && dy >= -0x60 && dy < 0x80) sound(id);
 }
 
@@ -99,11 +99,11 @@ bool ObjCtx::touchesHarry(Obj& o, bool evenHidden) {
     const ph::SpriteHitbox* hh = ph::hitbox(harrySprite);
     if (!ho || !hh || ho->w == 0 || hh->w == 0) return false;
     // Harry's box is stored for the right-facing sprite; mirror it when he faces left.
-    int hx0 = harry.x + hh->dx, hx1 = hx0 + hh->w;
-    if (harry.facingLeft) { hx1 = harry.x - hh->dx; hx0 = hx1 - hh->w; }
+    int hx0 = harry.x() + hh->dx, hx1 = hx0 + hh->w;
+    if (harry.facingLeft()) { hx1 = harry.x() - hh->dx; hx0 = hx1 - hh->w; }
     const int ox0 = o.x + ho->dx, ox1 = ox0 + ho->w;
     if (ox1 - hx0 < 0 || ox0 - hx1 >= 0) return false;
-    const int hy0 = harry.y + hh->dy, hy1 = hy0 + hh->h, oy0 = o.y + ho->dy, oy1 = oy0 + ho->h;
+    const int hy0 = harry.y() + hh->dy, hy1 = hy0 + hh->h, oy0 = o.y + ho->dy, oy1 = oy0 + ho->h;
     if (oy1 - hy0 < 0 || oy0 - hy1 >= 0) return false;
     return true;
 }
