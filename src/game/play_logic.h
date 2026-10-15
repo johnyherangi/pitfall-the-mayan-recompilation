@@ -54,6 +54,9 @@ public:
     uint8_t& scriptEvent() { return ch1Id_; } // DAT_004627c1: the last channel-1 sound (script op 0xfe)
     bool channel0Busy() const;                 // FUN_004262c8
     bool channel1Busy() const;                 // FUN_004261d1
+    void stopChannel0() { stopSound0(); }      // FUN_0042624a
+    uint8_t channel0Id() const { return ch0Id_; }   // DAT_004627bf: the last channel-0 sound
+    void clearChannel0Hold() { ch0Hold_ = 0; }      // DAT_004627c2 = 0: the next channel-0 sound plays at once
     void healHarry() { h_.damage() = 0; }      // fx_hrtbt
     void startChili() { h_.w(0x46652b) = 0x380; }   // mi_chili (0x405a5b)
     void markCollected(const Obj& o);          // the .als entry stays cleared (it comes back after a death unless special)

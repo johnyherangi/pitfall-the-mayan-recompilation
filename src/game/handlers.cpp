@@ -1469,6 +1469,447 @@ void h_cartSpawner(ObjCtx& ctx, Obj& o) {
     }
 }
 
+// ---------------------------------------------------------------- mine carts (types 15, 0x25, 19)
+
+// 0x45b864 .. 0x45b8df.  The wheel offsets by cart frame (7 x {front dx, dy, back dx, dy}),
+// then the bytes behind the two frame tables the cart indexes: 0x45b8a8 by the height
+// difference across the track shape under it (-15 .. 15) and 0x45b8d6 by the integer part of
+// its fall speed (-9 .. 8); both are read on either side of their address.
+const uint8_t kCartTables[0x7c] = {
+    0xf0, 0xff, 0xfe, 0xff, 0x0b, 0x00, 0xf5, 0xff, 0xef, 0xff, 0xfd, 0xff, 0x0c, 0x00, 0xf6, 0xff,
+    0xf2, 0xff, 0xfc, 0xff, 0x0d, 0x00, 0xf8, 0xff, 0xf2, 0xff, 0xfa, 0xff, 0x0f, 0x00, 0xfa, 0xff,
+    0xf3, 0xff, 0xf7, 0xff, 0x10, 0x00, 0xfc, 0xff, 0xf8, 0xff, 0xf6, 0xff, 0x11, 0x00, 0x00, 0x00,
+    0xf7, 0xff, 0xf5, 0xff, 0x10, 0x00, 0x03, 0x00, 0x06, 0x06, 0x06, 0x06, 0x06, 0x06, 0x06, 0x05,
+    0x05, 0x04, 0x04, 0x03, 0x03, 0x04, 0x04, 0x05, 0x05, 0x06, 0x06, 0x06, 0x06, 0x06, 0x06, 0x06,
+    0x06, 0x06, 0x06, 0x06, 0x06, 0x06, 0x06, 0x06, 0x06, 0x06, 0x06, 0x06, 0x06, 0x06, 0x06, 0x06,
+    0x06, 0x06, 0x06, 0x06, 0x06, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x01, 0x01, 0x02,
+    0x02, 0x02, 0x03, 0x03, 0x04, 0x04, 0x05, 0x05, 0x06, 0x06, 0x06, 0x06};
+uint8_t cartByte(uint32_t va) { const uint32_t i = va - 0x45b864; return i < sizeof kCartTables ? kCartTables[i] : 0; }
+int16_t cartWord(uint32_t va) { return int16_t(cartByte(va) | cartByte(va + 1) << 8); }
+
+// The translated `add.l d0, (w6a:w6c)` on a 16.16 pair kept in the state area.
+void addFixedAt(Obj& o, int whole, int frac, int32_t v) {
+    int16_t w = o.w(whole); uint16_t f = uint16_t(o.w(frac));
+    addFixed(w, f, v);
+    o.w(whole) = w; o.w(frac) = int16_t(f);
+}
+
+// 0x408f5a: type 15, the mine cart Harry rides (ob_scar on two ob_whelz wheels, with the brake
+// lever obzleve3 but in level 7).  w6a:w6c is its x, l3c its speed (b4a: it runs left), l50 its
+// fall speed.  Harry drops into it (box 0x45b854; 0x45b85c once he rides or on the ride of level
+// 7) and rides in state 0x42aa3b; it speeds up by 0x2800 a tick to 7 px, and pulling the lever
+// back at full speed (state 0x42abaa) brakes it to 3 px, with sparks at a wheel (type 0x25),
+// until he pushes forward again.  It follows the track of both collision planes, tilting with
+// the slope, and falls where there is none; in level 2 a fast fall throws Harry out (0x42c518).
+// A wall in front of Harry (trigger class bit 0) throws the cart back and Harry against it
+// (0x42afe9).  In level 7 the ride (DAT_00465c56, the director type 115) carries the cart along
+// with the scroll: the pad moves it inside the screen, jump lifts it and down drops it through
+// the track, and the ride's 0x600-px loop moves the cart, Harry, the camera and every object.
+void h_mineCart(ObjCtx& ctx, Obj& o) {
+    Harry& h = ctx.harry;
+    ObjectSystem& os = ctx.pl.objectSystem();
+    const bool l7 = ctx.levelNo == 7;
+    auto in = [&](uint32_t s) { return h.cont() == s; };
+    auto rides = [&] { return in(0x42abaa) || in(0x42f2f9) || in(0x42aa3b); };
+    auto part = [&](int off) { return ctx.pl.objAt(uint32_t(o.l(off))); };
+    auto stopRumble = [&] { if (ctx.pl.scriptEvent() == 0xd1) { ctx.soundNow(0x89); ctx.pl.scriptEvent() = 0; } };
+    auto wrapRide = [&] {                                   // 0x409172 / 0x4098d5
+        const int16_t d = 0x600;
+        o.w(0x6a) += d;
+        h.w(0x4658b4) += d; ctx.camX = h.w(0x4658b4);
+        h.x() += d;
+        for (Obj* a = os.first(); a; a = os.nextOf(*a)) a->x = int16_t(a->x + d);
+    };
+
+    // 0x40a00d: the lever and the wheels follow the cart; far from the camera all four go.
+    auto parts = [&] {
+        if (Obj* lv = part(0x56)) {
+            lv->x = o.x; lv->y = int16_t(o.y - 0x10); lv->facing = o.b(0x4a);
+            if (lv->frame == 0 && in(0x42abaa)) lv->y = int16_t(lv->y - 0x200);   // in Harry's hands
+        }
+        if (Obj* w1 = part(0x5a)) {
+            const uint32_t t = 0x45b864 + uint32_t(o.frame) * 8;
+            int16_t d2 = cartWord(t), d3 = cartWord(t + 2), d4 = cartWord(t + 4), d5 = cartWord(t + 6);
+            if (o.facing) { d2 = int16_t(-d2); d4 = int16_t(-d4); }
+            w1->x = int16_t(o.x + d2); w1->y = int16_t(o.y + d3);
+            w1->behind = in(0x42aa3b) ? 0xff : 0;
+            w1->facing = o.facing; w1->frame = uint8_t(o.b(0x62) & 3);
+            if (Obj* w2 = part(0x5e)) {
+                w2->x = int16_t(o.x + d4); w2->y = int16_t(o.y + d5);
+                w2->behind = in(0x42aa3b) ? 0xff : 0;
+                w2->facing = o.facing; w2->frame = uint8_t((o.b(0x62) + 2) & 3);
+            }
+        }
+        if (!farFromCamera(ctx, o)) return;
+        stopRumble();
+        ctx.pl.restoreEntry(o);
+        ctx.release(o);
+        for (int off : {0x5e, 0x5a, 0x56}) if (Obj* p = part(off)) ctx.release(*p);
+    };
+    // 0x409ee5: the wheels turn with the speed and the cart's x follows w6a.
+    auto roll = [&] {
+        int32_t d0 = o.l(0x3c);
+        if (d0 != 0) { o.b(0x46) -= 1; if (int8_t(o.b(0x46)) < 0) o.b(0x46) = 3; }
+        if (o.b(0x4a)) d0 = -d0;
+        if (h.b(0x465c56) != 0) o.w(0x6a) -= h.w(0x466182);   // the ride: with the scroll
+        else addFixedAt(o, 0x6a, 0x6c, d0);
+        int8_t v = int8_t(o.b(0x3e));
+        if (v < 0) v = int8_t(-v);
+        o.b(0x63) += uint8_t(v);
+        if (int8_t(o.b(0x63) - 0x14) >= 0) {
+            o.b(0x63) -= 0x14;
+            o.b(0x62) -= 1;
+            if (int8_t(o.b(0x62)) < 0) o.b(0x62) = 2;
+        }
+        if (o.l(0x50) != 0) stopRumble();
+        else if (o.l(0x3c) != 0 && !ctx.channel1Busy()) ctx.sound1(0xd1, 3);
+        o.x = o.w(0x6a);
+        if (o.facing) o.x += 0xb;
+        parts();
+    };
+    // 0x409e1c: Harry rides along (but while he jumps out, hyihjump).
+    auto carry = [&] {
+        if (in(0x42b049)) { roll(); return; }
+        if (!h.spriteIs("hyihjump")) {
+            h.y() = int16_t(o.y - 0xc);
+            ctx.pl.carryHarry(o.b(0x4a) ? -int32_t(o.l(0x3c)) : int32_t(o.l(0x3c)));
+            if (o.b(0x68) != 0) { roll(); return; }
+            if (o.b(0x47) != 0) { h.b(0x465b73) = 0xff; roll(); return; }
+        }
+        h.x() = int16_t(o.w(0x6a) + 5); h.vx() = 0; h.facing() = 0;
+        if (o.b(0x4a)) { h.x() = int16_t(o.w(0x6a) - 3); h.facing() ^= 1; }
+        h.b(0x465b74) = 0xff;
+        h.b(0x465b73) = 0xff;
+        roll();
+    };
+
+    if (o.b(0x6d) != 0) { o.b(0x6d) -= 1; h.w(0x466767) = 0; }     // no pushing for a while after the brake
+    if (o.w(0x6a) == 0) o.w(0x6a) = o.x;
+    if (l7 && h.b(0x466190) != 0) h.b(0x466766) = 0;
+
+    bool flying = in(0x42b049);
+    if (!flying && rides() && o.l(0x3c) != 0 && (ctx.trigger(h.x() - 0x28, h.y() - 0x10).cls & 1)) {
+        // 0x409022: into a wall
+        o.l(0x3c) = int32_t(0xfffb0000); o.l(0x50) = int32_t(0xffff0000); o.b(0x65) = 0xff;
+        ctx.sound0(0xbc, 0xb);
+        if (ctx.pl.scriptEvent() == 0xd1) ctx.soundNow(0x89);
+        ctx.pl.harryCall(0x42afe9);
+        flying = true;
+    }
+    if (flying) {
+        // 0x409086: the cart flies on by itself (x is not mirrored)
+        moveX(o, o.l(0x3c)); moveY(o, o.l(0x50));
+        o.l(0x50) += 0x7000;
+        parts();
+        return;
+    }
+
+    if (l7 && !in(0x42aa3b) && !in(0x42709d)) {
+        // 0x4090f8: a crashed cart meeting a type-0x7f object on the ride
+        for (Obj* a = os.first(); a; a = os.nextOf(*a)) {
+            if (a->type != 0x7f || !ctx.boxesOverlap(*a, o)) continue;
+            if (o.b(0x65) == 0) break;
+            o.b(0x65) = 0xff;
+            h.b(0x465b74) = 0; h.setCont(0x42c244); h.w(0x465b47) = 0; h.b(0x465bb2) = 0x70;
+            if (int16_t(h.w(0x4658b4) - 0x200) < 0) wrapRide();
+            return;
+        }
+        if (o.b(0x65) != 0) { parts(); return; }
+    }
+
+    if (o.b(0x64) == 0) {
+        // 0x4091f1: the first tick
+        o.b(0x64) = 0xff;
+        if (in(0x42aa3b)) { ctx.pl.restoreEntry(o); ctx.release(o); return; }   // Harry rides another one
+        h.b(0x466190) = 0;
+        if (Obj* w = ctx.spawnFrom(o)) {                                      // FUN_004356bc(1)
+            o.l(0x5a) = int32_t(ctx.pl.addrOf(w));
+            w->behind = 0xff; w->setSprite(ctx.spr("ob_whelz")); w->flags = 0x2000; w->type = 0x3c;
+            if (Obj* w2 = ctx.spawnFrom(o)) {
+                o.l(0x5e) = int32_t(ctx.pl.addrOf(w2));
+                w2->setSprite(ctx.spr("ob_whelz")); w2->flags = 0x2000; w2->type = 0x3c;
+                if (!l7) {
+                    if (Obj* lv = ctx.spawnFrom(o, true, 2)) {                // FUN_0043546e(2)
+                        o.l(0x56) = int32_t(ctx.pl.addrOf(lv));
+                        lv->setSprite(ctx.spr("obzleve3")); lv->flags = 0x6000; lv->frame = 1; lv->type = 0x3c;
+                    }
+                }
+            }
+        }
+    }
+    if (in(0x42aa3b)) { h.b(0x465b46) = o.b(0x4a); h.w(0x465b51) = o.w(0x3e); }
+    if (o.frame == 0xff) { o.frame = 0; o.b(0x4a) = 0xff; }                  // template 0x18: runs left
+
+    // 0x409318: in the air
+    bool probe = true;
+    if (o.l(0x3c) != 0 && o.l(0x50) != 0) {
+        const int32_t d0 = o.l(0x50);
+        if (in(0x42aa3b)) h.b(0x465b45) = 0xff;
+        moveY(o, d0);
+        if (rides()) h.y() = int16_t(o.y - 0xb);
+        probe = false;
+        if (h.b(0x465c56) == 0) {
+            if (int16_t(o.w(0x52) - 8) < 0) o.l(0x50) += 0x6500;
+            if (o.l(0x50) >= 0x20000 && ctx.levelNo == 2 && in(0x42aa3b)) {
+                // falling fast: Harry is thrown out
+                h.vx() = o.l(0x3c); h.onGround() = 0;
+                h.b(0x465b73) = 0; h.b(0x465b74) = 0; h.b(0x465b7b) = 0xc;
+                h.setCont(0x42c518); h.b(0x465bb2) = 0x70; h.w(0x465b47) = 0;
+                o.b(0x68) = 0xff;
+            }
+        } else if (o.w(0x52) == 8) {
+            probe = true;
+        } else {
+            // the ride: lifted, then through the track while b54 counts down
+            o.l(0x50) += 0x6000;
+            if (d0 >= 0x3e000) {
+                if (o.b(0x54) == 0) probe = true;
+                else o.b(0x54) -= 1;
+            }
+        }
+    }
+    if (probe) {
+        // 0x409473: the track under the front (or back, running left) of the cart
+        const int16_t px = int16_t(o.w(0x6a) - (o.b(0x4a) ? 0xd : 0));
+        ph::FloorHit f = ph::probeNear(ctx.det(), px, o.y + 0xd);          // FUN_00425d6f
+        if (f.hit) o.y = int16_t(f.surfaceY - 0xd);
+        if (!f.hit) {
+            f = ph::probeNear(ctx.dt2(), px, o.y + 0xd);                    // FUN_00425f88
+            if (f.hit) o.y = int16_t(f.surfaceY - 0xd);
+        }
+        if (!f.hit) {
+            if (o.l(0x50) == 0) o.l(0x50) = 1;
+        } else {
+            // 0x40953b: on the track
+            if (ctx.levelNo != 2 && o.l(0x50) != 0) {
+                o.l(0x50) = 0;
+                ctx.sound0(0x1e, 8);                                         // FUN_0042633d
+                if (!in(0x42709d) && h.b(0x465b71) == 0) {
+                    h.w(0x465b5d) = 0;
+                    h.setUl(0x465b59, 0x4617ee);                             // Harry's bump (0x4617f6 had he been crouching)
+                    if (h.b(0x465b72) == 0 && !in(0x42b049)) {
+                        h.setCont(0x42aa3b); h.b(0x466190) = 0; h.l(0x465b45) = 0;
+                        h.w(0x465b5d) = 0; h.w(0x465b51) = 0;
+                    }
+                }
+            }
+            if (in(0x42aa3b)) h.b(0x465b45) = 0;
+            o.l(0x50) = 0;
+            o.setSprite(ctx.spr("ob_scar"));
+            int16_t d = int16_t(ph::kCollisionHeights[f.shape * 16] - ph::kCollisionHeights[f.shape * 16 + 15]);
+            if (d < 0) o.facing = 0;
+            else if (d > 0) o.facing = 0xff;
+            else { o.facing = 0; if (in(0x42aa3b)) h.b(0x465b45) = 0; }
+            o.frame = cartByte(uint32_t(0x45b8a8 + d));
+        }
+    }
+    // 0x4096e3
+    if (o.l(0x50) != 0) {
+        o.facing = 0;
+        o.frame = cartByte(uint32_t(0x45b8d6 + o.w(0x52)));
+        if (l7) o.facing = 0xff;
+    }
+    if (h.b(0x465b74) != 0 && (in(0x42f2f9) || in(0x42aa3b))) h.y() = int16_t(o.y - 0xb);
+
+    if (l7) {
+        // 0x409772: the ride
+        if (in(0x42709d) || in(0x430e3a)) { roll(); return; }
+        if (h.b(0x466190) == 0) {
+            if (h.b(0x465c56) == 0) goto board;
+            if (h.w(0x465b59) == 0 && !in(0x42f2f9) && !in(0x42c518) && h.b(0x466766) != 0) {
+                h.b(0x465b71) = 0;
+                ctx.pl.harryCall(0x42f2d2);                                  // crouch in the cart
+            }
+            if (h.b(0x466767) != 0) o.w(0x6a) -= 2;
+            if (h.b(0x466768) != 0) o.w(0x6a) += 3;
+            const int16_t cx = h.w(0x4658b4);
+            if (int16_t(cx - 0x120) >= 0) {
+                const int16_t d = int16_t(o.w(0x6a) - cx);
+                if (int16_t(d - 0x4a) < 0) o.w(0x6a) = int16_t(cx + 0x4a);
+                else if (int16_t(d - 0xfc) >= 0) o.w(0x6a) = int16_t(cx + 0xfc);
+            }
+            // (with the camera left of 0x120 the right-hand test at 0x409873 reads the d0 left
+            // from earlier in the handler: the slope, the fall speed, or 1 after the crouch call,
+            // never as much as 0xfc)
+        }
+        if (o.b(0x65) == 0) {
+            h.x() = int16_t(o.w(0x6a) - 3);
+            if (h.b(0x4661c1) == 0 && int16_t(h.w(0x4658b4) - 0x200) < 0) wrapRide();
+        }
+    }
+board:
+    // 0x40992e: Harry drops into the cart, and drives it while he is in its box
+    if (h.b(0x465b73) != 0 || h.l(0x465b7e) != 0 || h.onGround() || h.w(0x465baa) < 0 || o.b(0x68) != 0) { roll(); return; }
+    {
+        const bool big = in(0x42aa3b) || h.b(0x465c56) != 0;
+        if (!(big ? harryOnBox(ctx, o, -86, 84, -56, 56) : harryOnBox(ctx, o, -24, 30, -30, 12))) { roll(); return; }   // 0x45b85c / 0x45b854
+    }
+    if (o.b(0x47) == 0) {
+        if (h.b(0x465bb2) != 0) { roll(); return; }
+        if (!in(0x42f2f9) && !in(0x42f508) && !in(0x42aa3b)) {
+            ctx.sound0(0x34, 0x15);
+            o.l(0x3c) = 0x2800;
+            if (h.b(0x465b72) == 0 && !in(0x42b049) && !(ctx.levelNo == 2 && o.l(0x50) != 0)) {
+                h.setCont(0x42aa3b); h.b(0x466190) = 0;
+                h.l(0x465b45) = 0; h.l(0x465b59) = 0; h.w(0x465b5d) = 0; h.w(0x465b51) = 0;
+                h.b(0x465b46) = o.b(0x4a); h.w(0x465b47) = 0;
+                h.vy() = 0;
+            }
+        }
+    }
+    if (h.b(0x466190) != 0) { carry(); return; }
+    {
+        // 0x409abb
+        auto ahead = [&] { return o.b(0x4a) == 0 ? h.b(0x466768) != 0 : h.b(0x466767) != 0; };
+        auto back = [&] { return o.b(0x4a) != 0 ? h.b(0x466768) != 0 : h.b(0x466767) != 0; };
+        if (o.w(0x3e) == 3 && ahead()) {
+            o.b(0x47) = 0;                                                    // the brake is let go
+            if (Obj* lv = part(0x56)) lv->frame = 1;
+        }
+        int32_t d0 = 0;
+        if (o.b(0x47) == 0) {
+            bool go = o.l(0x3c) != 0;
+            if (!go) {
+                if (h.b(0x466762) != 0 && !l7) { ctx.pl.harryCall(0x42c490); return; }   // jumps out
+                go = ahead();
+            }
+            if (go) {
+                if (o.w(0x3e) != 7) d0 = 0x2800;
+                else o.l(0x3c) = 0x70000;
+            }
+        } else {
+            if (h.b(0x466762) != 0 && in(0x42aa3b)) ctx.pl.harryCall(0x42c490);
+            if (o.w(0x3e) != 3) d0 = int32_t(0xffffd000);
+        }
+        o.l(0x3c) += d0;
+        if (l7) {
+            // 0x409c2f: jump lifts the cart, down drops it through the track
+            if (int16_t(h.w(0x4658b4) - 0x120) >= 0 && h.w(0x465b59) == 0 && h.b(0x465c56) != 0 && o.l(0x50) == 0
+                && h.b(0x46676a) == 1) {
+                h.b(0x46676a) = 0x80;
+                if (h.b(0x466766) == 0) {
+                    if (!in(0x42f2f9)) {
+                        o.l(0x50) = int32_t(0xfff7ffff);
+                        if (int16_t(h.y() - 0x245) < 0) o.b(0x54) = 0x58;
+                    }
+                } else if (int16_t(h.y() - 0x2b0) < 0) {
+                    o.l(0x50) = 0x10000;
+                    o.b(0x54) = 7;
+                }
+            }
+        } else if (o.l(0x50) == 0 && o.w(0x3e) == 7 && back() && o.b(0x47) == 0) {
+            // 0x409d6d: Harry pulls the lever back
+            if (Obj* lv = part(0x56)) lv->frame = 0;
+            o.b(0x47) = 0xff;
+            h.setCont(0x42abaa);
+            o.b(0x6d) = 0x30;
+            ctx.sound0(0x1c, 0xc);                                            // FUN_0042633d
+            h.w(0x465b47) = 0;
+            if (Obj* s = ctx.spawnFrom(o, true, 3)) {                         // FUN_0043546e(3)
+                s->type = 0x25; s->flags = 0x6000; s->setSprite(ctx.spr("fxzspark"));
+                s->l(0x32) = int32_t(ctx.pl.addrOf(&o));
+                s->facing = o.b(0x4a);
+            }
+        }
+    }
+    carry();
+}
+
+// 0x40eca2: type 0x25, the sparks at the back wheel of a braking mine cart (l32): l5a when the
+// cart's (slope) facing matches the sparks' (its direction, b4a), else l5e.
+void h_cartSpark(ObjCtx& ctx, Obj& o) {
+    o.behind = 0xff;
+    if (Obj* cart = ctx.pl.objAt(uint32_t(o.l(0x32)))) {
+        const bool other = (cart->facing != 0) != (o.facing != 0);
+        if (Obj* w = ctx.pl.objAt(uint32_t(cart->l(other ? 0x5e : 0x5a)))) {
+            o.x = w->x; o.xFrac = w->xFrac; o.y = w->y; o.yFrac = w->yFrac;
+        }
+    }
+    o.x += 2; o.y += 0x13;
+    if (animStep(ctx, o, o.anim(0x36), kAnim_cartSpark, 2)) ctx.release(o);
+}
+
+// 0x40ab62: type 19, a mine cart Harry pushes along the track (ob_mcar on two ob_whelz wheels,
+// Tazamul Mines).  Pushing (hyipush, states 0x42f0e1 / 0x42f140) moves it a pixel a tick unless
+// a wall (trigger class bit 0) is ahead; Harry can stand on it (box 0x45a9f6).  It never leaves:
+// out of view it is hidden and its display entry dropped.  Its x is kept in DAT_0046589c (left of
+// 0x500) or DAT_0046589e for the level start (FUN_00433d0b).  Weapons meet the box record 0x4186b4.
+void h_pushCart(ObjCtx& ctx, Obj& o) {
+    Harry& h = ctx.harry;
+    if (int16_t(o.x - 0x500) < 0) h.w(0x46589c) = o.x;
+    else h.w(0x46589e) = o.x;
+    static const ph::SpriteHitbox kWeaponBox{"", -0x20, 0x3e, -0xf, 0x24};
+    o.rawBox = &kWeaponBox;
+    weaponHit(ctx, o, 0);                     // (with whatever d5 holds; nothing tests the result)
+    o.setSprite(ctx.spr("ob_mcar"));
+    for (int off : {0x5a, 0x5e}) {
+        if (o.l(off) != 0) continue;
+        if (Obj* w = ctx.spawnFrom(o)) {                                      // FUN_004356bc(1)
+            o.l(off) = int32_t(ctx.pl.addrOf(w));
+            w->setSprite(ctx.spr("ob_whelz")); w->flags = 0x2000; w->type = 0x3c;
+        }
+    }
+    { int y = o.y + 0x25; ctx.floorSnap(o.x - 8, y); o.y = int16_t(y - 0x25); }
+    bool pushed = false;
+    int8_t step = 0;
+    if (h.onGround()) {
+        const int16_t dy = int16_t(o.y - h.y()), dx = int16_t(o.x - h.x());
+        const int16_t vx = h.w(0x465ba6);
+        if (int16_t(dy + 0x40) >= 0 && int16_t(dy - 0x40) < 0 && vx != 0) {
+            if (vx < 0) {
+                if (h.facing() != 0 && int16_t(dx + 0x44) >= 0 && int16_t(dx + 0x38) < 0) {
+                    h.x() = int16_t(o.x + 0x40); h.xFrac() = o.xFrac;
+                    if (h.cont() != 0x42f0e1 && h.b(0x466767) != 0) { o.b(0x50) = 1; ctx.pl.harryCall(0x42f0c4); }
+                    h.vx() = -1;
+                    if (h.spriteIs("hyipush") && !(ctx.trigger(o.x - 0x34, o.y - 0x10).cls & 1)) {
+                        h.x() -= 1; o.x -= 1; step = -1; pushed = true;
+                    }
+                }
+            } else if (h.facing() == 0 && int16_t(dx - 0x38) >= 0 && int16_t(dx - 0x44) < 0) {
+                h.x() = int16_t(o.x - 0x40); h.xFrac() = o.xFrac;
+                if (h.cont() != 0x42f140 && h.b(0x466768) != 0) { o.b(0x50) = 1; ctx.pl.harryCall(0x42f123); }
+                h.vx() = 0x10000;
+                if (h.spriteIs("hyipush") && !(ctx.trigger(o.x + 0x14, o.y - 0x10).cls & 1)) {
+                    h.x() += 1; o.x += 1; step = 1; pushed = true;
+                }
+            }
+        }
+    }
+    if (pushed) {
+        // 0x40ae96: the wheels turn, and the rumble sounds every 0x30 ticks
+        o.b(0x64) -= 1;
+        if (int8_t(o.b(0x64)) < 0) { o.b(0x64) = 5; o.b(0x65) = uint8_t((o.b(0x65) + step) & 3); }
+        o.b(0x50) -= 1;
+        if (int8_t(o.b(0x50)) < 0) {
+            o.b(0x50) = 0x30;
+            ctx.pl.clearChannel0Hold();
+            ctx.sound0(0x11, 0xb);                                            // FUN_0042633d
+        }
+    } else if (ctx.pl.channel0Id() == 0x11 && h.vx() == 0) {
+        ctx.pl.stopChannel0();
+    }
+    if (Obj* w = ctx.pl.objAt(uint32_t(o.l(0x5a)))) { w->x = int16_t(o.x + 0xa); w->y = int16_t(o.y + 0x14); w->frame = o.b(0x65); }
+    if (Obj* w = ctx.pl.objAt(uint32_t(o.l(0x5e)))) {
+        w->x = int16_t(o.x - 0x10); w->y = int16_t(o.y + 0x14); w->frame = uint8_t((o.b(0x65) + 2) & 3);
+    }
+    if (h.w(0x465baa) >= 0 && harryOnBox(ctx, o, -28, 40, -14, -4)) {     // 0x45a9f6: on top of it
+        h.y() = int16_t(o.y - 0xe); h.vy() = 0; h.b(0x465b73) = 0xff;
+    }
+    if (farFromCamera(ctx, o)) {
+        ctx.pl.objectSystem().cancelCurrentDisplay();
+        o.w(0x26) = 0;                                                        // FUN_004263c4 (when it was set)
+        o.frame = 0xff;
+        return;
+    }
+    if (o.w(0x26) == 0) {
+        // back in view: FUN_004263a6(7) marks it again (and returns 0, so the cancel after it is skipped)
+        o.b(0x21) = 0xff; o.w(0x26) = 0x6663;
+        o.frame = 0xff;
+        return;
+    }
+    o.frame = 0;
+}
+
 
 // ---------------------------------------------------------------- rat (type 23, 0x40b5d2)
 
@@ -5790,6 +6231,9 @@ Handler ObjectSystem::handler(uint8_t type) {
     case 92:   return h_pushLever;
     case 98:   return h_cartSpawner;
     case 0x63: return h_runawayCart;
+    case 15:   return h_mineCart;
+    case 0x25: return h_cartSpark;
+    case 19:   return h_pushCart;
     case 6:    return h_boomerang;
     case 0x87: return h_boomerangBack;
     case 0x8a: return h_stoneSpark;
