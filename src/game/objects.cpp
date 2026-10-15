@@ -15,7 +15,7 @@ namespace game {
 
 uint32_t ObjCtx::rnd() { return pl.random(); }
 
-void ObjCtx::hurtHarry(int amount) { pl.hurtHarry(amount); }
+bool ObjCtx::hurtHarry(int amount) { return pl.hurtHarry(amount); }
 bool ObjCtx::sound0(int id, int pri) { return pl.sound0(id, pri); }
 bool ObjCtx::sound1(int id, int pri) { return pl.sound1(id, pri); }
 void ObjCtx::soundNow(int id) { pl.sound1Now(id); }
@@ -96,17 +96,18 @@ const ph::SpriteHitbox* boxOf(const Obj& o) {
 }
 // The overlap test of FUN_00424af1 for a5 at (ax, ay) with box ha and a6 at (bx, by) with box hb
 // (16-bit compares, as the listing does them; no mirroring by facing).
-bool overlap(int ax, int ay, const ph::SpriteHitbox* ha, int bx, int by, const ph::SpriteHitbox* hb) {
+bool overlap(int ax, int ay, const ph::SpriteHitbox* ha, int bx, int by, const ph::SpriteHitbox* hb, int16_t* d1Out = nullptr) {
     if (!ha || !hb || ha->w == 0 || hb->w == 0) return false;
     int16_t d0 = int16_t(ax + ha->dx), d1 = int16_t(bx + hb->dx + hb->w);
-    if (int16_t(d1 - d0) < 0) return false;
+    auto done = [&](bool r) { if (d1Out) *d1Out = d1; return r; };
+    if (int16_t(d1 - d0) < 0) return done(false);
     d1 = int16_t(d1 - hb->w); d0 = int16_t(d0 + ha->w);
-    if (int16_t(d1 - d0) >= 0) return false;
+    if (int16_t(d1 - d0) >= 0) return done(false);
     d0 = int16_t(ay + ha->dy); d1 = int16_t(by + hb->dy + hb->h);
-    if (int16_t(d1 - d0) < 0) return false;
+    if (int16_t(d1 - d0) < 0) return done(false);
     d1 = int16_t(d1 - hb->h); d0 = int16_t(d0 + ha->h);
-    if (int16_t(d1 - d0) >= 0) return false;
-    return true;
+    if (int16_t(d1 - d0) >= 0) return done(false);
+    return done(true);
 }
 } // namespace
 
@@ -115,12 +116,12 @@ bool ObjCtx::boxesOverlap(const Obj& a, const Obj& b) {
     return overlap(a.x, a.y, boxOf(a), b.x, b.y, boxOf(b));
 }
 
-bool ObjCtx::touchesHarry(Obj& o) {
+bool ObjCtx::touchesHarry(Obj& o, int16_t* d1) {
     // FUN_00424af1 with a5 = Harry (DAT_00465b0f), a6 = o: Harry's box from his sprite slot;
     // never while DAT_00465b72 is set (dying / leaving the level).
     const char* hs = harry.sprite();
     if (!*hs || (!o.sprite && !o.rawBox)) return false;
-    if (!overlap(harry.x(), harry.y(), ph::hitbox(hs), o.x, o.y, boxOf(o))) return false;
+    if (!overlap(harry.x(), harry.y(), ph::hitbox(hs), o.x, o.y, boxOf(o), d1)) return false;
     return harry.b(0x465b72) == 0;
 }
 
@@ -137,8 +138,9 @@ void ObjectSystem::reset() {
     }
     top_ = kPoolSize - 1;
     head_ = tail_ = -1;
-    behind_.clear(); front_.clear();
-    curList_ = nullptr;
+    disp_.fill(-1);
+    behindN_ = 0; frontN_ = kFront;
+    curSlot_ = 0; hasSlot_ = false;
 }
 
 void ObjectSystem::init(Obj& o) {
@@ -219,7 +221,7 @@ void ObjectSystem::free(Obj& o) {
     // slot, for Harry's record and for bad pointers.)  The display entry of the object that
     // is running is cancelled when it frees itself (DAT_00465b8e); the record keeps its fields.
     if (o.freed) return;   // (a second free would push the record twice; the handlers never do it)
-    if (curList_ && curSlot_ < curList_->size() && (*curList_)[curSlot_] == indexOf(o)) (*curList_)[curSlot_] = -2;
+    if (hasSlot_ && disp_[curSlot_] == indexOf(o)) disp_[curSlot_] = -2;
     stack_[++top_] = indexOf(o);
     o.type = 0;
     o.freed = true;
@@ -233,7 +235,7 @@ bool ObjectSystem::moveToTail(Obj& o) {
     if (top_ < kReserve) {
         // no record to spare: FUN_0043598f again (its second unlink changes nothing), and the
         // handler is abandoned
-        if (curList_ && curSlot_ < curList_->size() && (*curList_)[curSlot_] == indexOf(o)) (*curList_)[curSlot_] = -2;
+        if (hasSlot_ && disp_[curSlot_] == indexOf(o)) disp_[curSlot_] = -2;
         stack_[++top_] = indexOf(o);
         o.type = 0; o.freed = true;
         return false;
@@ -252,15 +254,18 @@ std::vector<Obj*> ObjectSystem::list() {
 void ObjectSystem::tick(ObjCtx& ctx) {
     // 0x405170: the display lists start again; the list is walked from the head, the next
     // record is taken before the handler runs (DAT_00465888).
-    behind_.clear(); front_.clear();
-    curList_ = nullptr;
+    behindN_ = 0; frontN_ = kFront;
+    disp_[0] = -1; disp_[kFront] = -1;                       // 0x405183
     int guard = 0;
     for (int i = head_; i != -1 && guard < 0x1000; ++guard) {
         Obj& o = recs_[size_t(i)];
         const int pending = o.next;
-        std::vector<int>& l = o.behind ? behind_ : front_;   // 0x405236 (+0x28)
-        l.push_back(i);
-        curList_ = &l; curSlot_ = l.size() - 1;
+        size_t& n = o.behind ? behindN_ : frontN_;            // 0x405236 (+0x28)
+        if (n + 1 < disp_.size()) {                          // (the original would write on past 0x464e7c)
+            disp_[n] = i; disp_[n + 1] = -1;
+            curSlot_ = n; hasSlot_ = true;
+            ++n;
+        }
         ctx.pl.setTriggerClass(2, 3);     // 0x40528a: trigger id 2 is a wall for objects (a few handlers clear it again)
         if (o.type != 0) {
             Handler h = handler(o.type);
@@ -623,21 +628,21 @@ void killObject(ObjCtx& ctx, Obj& o) {
     half->facing = 0xff;
 }
 
-bool harryContact(ObjCtx& ctx, Obj& o, int damage) {
+bool harryContact(ObjCtx& ctx, Obj& o, int damage, int16_t* d1) {
     // 0x407aff: every 6th call (o+0x2e counts down 5..0) the test of 0x407b0f.
     o.touchTick = uint8_t(o.touchTick - 1);
     if (int8_t(o.touchTick) >= 0) return false;
     o.touchTick = 5;
-    return harryContactNow(ctx, o, damage);
+    return harryContactNow(ctx, o, damage, d1);
 }
 
-bool harryContactNow(ObjCtx& ctx, Obj& o, int damage) {
+bool harryContactNow(ObjCtx& ctx, Obj& o, int damage, int16_t* d1) {
     // 0x407b0f: the box test against Harry; a hit hurts him by `damage` (FUN_00428233, d5).
     Harry& h = ctx.harry;
     if (h.b(0x465b72) != 0) return false;
     auto test = [&] {                                   // 0x407b25
-        if (!ctx.touchesHarry(o)) return false;
-        ctx.hurtHarry(damage);
+        if (!ctx.touchesHarry(o, d1)) return false;
+        if (ctx.hurtHarry(damage) && d1) *d1 = 0x60;    // (its sound call's d1)
         return true;
     };
     if (!h.spriteIs("hyisswng")) return test();

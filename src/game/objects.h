@@ -117,8 +117,10 @@ struct ObjCtx {
     void soundNow(int id);                             // FUN_004261b0: channel 1, no priority test
     bool channel0Busy();                               // FUN_004262c8
     bool channel1Busy();                               // FUN_004261d1
-    void hurtHarry(int amount);                        // FUN_00428233
-    bool touchesHarry(Obj& o);                         // FUN_00424af1 with a5 = Harry
+    bool hurtHarry(int amount);                        // FUN_00428233 (true: it got past its early returns)
+    // FUN_00424af1 with a5 = Harry; `d1`, when given, receives what the test leaves in d1 (the
+    // object's box edge it stopped at; unchanged when either box is missing).
+    bool touchesHarry(Obj& o, int16_t* d1 = nullptr);
     bool boxesOverlap(const Obj& a, const Obj& b);     // FUN_00424af1
     const ph::ColumnTable& det() const;                // .det collision plane
     const ph::ColumnTable& dt2() const;                // .dt2
@@ -160,17 +162,25 @@ public:
     // One object pass (0x405170): every object in the list runs its handler.
     void tick(ObjCtx& ctx);
     // [DAT_00465b8e] = -2: the running object's display entry is cancelled (not drawn).
-    void cancelCurrentDisplay() { if (curList_ && curSlot_ < curList_->size()) (*curList_)[curSlot_] = -2; }
+    void cancelCurrentDisplay() { if (hasSlot_) disp_[curSlot_] = -2; }
     Obj& record(int i) { return recs_[size_t(i)]; }
     const Obj& record(int i) const { return recs_[size_t(i)]; }
     int indexOf(const Obj& o) const { return int(&o - recs_.data()); }
     std::vector<Obj*> list();                  // the objects in list order (DAT_00462848 ..)
     static Handler handler(uint8_t type);
 
-    // The display lists the pass makes (0x464bfc behind Harry, 0x464d3c in front; FUN_00434f6c
-    // draws them on the next tick): record indices, -2 for an entry whose object freed itself.
-    const std::vector<int>& behindList() const { return behind_; }
-    const std::vector<int>& frontList() const { return front_; }
+    // The display lists the pass makes, one array as in RAM: from 0x464bfc the objects behind
+    // Harry, from 0x464d3c (entry kFront) the ones in front; FUN_00434f6c draws them on the
+    // next tick.  Entries are record indices, -1 ends a list, -2 is a cancelled entry; the
+    // entries past an end are left from earlier passes.
+    static constexpr size_t kFront = 0x50;
+    static constexpr uint32_t kDisplayAddr = 0x464bfc;
+    const std::array<int, 0xa1>& displayArray() const { return disp_; }
+    uint32_t currentDisplayAddr() const { return hasSlot_ ? kDisplayAddr + 4u * uint32_t(curSlot_) : 0; }   // DAT_00465b8e
+    void cancelDisplayAt(uint32_t addr) {                // [addr] = -2
+        const uint32_t i = (addr - kDisplayAddr) / 4;
+        if (addr >= kDisplayAddr && (addr - kDisplayAddr) % 4 == 0 && i < disp_.size()) disp_[i] = -2;
+    }
 
 private:
     void init(Obj& o);                         // 0x43582b
@@ -180,9 +190,10 @@ private:
     int stack_[kPoolSize] = {};
     int top_ = -1;                             // index of the top entry of the free stack
     int head_ = -1, tail_ = -1;
-    std::vector<int> behind_, front_;
-    std::vector<int>* curList_ = nullptr;      // DAT_00465b8e: the display entry of the object running now
-    size_t curSlot_ = 0;
+    std::array<int, 0xa1> disp_{};             // 0x464bfc .. 0x464e7c
+    size_t behindN_ = 0, frontN_ = kFront;     // DAT_00464bf4 / DAT_00464bf8: where the next entry goes
+    size_t curSlot_ = 0;                       // DAT_00465b8e: the entry of the object that ran last
+    bool hasSlot_ = false;
 };
 
 // --- shared behaviour pieces (objects.cpp) ---
@@ -218,10 +229,11 @@ void debrisPuff(ObjCtx& ctx, Obj& at);
 int scoreForType(uint8_t type);
 // 0x4081fc: an enemy dies: score, death effect, permanent-kill bookkeeping, release.
 void killObject(ObjCtx& ctx, Obj& o);
-// 0x407aff: every 6th call, harryContactNow.
-bool harryContact(ObjCtx& ctx, Obj& o, int damage);
+// 0x407aff: every 6th call, harryContactNow.  `d1` as for ObjCtx::touchesHarry (0x60 after a
+// hurt that went through).
+bool harryContact(ObjCtx& ctx, Obj& o, int damage, int16_t* d1 = nullptr);
 // 0x407b0f: hurt Harry by `damage` when the boxes overlap (on a vine his box swings with him).
-bool harryContactNow(ObjCtx& ctx, Obj& o, int damage);
+bool harryContactNow(ObjCtx& ctx, Obj& o, int damage, int16_t* d1 = nullptr);
 // 0x4301ce: triggers 0x30 / 0x31 at (x + dx, y) toggle the "in front" flag.
 void priorityTrigger(ObjCtx& ctx, Obj& o, int dx);
 // 0x424d6a / 0x424fbb: release the object when it is far from the camera

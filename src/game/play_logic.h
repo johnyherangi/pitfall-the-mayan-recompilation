@@ -43,7 +43,7 @@ public:
     // 0x427167, standing 0x428dfa, FUN_00428233 (hurt, d5 = amount) and the others listed in
     // harryCall (harry_states.cpp).
     void harryCall(uint32_t addr);
-    void hurtHarry(int d5);                     // FUN_00428233
+    bool hurtHarry(int d5);                     // FUN_00428233 (true: past its early returns)
     void grabHarry(Obj& bat) { h4285d7(bat); }  // FUN_004285d7 (a5 = the bat)
 
     // --- services for the object handlers (game/objects.h) ---

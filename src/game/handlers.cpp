@@ -203,15 +203,7 @@ void h_item(ObjCtx& ctx, Obj& o) {
     }
 }
 
-// FUN_004351c5: a new object from a 9-byte template {type, frame, flags, sprite slot, class}
-// at the parent's position (FUN_0043546e copies x and y).
-Obj* spawnFromTemplate(ObjCtx& ctx, Obj& parent, uint8_t type, uint8_t frame, uint16_t flags, const char* sprite) {
-    Obj* n = ctx.spawnFrom(parent, true);
-    if (!n) return nullptr;
-    n->type = type; n->frame = frame; n->flags = flags;
-    n->sprite = ctx.spr(sprite);
-    return n;
-}
+Obj* spawnFromTemplate(ObjCtx& ctx, const Obj& at, int templateId);
 
 // 0x405322: type 1, scenery: only the despawn test.
 void h_static(ObjCtx& ctx, Obj& o) { exitDespawnFar(ctx, o); }
@@ -250,7 +242,7 @@ void h_leanLever(ObjCtx& ctx, Obj& o) {
         if (o.frame != 3) { exitDespawnFar(ctx, o); return; }
         o.type = 1;
         ctx.g.stats().secret1up = true;
-        Obj* u = spawnFromTemplate(ctx, o, 2, 0, 0x6000, "mi_1up");
+        Obj* u = spawnFromTemplate(ctx, o, 0x59);      // the template at 0x467f34 (mi_1up)
         if (!u) { exitDespawnFar(ctx, o); return; }
         u->x += 0x58; u->y += 0xb;
         u->y -= 10; ctx.sparkleBurst(*u, kSparkleOffsetsA); u->y += 10;
@@ -1760,16 +1752,19 @@ void h_boar(ObjCtx& ctx, Obj& o) {
         if (ctx.harry.x() - o.x >= 0) o.facing = 1;
     }
     { int y = o.y + 0xb; if (ctx.floorSnap(o.x - 0xc, y)) o.y = int16_t(y - 0xb); }
-    bool killed = false;
-    const bool hit = weaponHits(ctx, o, 0x1f, &killed);
-    if (hit) {
-        if (killed) { killObject(ctx, o); return; }
+    const WeaponHit r = weaponHit(ctx, o, 0x1f);
+    if (r.d1) {
+        if (r.d0) { killObject(ctx, o); return; }
         if (o.b(0x64) == 0 && o.w(0x3c) == 0) {
             const int d = ctx.harry.x() - o.x;
             if (d >= 0 ? o.facing != 0 : o.facing == 0) { o.w(0x58) = 1; o.w(0x3e) = 0; }   // whipped head-on: tumbles
         }
     }
-    harryContact(ctx, o, 0xf);
+    // The grazing test below reads d1 after the contact test, which on its every-6th-call ticks
+    // leaves a box edge (or 0x60) there instead of the weapon test's flag: so a grazing boar on
+    // screen wakes up within a few ticks whatever the distance, unless that byte happens to be 0.
+    int16_t d1 = r.d1 ? 1 : 0;
+    harryContact(ctx, o, 0xf, &d1);
     if (o.b(0x64)) {
         // Grazing until Harry comes within 128 px (or something hits it).
         o.w(0x68) -= 1;
@@ -1777,7 +1772,7 @@ void h_boar(ObjCtx& ctx, Obj& o) {
         o.sprite = ctx.spr("whitoss");
         animStep(ctx, o, o.anim(0x62), kAnim_boarGraze, 4);
         const int d = ctx.harry.x() - o.x;
-        if (!hit && !between(d, -0x80, 0x80)) { exitDespawnWide(ctx, o); return; }
+        if (uint8_t(d1) == 0 && !between(d, -0x80, 0x80)) { exitDespawnWide(ctx, o); return; }
         o.b(0x64) = 0;
         if (!between(d, -0x80, 0x80)) o.facing ^= 1;
     }
@@ -1786,20 +1781,23 @@ void h_boar(ObjCtx& ctx, Obj& o) {
         if (o.facing == 0) { if (o.w(0x34) != -limit - 1) o.l(0x32) -= step; }
         else { if (o.w(0x34) != limit) o.l(0x32) += step; }
     };
+    bool run = true;                                     // on to 0x415965
     if (o.w(0x58)) {
-        // Tumbling after a whip hit.
+        // Tumbling after a whip hit (then straight to 0x415abb).
         o.sprite = ctx.spr("whiroll");
         animStep(ctx, o, o.anim(0x3e), kAnim_sparkle2, 4);
         easeTowardsFacing(0x7000, 4);
+        run = false;
     } else if (o.w(0x3c)) {
-        // Skidding round.
+        // Skidding round; once stopped it turns and runs on this tick.
         o.sprite = ctx.spr("whiroll");
         animStep(ctx, o, o.anim(0x3e), kAnim_sparkle2, 4);
         if (o.l(0x32) < 0) o.l(0x32) += 0x3000; else o.l(0x32) -= 0x3000;
         if (o.w(0x34) != 0) { exitDespawnWide(ctx, o); return; }
         o.w(0x44) = 0x32; o.facing ^= 1;
         o.sprite = ctx.spr("whirun"); o.w(0x3c) = 0;
-    } else {
+    }
+    if (run) {
         if (o.w(0x50)) {
             // Tossing Harry.
             o.l(0x32) = 0;
@@ -1818,20 +1816,22 @@ void h_boar(ObjCtx& ctx, Obj& o) {
                 o.w(0x50) = 1;
             }
         }
-        easeTowardsFacing(0x4000, 4);
+        easeTowardsFacing(0x4000, 4);                    // 0x415a8b
     }
-    // 0x415abb: turn when Harry is behind, or at a type-2 marker ahead.
+    // 0x415abb: skid round when Harry is behind (not for 0x32 ticks after a turn) or at a
+    // trigger id 2 ahead (always).
+    bool brake = false;
     if (o.w(0x44)) o.w(0x44) -= 1;
     else {
-        const int d = ctx.harry.x() - o.x;
-        bool turn = d >= 0 ? o.facing == 0 : o.facing != 0;
-        if (!turn) {
-            uint8_t id = 0;
-            ctx.triggerClass(o.x + (o.facing ? 0x48 : -0x48), o.y - 8, &id);
-            turn = id == 2;
-        }
-        if (turn) { o.w(0x3c) = 1; o.w(0x3e) = 0; o.w(0x58) = 0; }
+        const int d = int16_t(ctx.harry.x() - o.x);
+        brake = d >= 0 ? o.facing == 0 : o.facing != 0;
     }
+    if (!brake) {
+        uint8_t id = 0;
+        ctx.triggerClass(o.x + (o.facing ? 0x48 : -0x48), o.y - 8, &id);
+        brake = id == 2;
+    }
+    if (brake) { o.w(0x3c) = 1; o.w(0x3e) = 0; o.w(0x58) = 0; }
     animStep(ctx, o, o.anim(0x36), kAnim_boarRun, 3);
     exitDespawnWide(ctx, o);
 }
@@ -1900,37 +1900,44 @@ void h_batRoost(ObjCtx& ctx, Obj& o) {
     if (o.b(0x32) == 0) {
         o.b(0x32) = 0xff;
         for (int i = 0; i < 2; ++i) {
-            Obj* b = ctx.spawnFrom(o, true);          // FUN_0043546e
+            Obj* b = ctx.spawnFrom(o, true);          // FUN_0043546e(3)
             if (!b) break;
-            b->x = int16_t(o.x + (i ? 0x10 : 0)); b->y = o.y;
+            if (i == 0) o.link = b; else o.link2 = b; // l3c / l40
+            b->w(0x26) = 0x6663;                      // (d0 != 0: FUN_004263a6)
             b->type = 0x2b; b->flags = 0x6000; b->sprite = ctx.spr("btfhang"); b->frame = 0; b->behind = 0xff;
-            if (i == 0) o.link = b; else o.link2 = b;
+            if (i == 1) b->x = int16_t(b->x + 0x10);
         }
     }
-    auto wake = [&](Obj* b) {
-        if (b && !b->freed && b->type == 0x2b) { b->facing = o.facing; b->b(0x32) = 1; b->type = 0x12; }
-    };
-    if (o.w(0x34)) {
+    auto asleep = [&](Obj* b) { return b && b->type == 0x2b; };
+    auto wake = [&](Obj* b) { b->facing = o.facing; b->b(0x32) = 1; b->type = 0x12; };
+    bool counting = false;
+    if (o.w(0x34)) {                                  // the second bat follows 0x32 ticks later
         o.w(0x34) -= 1;
-        if (o.w(0x34) == 0) { wake(o.link2); ctx.release(o); }
-        return;
-    }
-    const int dx = o.x - ctx.harry.x();
-    if (dx < -0x8c) o.facing = 0xff;
-    else if (dx >= 0x5a) o.facing = 0;
-    else {
-        const int dy = o.y - ctx.harry.y();
-        if (dy >= -0xc8 && dy < 0x14) {
-            wake(o.link); o.link = nullptr;
-            o.w(0x34) = 0x32;
+        if (o.w(0x34) == 0) {
+            if (asleep(o.link2)) wake(o.link2);
+            ctx.release(o);
             return;
         }
+        counting = true;
     }
-    const int cx = o.x - ctx.camX, cy = o.y - ctx.camY;
-    if (cx < -0x78 || cx >= 0x1b8 || cy < -0x82 || cy >= 0x15e) {
-        if (o.link && !o.link->freed && o.link->type == 0x2b) ctx.release(*o.link);
-        if (o.link2 && !o.link2->freed && o.link2->type == 0x2b) ctx.release(*o.link2);
-        ctx.pl.restoreEntry(o); ctx.release(o);
+    if (!counting) {
+        const int16_t dx = int16_t(o.x - ctx.harry.x());
+        if (dx < -0x8c) o.facing = 0xff;
+        else if (dx >= 0x5a) o.facing = 0;
+        else {
+            const int16_t dy = int16_t(o.y - ctx.harry.y());
+            if (dy >= -0xc8 && dy < 0x14) {
+                if (asleep(o.link)) { Obj* b = o.link; o.link = nullptr; wake(b); }
+                o.w(0x34) = 0x32;
+                return;
+            }
+        }
+    }
+    if (farFromCamera(ctx, o)) {                      // 0x424ec4: both bats still asleep go with it
+        if (asleep(o.link)) ctx.release(*o.link);
+        if (asleep(o.link2)) ctx.release(*o.link2);
+        ctx.pl.restoreEntry(o);
+        ctx.release(o);
     }
 }
 
@@ -2938,16 +2945,11 @@ void h_pouchRespawner(ObjCtx& ctx, Obj& o) {
     if (!o.link) {
         const int dx = o.x - ctx.camX, dy = o.y - ctx.camY;
         const bool onScreen = dx >= -0x20 && dx < 0x160 && dy >= -0x20 && dy < 0xe8;   // 0x424f40
-        if (!onScreen && ctx.g.stats().ammoCount[0] < 10) {
-            if (Obj* p = ctx.spawnFrom(o, true)) {        // FUN_004351c5 from the template at 0x467fe4
-                const ph::ObjectTemplate& t = ph::kObjectTemplates[7];
-                p->type = t.type; p->frame = t.sub; p->flags = t.flags;
-                p->sprite = ctx.spr(t.sprite);
-                p->w(0x26) = 0x6663;
-                o.link = p;
-            }
+        if (!onScreen && int8_t(ctx.g.stats().ammoCount[0] - 10) < 0) {
+            if (Obj* p = spawnFromTemplate(ctx, o, 7))   // FUN_004351c5 from the template at 0x467fe4
+                o.link = p;                               // l50
         }
-    } else if (o.link->freed || o.link->type != 2) {
+    } else if (o.link->type != 2) {                       // picked up (or anything else now)
         o.link = nullptr;
     }
     if (!o.link) exitDespawnFar(ctx, o);
@@ -4022,7 +4024,7 @@ void h_swingBall(ObjCtx& ctx, Obj& o) {
         static const int16_t kSwing[12][2] = {                                                  // 0x45b05a
             {60, -8}, {63, -8}, {68, -5}, {70, -4}, {70, -2}, {67, 4}, {64, 7}, {58, 10}, {49, 15}, {38, 18}, {25, 21}, {13, 22}};
         const int i = std::min<int>(o.frame, 11);
-        if (o.link && !o.link->freed) { o.link->frame = kChainFrame[i]; o.link->facing = o.facing; }
+        if (o.link) { o.link->frame = kChainFrame[i]; o.link->facing = o.facing; }   // l4a
         o.frame = uint8_t(i >> 1);
         o.x = int16_t(o.w(0x50) + 3 + (o.facing ? -kSwing[i][0] : kSwing[i][0]));
         o.y = int16_t(o.w(0x52) + kSwing[i][1]);
@@ -4038,9 +4040,10 @@ void h_swingBall(ObjCtx& ctx, Obj& o) {
             }
         }
     }
-    if (beyondWide(ctx, o)) {                                            // 0x425051: both go
-        if (o.link && !o.link->freed) ctx.release(*o.link);
-        exitDespawnWide(ctx, o);
+    if (beyondWide(ctx, o)) {                                            // 0x425051: both go, the ball first
+        ctx.pl.restoreEntry(o);
+        ctx.release(o);
+        if (o.link) ctx.release(*o.link);
     }
 }
 
@@ -4071,11 +4074,21 @@ void spawnRipple(ObjCtx& ctx, Obj& at, int dx, int dy, uint16_t flagAdd = 0) {
 void h_ripple(ObjCtx& ctx, Obj& o) {
     const bool splash = o.sprite && o.sprite->name() == "fxisplsh";
     const bool done = animStep(ctx, o, o.anim(0x32), splash ? kAnim_splashRing : kAnim_rippleRing, 4);
-    if (o.link && !o.link->freed) o.link->frame = o.frame;
+    if (o.link) o.link->frame = o.frame;                                 // l50: the twin
     if (done) {
-        if (o.link && !o.link->freed) ctx.release(*o.link);
         ctx.release(o);
+        if (Obj* t = o.link) {
+            // The twin's l6a is the display entry it had when it last ran (0x41562c) - in the
+            // last pass, as it runs after the ripple - and that entry of this pass is cancelled.
+            ctx.pl.objectSystem().cancelDisplayAt(uint32_t(t->l(0x6a)));
+            ctx.release(*t);
+        }
     }
+}
+
+// 0x41562c: type 0x4f, the ripple's mirrored twin: it only notes its display entry.
+void h_rippleTwin(ObjCtx& ctx, Obj& o) {
+    o.l(0x6a) = int32_t(ctx.pl.objectSystem().currentDisplayAddr());     // DAT_00465b8e
 }
 
 // 0x4078b0: a turtle (obiturtl) floating in the water.  Harry can stand on it; it sinks a
@@ -4127,6 +4140,15 @@ void h_fish(ObjCtx& ctx, Obj& o) {
 // angle (l54 in 1/0xc0000 turns per row, w32 = row * 5).
 namespace wheel {
 
+// 0x4146f1: stop the rumble (if it is still the last channel-1 sound) and free the children
+// (l3c, l40, l44, l48 up to the first missing one) and the wheel.
+void teardown(ObjCtx& ctx, Obj& o) {
+    if (ctx.pl.scriptEvent() == 0xd1) { ctx.soundNow(0x89); ctx.pl.scriptEvent() = 0; }
+    for (Obj* p : o.parts) { if (!p) break; ctx.release(*p); }
+    o.parts.clear();
+    ctx.release(o);
+}
+
 // 0x414356: first tick (frame 0xff): behind Harry, roll angle 4.0 and the four children.
 // 1 = set up now, 0 = already running, -1 = the pool ran out (everything is released).
 int init(ObjCtx& ctx, Obj& o) {
@@ -4136,12 +4158,7 @@ int init(ObjCtx& ctx, Obj& o) {
     o.parts.clear();
     for (int i = 0; i < 4; ++i) {                                        // FUN_0043546e(4) x 4
         Obj* c = ctx.spawnFrom(o, true);
-        if (!c) {                                                        // 0x4146f1
-            for (Obj* p : o.parts) ctx.release(*p);
-            o.parts.clear();
-            ctx.release(o);
-            return -1;
-        }
+        if (!c) { teardown(ctx, o); return -1; }                         // 0x414482 -> 0x4146f1
         c->x = o.x; c->y = o.y; c->w(0x26) = 0x6663;
         c->sprite = ctx.spr(i == 3 ? "obrwhee2" : "obrwhee1"); c->flags = 0x2000; c->behind = 0xff;
         if (i == 0 || i == 1) c->facing = 0xff;
@@ -4173,17 +4190,45 @@ void tail(ObjCtx& ctx, Obj& o) {
     o.frame = kWheelFrames[row];
     for (size_t i = 0; i < o.parts.size(); ++i) {
         Obj* c = o.parts[i];
-        if (!c || c->freed) continue;
+        if (!c) continue;
         c->frame = kWheelFrames[row + 1 + int(i)];
         c->x = o.x; c->y = o.y; c->flags = o.flags;
     }
-    const int dy = o.y - ctx.camY;
+    const int16_t dy = int16_t(o.y - ctx.camY);                          // 0x424e73
     if (dy < -0xa0 || dy >= 0x17c) {
-        if (ctx.g.soundPlaying(0xd1)) ctx.g.stopSound(0xd1);
-        for (Obj* p : o.parts) if (p && !p->freed) ctx.release(*p);
-        o.parts.clear();
-        exitDespawnVertical(ctx, o);
+        ctx.pl.restoreEntry(o);
+        teardown(ctx, o);
     }
+}
+
+// The bytes the pit wheel's slope test (0x41db24) reads after FUN_00425d6f: [a0 + (d3 & 0xfff0)]
+// and 15 bytes on.  On a hit that is the cell's row of the height table; on a miss d3 / a0 are
+// what the probe left: the det header (an empty column) or the entry the column scan stopped
+// at, read as if it were a shape row.  (Below row 0x12 they are the handler's own registers:
+// no test then.)
+bool slopeBytes(const ObjCtx& ctx, int x, int y, int& left, int& right) {
+    const ph::FloorHit f = ph::probeNear(ctx.det(), x, y);
+    if (f.hit) { left = ph::kCollisionHeights[f.shape * 16]; right = ph::kCollisionHeights[f.shape * 16 + 15]; return true; }
+    if (int16_t(y) < 0x12) return false;
+    const std::vector<uint8_t>& det = ctx.lv.det;
+    auto at = [&](size_t i) { return i < det.size() ? int(det[i]) : 0; };
+    const size_t col = ((uint16_t(x) >> 3) & 0xfffe) + 4;
+    const size_t off = size_t(at(col) << 8 | at(col + 1));
+    size_t a0 = 0, d3 = 0;
+    if (off != 0) {
+        const int row = (uint16_t(y) >> 4);
+        a0 = off;
+        for (;;) {
+            d3 = size_t(at(a0));
+            if (int(d3) == row + 1 || int(d3) == row || int(d3) == row - 1) break;   // (a hit: not here)
+            if (int16_t((row - 1) - int(d3)) < 0) break;                             // the stop entry
+            a0 += 2;
+            if (a0 >= det.size()) break;
+        }
+    }
+    d3 &= 0xfff0;
+    left = at(a0 + d3); right = at(a0 + d3 + 15);
+    return true;
 }
 
 } // namespace wheel
@@ -4257,10 +4302,12 @@ void h_pitWheel(ObjCtx& ctx, Obj& o) {
         ctx.harry.b(0x465b55) = o.l(0x50) < 0 ? 0 : 0xff;                 // shoved the way it rolls
         ctx.pl.harryCall(0x42715b);
     }
-    const ph::FloorHit f = ph::probeNear(ctx.det(), o.x, o.y + 0x3c);    // FUN_00425d6f
-    if (f.hit) {
-        o.y = int16_t(f.surfaceY - 0x3c);
-        const int slope = int(ph::kCollisionHeights[f.shape * 16]) - int(ph::kCollisionHeights[f.shape * 16 + 15]);
+    const int py = o.y + 0x3c;
+    int left = 0, right = 0;
+    const bool slopeRead = wheel::slopeBytes(ctx, o.x, py, left, right);
+    { int y = py; ctx.floorSnap(o.x, y); o.y = int16_t(y - 0x3c); }    // FUN_00425d6f
+    if (slopeRead) {
+        const int16_t slope = int16_t(left - right);
         if (slope != 0) o.b(0x4f) = slope < 0 ? 0xff : 0;                // left end higher: roll right
     }
     if (o.b(0x4f) == 0) { if (o.w(0x52) != -4) o.l(0x50) -= 0x1000; }
@@ -5032,6 +5079,7 @@ Handler ObjectSystem::handler(uint8_t type) {
     case 149:  return h_wheelSpawner;
     case 82:   return h_dripper;
     case 0x81: return h_ripple;
+    case 0x4f: return h_rippleTwin;
     case 66:   return h_skullWarrior;
     case 68:   return h_swingBall;
     case 85:   return h_hawk;

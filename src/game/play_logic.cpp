@@ -583,15 +583,17 @@ void PlayLogic::displayList(Game& g) {
                 | ((flags & 0x8000) ? engine::kSprFront : 0u);
         fs.displayList.push_back(s);
     };
-    auto objs = [&](const std::vector<int>& list) {
-        // the records as they are now (an object freed since keeps its fields; -2: it freed itself)
-        for (int i : list) {
-            if (i < 0) continue;
-            const Obj& o = objects_.record(i);
+    auto objs = [&](size_t from) {
+        // the records as they are now (an object freed since keeps its fields), up to the -1;
+        // -2 is a cancelled entry
+        const auto& d = objects_.displayArray();
+        for (size_t k = from; k < d.size() && d[k] != -1; ++k) {
+            if (d[k] < 0) continue;
+            const Obj& o = objects_.record(d[k]);
             entry(o.x, o.y, o.frame, o.facing, o.vflip, o.flags, o.sprite);
         }
     };
-    objs(objects_.behindList());
+    objs(0);
     bool draw = true;
     if (h_.w(0x46652d) != 0) {
         h_.w(0x46652d) -= 1;
@@ -609,7 +611,7 @@ void PlayLogic::displayList(Game& g) {
         if ((h_.spriteIs("hyihang") || c == 0x42dd10 || c == 0x42ddc8) && h_.facing()) x += 3;
         entry(x, y, h_.frame(), h_.facing(), h_.b(0x465b38), h_.flags(), g.findSprite(h_.sprite()));
     }
-    objs(objects_.frontList());
+    objs(ObjectSystem::kFront);
 }
 
 } // namespace game

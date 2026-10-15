@@ -456,14 +456,14 @@ const ph::ColumnTable& PlayLogic::dt2() const {
 
 // ---------------------------------------------------------------- hurt
 
-void PlayLogic::hurtHarry(int d5) {
+bool PlayLogic::hurtHarry(int d5) {
     // FUN_00428233
-    if (h_.invulnerable() != 0 || h_.b(0x465b72) || h_.b(0x465b01)) return;
+    if (h_.invulnerable() != 0 || h_.b(0x465b72) || h_.b(0x465b01)) return false;
     const uint32_t c = h_.cont();
     static const uint32_t kKeep[] = {0x42aa3b, 0x42a048, 0x42a017, 0x42acc2, 0x429fe2, 0x42fa1a, 0x42fadf, 0x428aaa,
                                      0x42dea6, 0x42df5b, 0x42dd10, 0x42bda7, 0x42ddc8, 0x42d781, 0x42cc7a, 0x42de4f, 0x42dd7e};
     static const uint32_t kImmune[] = {0x42a217, 0x42a174, 0x430e3a, 0x42a36f, 0x426eaa, 0x426fee};
-    if (std::find(std::begin(kImmune), std::end(kImmune), c) != std::end(kImmune)) return;
+    if (std::find(std::begin(kImmune), std::end(kImmune), c) != std::end(kImmune)) return false;
     if (std::find(std::begin(kKeep), std::end(kKeep), c) == std::end(kKeep)) {
         if (h_.onGround()) {
             if (h_.b(0x465b71) >= 4) {
@@ -489,6 +489,7 @@ void PlayLogic::hurtHarry(int d5) {
     h_.damage() = uint8_t(d);
     h_.invulnerable() = 0x46;
     if (int16_t(d5) >= 0x46) h_.invulnerable() = int16_t(int16_t(d5) + 0x28);
+    return true;
 }
 
 } // namespace game
