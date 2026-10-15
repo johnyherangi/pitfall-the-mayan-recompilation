@@ -1340,6 +1340,136 @@ void h_boomerangBack(ObjCtx& ctx, Obj& o) {
 }
 
 
+// ---------------------------------------------------------------- hollows, push levers, runaway carts (types 41 / 92 / 98 / 0x63)
+
+uint8_t triggerIdAt(ObjCtx& ctx, int x, int y);
+const LevelScriptEntry* scriptByLever(uint8_t id);
+void levelScriptPull(ObjCtx& ctx, uint8_t leverId);
+
+// 0x40f900: type 41, a hollow Harry can crawl into: crouched long enough (state 0x42f2f9 with
+// its counter DAT_00465b71 at 0x16), with down held, over it (box 0x45bb1c) he crawls in
+// (state 0x426fee).
+void h_hollow(ObjCtx& ctx, Obj& o) {
+    Harry& h = ctx.harry;
+    if (h.b(0x466766) && h.cont() == 0x42f2f9 && h.b(0x465b71) == 0x16 && harryOnBox(ctx, o, -0x1e, 0x1e, -0x32, 0x28)) {
+        h.setUl(0x465b41, 0);
+        h.x() = int16_t(o.x + 8);
+        if (h.facing()) h.x() += 8;
+        h.setCont(0x426fee);
+    }
+    exitDespawnFar(ctx, o);
+}
+
+// 0x417d0e: type 92, a lever (obfleve2) pushed over in three steps.  Harry within 0x30 px of
+// its height, 2..0x36 px off it and facing it is held against it (his x is set from its own,
+// 0x24 px plus the travel left, w3e, away); walking into it on the ground starts the push
+// states (0x42f0c4 from the right, 0x42f123 from the left).  Every 6 ticks of a push it gives
+// 2 px; on the third step it runs the level script for the trigger under it (FUN_0041804b).
+void h_pushLever(ObjCtx& ctx, Obj& o) {
+    Harry& h = ctx.harry;
+    auto leverTrigger = [&]() { return triggerIdAt(ctx, o.x + o.w(0x64) - 0x20, o.y + 0x18); };
+    if (o.b(0x32) == 0) {
+        o.b(0x32) = 0xff; o.facing = 0xff; o.x -= 0x10;
+        o.w(0x64) = 0x10; o.w(0x3e) = 8;
+        if (const LevelScriptEntry* e = scriptByLever(leverTrigger()))
+            if (ctx.g.levelFlags()[e->flag]) { o.frame = 3; o.w(0x3e) = 0; o.b(0x34) = 0xff; }   // pushed already
+    }
+    if (o.b(0x34)) { exitDespawnFar(ctx, o); return; }
+    const int16_t dy = int16_t(o.y - h.y());
+    if (int16_t(dy + 0x30) >= 0 && int16_t(dy - 0x30) < 0) {
+        const int16_t dx = int16_t(o.x - h.x());
+        auto hold = [&](int16_t off) { h.x() = int16_t(o.x + off); h.xFrac() = o.xFrac; h.vx() = 0; };   // (the long at +0)
+        if (dx < 0) {                                              // Harry right of it, facing left
+            if (h.facing() && int16_t(dx + 0x36) >= 0 && int16_t(dx + 2) < 0) {
+                hold(int16_t(o.w(0x3e) + 0x24));
+                if (h.onGround() && h.cont() != 0x42f0e1 && h.b(0x466767)) {
+                    ctx.pl.harryCall(0x42f0c4);
+                    ctx.sound0(0x2e, 0x12);                        // FUN_0042633d(0x2e, 0x60)
+                    o.b(0x3c) = 6;
+                }
+            }
+        } else if (!h.facing() && int16_t(dx - 2) >= 0 && int16_t(dx - 0x36) < 0) {
+            hold(int16_t(-o.w(0x3e) - 0x24));
+            if (h.onGround() && h.cont() != 0x42f140 && h.b(0x466768)) {
+                ctx.pl.harryCall(0x42f123);
+                ctx.sound0(0x2e, 0x12);
+                o.b(0x3c) = 6;
+            }
+        }
+    }
+    if (o.b(0x3c)) {                                               // 0x417fb5
+        o.b(0x3c) -= 1;
+        if (o.b(0x3c) == 0) {
+            o.b(0x3c) = 6;
+            o.w(0x3e) -= 2;
+            if (h.cont() == 0x42f140 || h.cont() == 0x42f0e1) h.x() -= 2;   // (either way)
+            o.frame += 1;
+            if (o.frame == 3) {
+                levelScriptPull(ctx, leverTrigger());              // FUN_0041804b
+                o.b(0x34) = 0xff;
+            }
+        }
+    }
+    exitDespawnFar(ctx, o);
+}
+
+// 0x4186c4: type 0x63, a runaway mine cart (ob_mcar) from the spawner (type 98).  It rolls
+// right 5 px a tick on the track, falling with gravity 0x3000 where there is none, and is gone
+// when it falls at 6 px a tick; its rumble plays while channel 1 is free.  It knocks Harry back
+// with 50 damage (and 120 ticks of invulnerability).  Weapons meet a box of its own (0x4186b4),
+// Harry another (0x4186bc): FUN_00424af1 takes these two addresses as box records.
+void h_runawayCart(ObjCtx& ctx, Obj& o) {
+    static const ph::SpriteHitbox kWeaponBox{"", -0x20, 0x3e, -0xf, 0x24}, kHarryBox{"", 0xd, 0x10, -0x14, 0x27};
+    o.rawBox = &kWeaponBox;
+    weaponHit(ctx, o, 0);                     // (with whatever d5 holds; nothing tests the result)
+    o.setSprite(ctx.spr("ob_mcar"));
+    if (!ctx.channel1Busy()) ctx.sound1(0xd1, 6);
+    Harry& h = ctx.harry;
+    if (h.cont() != 0x427207 && h.w(0x46652d) == 0) {
+        o.rawBox = &kHarryBox;
+        const bool hit = ctx.touchesHarry(o);
+        o.setSprite(ctx.spr("ob_mcar"));
+        if (hit) {
+            h.b(0x465b55) = 1;
+            ctx.hurtHarry(0x32);
+            ctx.pl.harryCall(0x427167);
+            h.w(0x46652d) = 0x78;
+            ctx.sound0(0xbc, 0xc);                // FUN_004262d9
+        }
+    }
+    o.x += 5;
+    int y = o.y + 0x25;
+    const bool onTrack = ctx.floorSnap(o.x - 8, y);
+    o.y = int16_t(y - 0x25);
+    if (!onTrack) { o.l(0x46) += 0x3000; moveY(o, o.l(0x46)); }
+    if (o.w(0x48) == 6) ctx.release(o);
+}
+
+// 0x4185ce: type 98, where the runaway carts come from (Tazamul Mines).  Once Harry has come
+// into its box (0x45bce2) it holds the camera's left edge at 0x1d0, and from 0x348 px to the
+// left of its place it sends a cart every 40 ticks, plus one tick for every 16 px Harry is to
+// the right of it.
+void h_cartSpawner(ObjCtx& ctx, Obj& o) {
+    if (o.b(0x5a) == 0) {
+        if (!harryOnBox(ctx, o, -0x100, 0x80, -0x50, 0x50)) return;
+        o.b(0x5a) = 0xff;
+        ctx.pl.lockCameraLeft(0x1d0);
+    }
+    if (o.b(0x3c) == 0) { o.frame = 0; o.b(0x3c) = 0xff; o.w(0x32) = 1; o.x -= 0x348; }
+    o.w(0x32) -= 1;
+    if (o.w(0x32) != 0) return;
+    o.w(0x32) = 0x28;
+    const int16_t d = int16_t(ctx.harry.x() - o.x);
+    if (d >= 0) o.w(0x32) += int16_t(uint16_t(d) >> 4);
+    if (Obj* c = ctx.spawnFrom(o, true, 0)) {                      // FUN_0043546e(0)
+        std::memcpy(c->s + 0x12, o.s + 0x12, 2);
+        c->w(0x26) = 0x6663;
+        c->l(0x50) = int32_t(ctx.pl.addrOf(&o));
+        c->type = 0x63; c->flags = 0x2000; c->sprite = ctx.spr("ob_mcar"); c->frame = 0;
+    }
+}
+
+
 // ---------------------------------------------------------------- rat (type 23, 0x40b5d2)
 
 // 0x40b4d6: Harry running into it (states 0x42e297 / 0x42ea8b) stumbles (hyitrip1 with the
@@ -5429,6 +5559,10 @@ Handler ObjectSystem::handler(uint8_t type) {
     case 4:    return h_bigStone;
     case 5:    return h_slingStone;
     case 0x89: return h_stonePiece;
+    case 41:   return h_hollow;
+    case 92:   return h_pushLever;
+    case 98:   return h_cartSpawner;
+    case 0x63: return h_runawayCart;
     case 6:    return h_boomerang;
     case 0x87: return h_boomerangBack;
     case 0x8a: return h_stoneSpark;
