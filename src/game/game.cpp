@@ -264,6 +264,11 @@ void Game::seedRandom() {
     std::memcpy(rng_ + 4, &s1, 4);
 }
 
+void Game::setRandomSeed(uint32_t s0, uint32_t s1) {
+    std::memcpy(rng_ + 0, &s0, 4);
+    std::memcpy(rng_ + 4, &s1, 4);
+}
+
 void Game::loseLife() {
     // FUN_00430a69 death branch: lives-- ; at 0 a continue (if any) refills the
     // lives and clears the score and treasures, otherwise game over ("*1" -> title).

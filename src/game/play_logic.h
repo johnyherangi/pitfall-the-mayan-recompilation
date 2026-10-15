@@ -77,6 +77,7 @@ public:
     void lockCameraRight(int x) { h_.w(0x465b0b) = int16_t(x); }   // DAT_00465b0b
     int cameraRightLock() const { return h_.w(0x465b0b); }
     void setBoss(Obj* o) { boss_ = o; h_.b(0x466507) = o ? 0xff : 0; }   // DAT_00466507
+    void endBoss() { h_.b(0x466507) = 0; }        // (trg+0x1f4 keeps pointing at the dead boss)
     Obj* bossObject() const { return boss_; }
     bool bossActive() const { return h_.b(0x466507) != 0; }
     void startBossOutro() { h_.b(0x465d49) = 1; }   // DAT_00465d49 (FUN_0043426d)

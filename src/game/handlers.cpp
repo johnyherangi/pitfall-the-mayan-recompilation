@@ -940,6 +940,8 @@ void h_hawk(ObjCtx& ctx, Obj& o) {
 // 0x412d6a: type 0x40, a drifting feather / leaf that Harry's run can push.
 void h_feather(ObjCtx& ctx, Obj& o) {
     if (o.w(0x58)) { o.w(0x58) -= 1; if (o.w(0x58) == 0) { ctx.release(o); return; } }
+    // (0x412d88 skips the next part when +0x57 of the record in a5 is set; a5 is left over from
+    // the code before - usually Harry's record, whose +0x57 nothing sets - so it never skips here.)
     if (o.w(0x4e)) o.w(0x4e) -= 1;
     else {
         o.b(0x6d) -= 1;
@@ -1408,7 +1410,7 @@ void h_leafSpawner(ObjCtx& ctx, Obj& o) {
     if (o.b(0x32) == 0) o.b(0x32) = uint8_t((ctx.rnd() & 0x3f) + 0x40);
     o.b(0x32) -= 1;
     if (o.b(0x32) == 0) {
-        if (Obj* l = ctx.spawnFrom(o, true)) {        // FUN_0043546e
+        if (Obj* l = ctx.spawnFrom(o, true)) {        // FUN_0043546e(0)
             l->w(0x4e) = 0x46;
             l->y = o.y;
             l->x = int16_t(o.x + int(ctx.rnd() & 0x3f) - 0x20);
@@ -1416,9 +1418,11 @@ void h_leafSpawner(ObjCtx& ctx, Obj& o) {
             const int32_t r = int32_t(ctx.rnd() & 0x7fff);
             l->l(0x36) = r;
             if (r & 1) { l->sprite = ctx.spr("fx_leaf1"); l->script = kAnim_feather; l->l(0x36) += 0x6000; }
-            else { l->sprite = ctx.spr("fxzleaf2"); l->script = kAnim_turn4; l->l(0x36) += 0x10000; }
+            else { l->sprite = ctx.spr("fxzleaf2"); l->script = kAnim_turn4; l->l(0x36) += 0x10000; }   // (0x4619e8: kAnim_turn4's bytes)
         }
+        // back to 0x412c5e: a new wait, counted down once at once
         o.b(0x32) = uint8_t((ctx.rnd() & 0x3f) + 0x40);
+        o.b(0x32) -= 1;
     }
     exitDespawnFar(ctx, o);
 }
@@ -2468,16 +2472,45 @@ void h_axe(ObjCtx& ctx, Obj& o) {
 // 0x41271a: a gargoyle statue (40 hp) that turns toward Harry and throws axes at him;
 // frame 5 (the swing) hurts for 20.  The frame-0 idle only runs while Harry is within
 // -96..+144 px vertically.
+// 0x412987: a hit while a sling stone's velocity is on record (DAT_00466788, see the skull
+// warrior's 0x4132ec) chips a piece of rock (gargrok, a type 0x1d debris) off the gargoyle
+// where that stone hit.
+void gargoyleChip(ObjCtx& ctx, Obj& o) {
+    Harry& h = ctx.harry;
+    if (h.l(0x466788) == 0) return;
+    Obj* c = ctx.spawnFrom(o, true);                    // FUN_0043546e(1)
+    if (!c) return;
+    c->w(0x26) = 0x6663;
+    c->sprite = ctx.spr("gargrok");
+    uint32_t r;
+    do { r = ctx.rnd() & 3; } while (r == 3);
+    c->frame = uint8_t(r);
+    c->b(0x68) = 0xff;
+    c->b(0x5a) = o.b(0x5c);
+    c->type = 0x1d;
+    c->x = h.w(0x466782); c->y = h.w(0x466784);
+    const int32_t v = h.l(0x466788);
+    moveX(*c, v);
+    c->l(0x32) = v;
+    c->l(0x3a) = 0; c->l(0x3e) = 0x6e00;
+    c->flags = o.flags;
+    c->b(0x46) = 0xff;
+    c->l(0x36) = int32_t(ctx.rnd() & 0x1ffff) - 0x50000;
+}
+
 void h_gargoyle(ObjCtx& ctx, Obj& o) {
     bool killed = false;
-    if (weaponHits(ctx, o, 0x28, &killed) && killed) { killObject(ctx, o); return; }   // (0x412987: the sling-stone chip is not ported)
+    if (weaponHits(ctx, o, 0x28, &killed)) {
+        gargoyleChip(ctx, o);
+        if (killed) { killObject(ctx, o); return; }
+    }
     if (ctx.freeze) { freezeSparkle(ctx, o); return; }
     if (o.frame == 5) harryContact(ctx, o, 0x14);
     if (o.frame == 0 && !between(ctx.harry.y() - o.y, -0x60, 0x90)) { exitDespawnFar(ctx, o); return; }
     if (animStep(ctx, o, o.anim(0x36), kAnim_gargoyle, 6)) o.b(0x64) ^= 1;
     const uint8_t was = o.facing;
     AnimCursor& cur = o.anim(0x36);
-    if (cur.tick == 0 && cur.pos < 0xc) {
+    if (cur.tick == 0 && int8_t(cur.pos - 0xc) < 0) {
         if (ctx.harry.vx() == 0 && between(ctx.harry.x() - o.x, -0x18, 0x18)) o.facing = o.b(0x64);
         else o.facing = ctx.harry.x() >= o.x ? 1 : 0;
     }
@@ -2489,7 +2522,7 @@ void h_gargoyle(ObjCtx& ctx, Obj& o) {
             const int d = ctx.harry.x() - o.x;
             if (between(d, -0x50, 0x50)) { a->l(0x32) = -0x40000; a->l(0x46) = 0x18000; }
             else if (between(d, -0xa0, 0xa0)) { a->l(0x32) = -0x60000; a->l(0x46) = 0; }
-            else { a->l(0x32) = -0x61000; a->l(0x46) = -0x30000; }
+            else { a->l(0x32) = -0x61000; a->l(0x46) = -0x3000; }
             a->flags = 0x4000; a->w(0x36) = 0;
             a->y -= 4; a->x -= 0x21;
             a->facing = o.facing;
@@ -3296,9 +3329,13 @@ void spawnMeter(ObjCtx& ctx, Obj& boss) {
 
 // 0x415b92: the boss is dead - score, a death cloud, then the type 0x51 burst sequence.
 void bossDeath(ObjCtx& ctx, Obj& o) {
+    o.w(0x26) = 0;                              // FUN_004263c4
     ctx.g.stats().score += scoreForType(o.type);
     o.y -= 0x14;
     o.b(0x5a) = 0xff;
+    for (const char* n : {"jmzmorf2", "jmzmorfa", "jmzmorfb", "jmzswipe", "jm0swipe", "jm1swipe", "jmzready"})
+        if (o.sprite && o.sprite->name() == n) { o.y -= 0x10; o.b(0x5a) = 0; break; }
+    ctx.g.setRandomSeed(0x12d233, 0x84a43c94);  // 0x415c48 (and DAT_0046677e = 0x13477db9, read by nothing)
     if (Obj* c = ctx.spawn()) {                 // FUN_004356bc(3)
         c->x = o.x; c->y = o.y;                 // (the +8 at 0x415c98 is overwritten right after)
         c->w(0x26) = 0x6663;
@@ -3376,9 +3413,11 @@ void h_jaguar(ObjCtx& ctx, Obj& o) {
             if (ctx.harry.y() < 0x368 || ctx.harry.x() < 0xbce) { ctx.pl.restoreEntry(o); ctx.release(o); return; }
             o.b(0x5b) = 0;
             ctx.pl.lockCameraLeft(0x9fa);           // DAT_00465b09
-            ctx.harry.facing() = 1;
+            ctx.harry.facing() = 0xff;
             ctx.pl.setBoss(&o);                     // DAT_00466507 = 0xff, trg+0x1f4 = this
-            o.w(0x5c) = 0x50;                       // trg+0x1ea = 0x5000 (big-endian 80)
+            o.w(0x5c) = 0x50;                       // trg+0x1ea = 0x5000 (big-endian 80): a Genesis variable the PC
+                                                    // keeps inside the level's trigger buffer (on level 0 over the end
+                                                    // of column 0x22's list); kept in the jaguar's +0x5c here
             o.b(0x3c) = uint8_t((ctx.rnd() & 3) + 2);
             o.y += 0x18;
             o.b(0x32) = kIntro;
@@ -3397,10 +3436,13 @@ void h_jaguar(ObjCtx& ctx, Obj& o) {
         }
         o.hits = uint8_t(uint16_t(o.w(0x6a)) >> 3);
         if (int16_t((uint16_t(o.w(0x6a)) >> 3) - 0x1e) >= 0) {
-            ctx.pl.setBoss(nullptr);
+            ctx.pl.endBoss();                       // DAT_00466507 = 0
             bossDeath(ctx, o);
-            ctx.pl.startBossOutro();                // DAT_00465d49 = 1
             h_bossDeathBurst(ctx, o);               // 0x415b92 runs straight into the 0x51 handler
+            // The `call 0x415b92` never returns here (the handler ends with `jmp 0x405313`); its
+            // return address is popped by the `ret` that ends the object pass, which then sets
+            // DAT_00465d49 = 1 at 0x410e6a.  Only Harry's code reads it, after the pass.
+            ctx.pl.startBossOutro();
             return;
         }
         if (ctx.harry.invulnerable() == 0 && harryContact(ctx, o, 0xf) && o.b(0x32) == kPounce) {
@@ -3416,7 +3458,10 @@ void h_jaguar(ObjCtx& ctx, Obj& o) {
                 return;
             }
             // 0x41124d: the "GO" sign in the middle of the screen, then wait for it
-            if (Obj* s = ctx.spawnFrom(o, true)) {        // FUN_0043546e
+            o.l(0x64) = 0;
+            if (Obj* s = ctx.spawnFrom(o, true)) {        // FUN_0043546e(2)
+                o.l(0x64) = int32_t(ctx.pl.addrOf(s));
+                s->w(0x26) = 0x6663;                      // (d0 != 0: FUN_004263a6)
                 s->flags = 0x6000; s->sprite = ctx.spr("mi_go"); s->frame = 0;
                 s->x = int16_t(ctx.camX + 0x80); s->y = int16_t(ctx.camY + 0x50);
             }
@@ -3469,7 +3514,7 @@ void h_jaguar(ObjCtx& ctx, Obj& o) {
                 if (o.hits >= 0x14 && (ctx.rnd() & 1) == 0) o.b(0x5b) = 0xff;   // charge to the wall
                 continue;
             }
-            if (o.frame >= 6) {
+            if (int8_t(o.frame - 6) >= 0) {
                 if (!aggressive(o)) { toRoar(o); continue; }
                 accelerate(o, 0x3000, ctx.levelNo == 8 ? 6 : 5, o.facing == 0);   // already toward the new way
             } else if (o.w(0x3a) != 0) {
@@ -3480,7 +3525,7 @@ void h_jaguar(ObjCtx& ctx, Obj& o) {
         }
         case kRun: {                                // 0x411651
             animStep(ctx, o, o.anim(0x36), kAnim_run8, 3);
-            const bool right = o.facing != 0;       // the call sites flip the facing byte around 0x411a3e
+            const bool right = uint8_t(o.facing ^ 1) == 0;   // the call sites flip the facing byte around 0x411a3e
             if (aggressive(o) && o.hits < 0x14) accelerate(o, 0x7500, 6, right);
             else accelerate(o, 0x7500, ctx.levelNo == 8 ? 6 : 5, right);
             moveX(o, o.l(0x38));
@@ -3519,19 +3564,15 @@ void h_jaguar(ObjCtx& ctx, Obj& o) {
             else o.l(0x38) += o.w(0x3a) < 0 ? 0x8000 : -0x8000;
             moveX(o, o.l(0x38));
             const bool roaring = o.sprite && o.sprite->name() == "jguroar";
-            if (!roaring && hitNow) {               // 0x41101a: a hit breaks the crouch
+            auto run = [&] {                        // 0x41101a (and back to the object pass)
                 toRun(ctx, o, -0x50, 4);
                 o.l(0x38) = o.facing ? 0x30000 : -0x30000;
-                continue;
-            }
+            };
+            if (!roaring && hitNow) { run(); return; }   // a hit breaks the crouch
             if (!anim2Step(ctx, o, 0x3e, 4)) return;
-            const int d = ctx.harry.x() - o.x;
+            const int16_t d = int16_t(ctx.harry.x() - o.x);
             const bool behind = (d >= 0) == (o.facing == 0);
-            if (behind || (ctx.harry.onGround() && (ctx.rnd() & 1) == 0)) {
-                toRun(ctx, o, -0x50, 4);
-                o.l(0x38) = o.facing ? 0x30000 : -0x30000;
-                continue;
-            }
+            if (behind || (ctx.harry.onGround() && (ctx.rnd() & 1) == 0)) { run(); return; }
             startLeap(ctx, o);
             o.l(0x50) = 0;
             continue;
@@ -4758,8 +4799,7 @@ void h_arrow(ObjCtx& ctx, Obj& o) {
         exitDespawnFar(ctx, o);
         return;
     }
-    if (ctx.touchesHarry(o)) {                                           // 0x407b0f
-        ctx.hurtHarry(0xf);
+    if (harryContactNow(ctx, o, 0xf)) {                                  // 0x407b0f
         o.l(0x64) = 0x200;
         o.l(0x68) = -(o.l(0x32) >> 2);
     }
@@ -4783,10 +4823,18 @@ void h_arrow(ObjCtx& ctx, Obj& o) {
 // damage.  Faces left when b0b is set.
 void h_templeArcher(ObjCtx& ctx, Obj& o) {
     auto spriteIs = [&](const char* n) { return o.sprite && o.sprite->name() == n; };
-    for (int pass = 0; pass < 2; ++pass) {                               // (a turn re-enters at the top)
+    // 0x412079: stay on the floor; where the ledge ends ahead it turns round (true).
+    auto ledgeEnds = [&]() -> bool {
+        int y = o.y + 0xe; ctx.floorSnap(o.x, y); o.y = int16_t(y - 0xe);
+        int y2 = o.y + 0xe;
+        if (ctx.floorSnap(o.x - (o.facing ? 0x20 : 0), y2)) return false;
+        o.w(0x38) = int16_t((ctx.rnd() & 0x1f) + 0x30);
+        return true;
+    };
+    for (int pass = 0; pass < 4; ++pass) {                               // (a turn re-enters at the top)
         if (o.b(0x32) == 0) {                                            // still in the wall
             o.w(0x64) = 1; o.w(0x66) = 4;
-            o.facing = uint8_t((o.x >> 4) & 1);
+            o.facing = uint8_t((uint16_t(o.x) >> 4) & 1);
             if (!between(o.x - ctx.harry.x(), -0xd8, 0xd8) || !between(o.y - ctx.harry.y(), -0x90, 0x90)) {
                 exitDespawnMid(ctx, o);
                 return;
@@ -4797,17 +4845,22 @@ void h_templeArcher(ObjCtx& ctx, Obj& o) {
             o.b(0x42) = 1;
             if (o.facing) o.l(0x3c) = -o.l(0x3c);
         }
-        if (!(spriteIs("tgrpeel") && o.frame < 7)) harryContact(ctx, o, 0xd);
+        if (!(spriteIs("tgrpeel") && int8_t(o.frame - 7) < 0)) harryContact(ctx, o, 0xd);
         bool killed = false;
         weaponHits(ctx, o, 0x1e, &killed);
         if (killed) { killObject(ctx, o); return; }
         if (o.b(0x33)) { o.b(0x33) -= 1; return; }                       // pausing (no exit test)
+        bool turn = false;
         if (o.w(0x46)) {                                                 // shooting
             const bool low = o.l(0x48) == 1;
             o.sprite = ctx.spr(low ? "tgrlarro" : "tgrharro");
             const bool done = animStep(ctx, o, o.anim(0x46), low ? kAnim_guardShotLow : kAnim_guardShotHigh, 6);
             if (o.w(0x46) == (low ? 0xc : 0xb)) {                        // the arrow leaves the bow
-                if (Obj* a = ctx.spawnFrom(o, true)) {                   // FUN_0043546e(1)
+                Obj* a = ctx.spawnFrom(o, true);                         // FUN_0043546e(1)
+                if (!a) {                                                // (out of records: on to 0x412079)
+                    if (!ledgeEnds()) { exitDespawnMid(ctx, o); return; }
+                    turn = true;
+                } else {
                     a->w(0x26) = 0x6663;
                     a->type = 0x39; a->frame = 1;
                     a->sprite = ctx.spr("tgfarrow");
@@ -4816,20 +4869,21 @@ void h_templeArcher(ObjCtx& ctx, Obj& o) {
                     a->x += 0x10; a->y -= 0x29;
                     if (low) a->y += 0x14;
                     if (o.facing) { a->facing ^= 1; a->l(0x32) = -a->l(0x32); a->x -= 0x20; }
+                    exitDespawnMid(ctx, o);
+                    return;
                 }
-                exitDespawnMid(ctx, o);
-                return;
+            } else {
+                if (!done) { exitDespawnMid(ctx, o); return; }
+                o.w(0x3c) = 0;
             }
-            if (!done) { exitDespawnMid(ctx, o); return; }
-            o.w(0x3c) = 0;
         }
-        if (o.w(0x3a)) {                                                 // turning (tgrturn)
+        if (!turn && o.w(0x3a)) {                                        // turning (tgrturn)
             o.sprite = ctx.spr("tgrturn");
             const bool done = animStep(ctx, o, o.anim(0x3a), kAnim_guardTurn, 4);
             if (o.w(0x3a) == 3) o.facing ^= 1;
             if (!done) { exitDespawnMid(ctx, o); return; }
         }
-        if (o.w(0x34)) {                                                 // peeling out of the wall
+        if (!turn && o.w(0x34)) {                                        // peeling out of the wall
             if (o.w(0x34) == 6) {                                        // ...and dropping to the floor
                 if (o.w(0x36) != -5) o.l(0x36) += 0x3000;                // (sic: the cap tests the fraction)
                 moveY(o, o.l(0x36));
@@ -4850,12 +4904,12 @@ void h_templeArcher(ObjCtx& ctx, Obj& o) {
             exitDespawnMid(ctx, o);
             return;
         }
-        // walking (0x411e99)
-        bool turn = false;
-        o.w(0x38) -= 1;
-        if (o.w(0x38) < 0) {
-            o.w(0x38) = int16_t((ctx.rnd() & 0x1f) + 0x30);
-            turn = ctx.harry.x() < o.x ? o.facing == 0 : o.facing != 0;
+        if (!turn) {                                                     // walking (0x411e99)
+            o.w(0x38) -= 1;
+            if (o.w(0x38) < 0) {
+                o.w(0x38) = int16_t((ctx.rnd() & 0x1f) + 0x30);
+                turn = ctx.harry.x() < o.x ? o.facing == 0 : o.facing != 0;
+            }
         }
         if (!turn) {
             o.sprite = ctx.spr("tgrwalk"); o.frame = 0;
@@ -4872,12 +4926,9 @@ void h_templeArcher(ObjCtx& ctx, Obj& o) {
                 o.w(0x46) = 1;                                           // (pos 1)
                 o.l(0x48) = (ctx.rnd() & 1) ? 1 : 2;                     // 0x45bb42 low / 0x45bb52 high
             }
-            int y = o.y + 0xe; ctx.floorSnap(o.x, y); o.y = int16_t(y - 0xe);
-            int y2 = o.y + 0xe;
-            if (ctx.floorSnap(o.x - (o.facing ? 0x20 : 0), y2)) { exitDespawnMid(ctx, o); return; }
-            o.w(0x38) = int16_t((ctx.rnd() & 0x1f) + 0x30);             // the ledge ends: turn round
+            if (!ledgeEnds()) { exitDespawnMid(ctx, o); return; }
         }
-        o.l(0x3e) = -o.l(0x3e);                                          // 0x411ef7
+        o.l(0x3e) = -o.l(0x3e);                                          // 0x411ef7: turn round, from the top
         o.w(0x3a) = 1;
         o.w(0x3c) = 0;
     }

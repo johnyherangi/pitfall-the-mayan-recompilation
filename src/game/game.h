@@ -137,6 +137,7 @@ public:
     // levels).  While a demo plays (DAT_00466500) it advances but always returns 1.
     uint32_t random();
     void seedRandom();                 // FUN_00434815 (new game): the fixed seeds
+    void setRandomSeed(uint32_t s0, uint32_t s1);   // DAT_00466772 / DAT_00466776 (0x415c48: a boss dies)
     bool demoPlaying() const { return demoPos_ != 0x800; }   // DAT_00466500 (DAT_0046fb8c != 0x800)
 
 private:
