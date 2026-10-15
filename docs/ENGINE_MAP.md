@@ -70,10 +70,10 @@ function boundaries are unreliable there; the full decompilation is kept in
 | `0x43de70`   | at each present: the logic's brightness (`DAT_0046b1b0` as the frame took it) added to the free colours, kept aside while it lasts | `Game::applyBrightness` |
 | `0x43ed00`   | every palette entry set again from `DAT_0046d824` (shown again after a fade out) | `ph::Palette::showAll` |
 | `0x43cb50`   | a sample of the logic's two channels still plays (the waits of `*3`, `*5x` .. `*7`) | `Mixer::channelBusy` |
-| `0x441c50`   | the CD audio's volume (`auxSetVolume`, the option times 0x28f a channel; the stop-watch turns it down to a quarter, `DAT_00450500`) | `Game::setCdVolume` |
-| `0x441b80`   | MCI CD audio: a track from its start to the next one's (TMSF), played again at its end (`MM_MCINOTIFY`); 0 stops the CD | `Game::cdPlay` / `cdPlayTracks`, `engine::CdTracks` (ripped files), `Mixer::playMusic` |
-| `0x441cf0`   | the CD opened ("cdaudio") and checked by the lengths of tracks 7 (4:07:33) and 8 (4:32:12) | `engine::CdTracks` (the files found) |
-| `0x442190`   | the CD's volume down in 20 steps of 100 ms at a level load, then the CD stopped | the switch's `CdFade` stage |
+| `0x441c50`   | the CD audio's volume (`auxSetVolume` of the CD line, the option times 0x28f a channel; the stop-watch turns it down to a quarter, `DAT_00450500`) | `Game::setCdVolume`, `CdPlayer::setVolume` (the disc's aux line, or the mixer's music) |
+| `0x441b80`   | MCI CD audio: a track from its start to the next one's (TMSF, `MCI_NOTIFY`), played again at its end (`MM_MCINOTIFY` in the WndProc, by the options); 0 stops the CD; nothing with Option_Slow | `Game::cdPlay` / `cdPlayTracks` / `cdTrackEnded`, `DiscPlayer` (`win32_cd.cpp`), else `RippedCd` (`engine::CdTracks`, `Mixer::playMusic`) |
+| `0x441cf0` / `0x4420e0` | the CD opened ("cdaudio") and checked by the lengths of tracks 7 (4:07:33) and 8 (4:32:12) in MSF, then TMSF; its line's volume among the aux devices (CD audio, else line in) set and the old one kept; at the end closed and the volume put back | `openDisc` (`win32_cd.cpp`); without the disc the ripped tracks (`engine::CdTracks`) |
+| `0x442190`   | the CD's volume down in 20 steps of 100 ms at a level load (only while it plays and its volume can be set), then the CD stopped | the switch's `CdFade` stage |
 | `0x444ee0`   | pause: not while loading nor into the vaults; stops the channels and the CD, "PAUSED" at once; its end plays the tracks again | `Game::setPaused` |
 | `0x43a140` / `0x43a320` | window sizing / full-screen (DISPDIB)       | `applyWindowSize()`                   |
 

@@ -88,7 +88,8 @@ The original's typed cheat codes work as they did (type them while playing),
 ## Music
 
 The original plays the game CD's audio tracks (2 .. 23) as music and ambient
-sound.  Rip them to files named `TrackNN.wav` or `TrackNN.ogg` (`Track 02`,
+sound.  The Win32 build plays the disc itself when it is in the drive (through
+MCI, as the original); otherwise rip the tracks to files named `TrackNN.wav` or `TrackNN.ogg` (`Track 02`,
 `02 - title.ogg` and the like work too) in `original\ASSETS\MUSIC` (or
 `original\MUSIC`, or any folder named by the `PITFALL_MUSIC_DIR` environment
 variable).  The Sound page's *CD Music* and *CD Ambient Sounds* are the
@@ -132,7 +133,7 @@ boss, the Loltun vaults, the continue screen, the map screen, the Atari 2600
 level, the title, the intro, the reunion, the end and its credits, the
 typed cheat codes, the waterfalls and water effects, and the original's
 window with its menu, status bar, dialogs and property sheet.  Still to do:
-the real CD through MCI and a build with MSVC itself.  See
+a build with MSVC itself.  See
 `docs/RECONSTRUCTION_LEDGER.md` for the exact status.
 
 ## Legal

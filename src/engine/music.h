@@ -21,6 +21,22 @@ namespace engine {
 
 using MusicPcm = std::shared_ptr<const std::vector<int16_t>>;   // 44.1 kHz stereo, interleaved
 
+// What plays the CD's tracks for the game: the disc itself (a front end's MCI) or, without it,
+// the ripped tracks mixed in with the samples.
+class CdPlayer {
+public:
+    virtual ~CdPlayer() = default;
+    virtual bool available() const = 0;   // DAT_0046f0cc: the disc (or its tracks) is there
+    // FUN_00441b80: a track from its start to the next one's (and again at its end: the disc's
+    // MM_MCINOTIFY, Game::cdTrackEnded; the files loop); 0 stops it.
+    virtual void play(int track) = 0;
+    virtual bool playing() const = 0;     // DAT_0046e10c
+    // FUN_00441c50: auxSetVolume of 0 .. 0xffff a channel; hasVolume (DAT_0046f0a8) whether the
+    // line's volume can be set at all (FUN_00442190 fades only then).
+    virtual bool hasVolume() const = 0;
+    virtual void setVolume(int v) = 0;
+};
+
 class CdTracks {
 public:
     explicit CdTracks(const std::string& dataDir = {});

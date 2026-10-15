@@ -73,12 +73,33 @@ private:
 
 // --------------------------------------------------------------------------
 
+namespace {
+// The CD's tracks ripped to files, mixed in with the samples (looping, as the disc's track is
+// played again at its end); the mixer's music volume is the CD line's.
+class RippedCd : public engine::CdPlayer {
+public:
+    RippedCd(const std::string& dataDir, engine::Mixer& mixer) : tracks_(dataDir), mixer_(mixer) {}
+    bool available() const override { return tracks_.available(); }
+    void play(int track) override {
+        if (track == 0) { mixer_.stopMusic(); return; }
+        if (engine::MusicPcm pcm = tracks_.load(track)) mixer_.playMusic(std::move(pcm));
+        else mixer_.stopMusic();
+    }
+    bool playing() const override { return mixer_.musicPlaying(); }
+    bool hasVolume() const override { return true; }
+    void setVolume(int v) override { mixer_.setMusicVolume(v); }
+private:
+    engine::CdTracks tracks_;
+    engine::Mixer& mixer_;
+};
+} // namespace
+
 Game::Game(std::string dataDir, engine::Options& options)
     : dataDir_(std::move(dataDir)), options_(options) {
     assets_ = std::make_unique<ph::AssetBank>(ph::loadInit(dataDir_, palette_));   // FUN_004457d0
     mixer_.loadBank(*assets_);                                                      // FUN_0043ce10
     mixer_.setEnabled(options_.soundEnabled);
-    cd_ = engine::CdTracks(dataDir_);                                               // FUN_00441cf0
+    cd_ = std::make_unique<RippedCd>(dataDir_, mixer_);                             // FUN_00441cf0
     setCdVolume(options_.cdVolume);
     cutData_ = cutsceneInitialData();
     startLevel(kIntro);                                                             // WinMain: FUN_004460e0(0x15)
@@ -94,13 +115,21 @@ void Game::playChannel(int ch, int id) {
 }
 
 void Game::cdPlay(int track) {
-    // FUN_00441b80: a track from its start (and again at its end), or the CD stopped (0).
-    if (track != 0 && !options_.slow) {
-        if (engine::MusicPcm pcm = cd_.load(track)) mixer_.playMusic(std::move(pcm));
-        else mixer_.stopMusic();
-        return;
-    }
-    mixer_.stopMusic();
+    // FUN_00441b80: a track from its start (and again at its end), or the CD stopped (0); none
+    // with Option_Slow.
+    cd_->play(track != 0 && !options_.slow ? track : 0);
+}
+
+void Game::setCdPlayer(std::unique_ptr<engine::CdPlayer> player) {
+    cd_->play(0);
+    cd_ = std::move(player);
+    setCdVolume(options_.cdVolume);
+    if (!paused_) cdPlayTracks();
+}
+
+void Game::cdTrackEnded() {
+    // 0x3b9 in the WndProc: at the disc's successful end of a track, the tracks again.
+    if (options_.cdMusic || options_.cdAmbient) cdPlayTracks();
 }
 
 void Game::cdPlayTracks() {
@@ -134,7 +163,7 @@ void Game::setWavVolume(int pct) {
 
 void Game::setCdVolume(int pct) {
     // FUN_00441c50: auxSetVolume with the option (0 .. 100) times 0x28f a channel.
-    mixer_.setMusicVolume(pct * 0x28f);
+    cd_->setVolume(pct * 0x28f);
 }
 
 void Game::setLogic(std::unique_ptr<LevelLogic> logic) { logic_ = std::move(logic); autoLogic_ = false; }
@@ -423,14 +452,16 @@ void Game::runStages(int ms) {
             // FUN_00442190: the CD's volume a twentieth down every 100 ms, then the CD stopped and
             // its volume set back.
             const int v0 = options_.cdVolume * 0x28f;
-            if (stageMs_ < st.ms) { mixer_.setMusicVolume(v0 - std::min(stageMs_ / 100 + 1, 20) * (v0 / 20)); return; }
+            if (stageMs_ < st.ms) { cd_->setVolume(v0 - std::min(stageMs_ / 100 + 1, 20) * (v0 / 20)); return; }
             stageMs_ -= st.ms;
             cdPlay(0);
             setCdVolume(options_.cdVolume);
             break;
         }
         case Stage::Load:
-            if (!st.cdFaded && mixer_.musicPlaying()) {  // FUN_004460e0 starts with the CD's fade
+            // FUN_004460e0 starts with the CD's fade (FUN_00442190: only while it plays, with a
+            // volume to turn down)
+            if (!st.cdFaded && cd_->playing() && cd_->hasVolume() && !options_.slow) {
                 stages_.front().cdFaded = true;
                 stages_.push_front(Stage{Stage::CdFade, kCdFadeMs});
                 stageMs_ = 0;

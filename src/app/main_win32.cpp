@@ -562,6 +562,10 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     case kHideCursor:
         SetCursor(nullptr);
         return 0;
+    case MM_MCINOTIFY:
+        // the disc's track at its end: the tracks again
+        if (wp == MCI_NOTIFY_SUCCESSFUL && UINT(lp) == discDevice() && g) g->cdTrackEnded();
+        return 0;
     case WM_PAINT: {
         PAINTSTRUCT ps; BeginPaint(hwnd, &ps); EndPaint(hwnd, &ps);
         if (g) present();
@@ -720,6 +724,8 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, PWSTR, int) {
     g_app.game->loadingHook = loadingDialog;
     g_app.game->setHostText(true);
     if (startLevel >= 0) { g_app.game->setMode(game::Mode::Playing); g_app.game->startLevel(startLevel); }
+    if (!g_app.options.slow)
+        if (auto disc = openDisc(g_app.hwnd)) g_app.game->setCdPlayer(std::move(disc));   // the disc, when it is in
     g_app.joystickPresent = joystickThere();
     if (!g_app.joystickPresent) g_app.options.joystick = false;
     enableMenuLevels();
@@ -763,6 +769,7 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, PWSTR, int) {
     }
     timeEndPeriod(1);
     stopAudio();
+    g_app.game.reset();                                            // (FUN_004420e0: the disc closed)
     SetThreadExecutionState(ES_CONTINUOUS);
     if (g_app.exe) FreeLibrary(g_app.exe);
     return 0;

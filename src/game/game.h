@@ -133,7 +133,12 @@ public:
     void setSoundEnabled(bool on);                        // the options' Sound Effects (FUN_0043d8e0 / FUN_0043d5d0)
     void setWavVolume(int pct);                           // FUN_0043cd40: the option and the samples playing
     void setCdVolume(int pct);                            // FUN_00441c50: auxSetVolume with the option
-    bool cdAvailable() const { return cd_.available(); }  // DAT_0046f0cc: the disc (here its ripped tracks) is there
+    bool cdAvailable() const { return cd_->available(); } // DAT_0046f0cc: the disc (or its ripped tracks) is there
+    // FUN_00441cf0's disc, a front end's (MCI): it takes the ripped tracks' place, at the current
+    // volume and playing the current tracks.
+    void setCdPlayer(std::unique_ptr<engine::CdPlayer> player);
+    // MM_MCINOTIFY (MCI_NOTIFY_SUCCESSFUL from the disc): the level's tracks again, by the options.
+    void cdTrackEnded();
     engine::Mixer& mixer() { return mixer_; }
     bool quitRequested() const { return quit_; }
 
@@ -373,9 +378,10 @@ private:
     uint8_t startKey_ = 0;             // DAT_0046fb88: a key went down (WM_KEYDOWN)
     int audioRem_ = 0;                 // (the game-time audio clock's remainder)
     bool paused_ = false;              // DAT_0046d050
-    // CD audio (engine/music.h): the level's music and ambient tracks (DAT_0046e110 / DAT_0046e114),
-    // the intro the attract loads playing track 5 (DAT_0046fb84), the stop-watch's volume command.
-    engine::CdTracks cd_;
+    // CD audio (engine/music.h): the player (the disc, or the ripped tracks), the level's music and
+    // ambient tracks (DAT_0046e110 / DAT_0046e114), the intro the attract loads playing track 5
+    // (DAT_0046fb84), the stop-watch's volume command.
+    std::unique_ptr<engine::CdPlayer> cd_;
     int musicTrack_ = 0, ambientTrack_ = 0;
     bool introAfterDemos_ = false;
     int cdVolumeCmd_ = 0;

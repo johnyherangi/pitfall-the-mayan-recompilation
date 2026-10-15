@@ -59,5 +59,9 @@ void centreOnGame(HWND dlg);
 // FUN_00440c00: the property sheet at a page (0 System, 1 Sound, 2 Difficulty, 3 Joystick,
 // 4 Keyboard).
 void showPropertySheet(int page);
+// FUN_00441cf0: the game's disc through MCI (null without it, or with Option_Slow's "no CD"),
+// its device for MM_MCINOTIFY (win32_cd.cpp).
+std::unique_ptr<engine::CdPlayer> openDisc(HWND notify);
+unsigned discDevice();
 
 } // namespace app
