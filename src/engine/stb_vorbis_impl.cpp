@@ -2,6 +2,7 @@
 // MIT, third_party/stb), compiled as C++.
 #if defined(_MSC_VER)
 #pragma warning(push, 0)
+#pragma warning(disable : 4701 4702 4703)   // (the code generator's, which push 0 leaves on)
 #elif defined(__GNUC__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wall"

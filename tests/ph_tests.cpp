@@ -1027,12 +1027,16 @@ int musicTest(const std::string& dir) {
     if (!engine::CdTracks::decodeWavFile((tmp / "Track05.wav").string(), pcm) || pcm.size() < 2 * 44090 || pcm.size() > 2 * 44110) {
         std::printf("FAIL: music: the 22050 Hz track decoded to %zu samples\n", pcm.size()); ++fails;
     }
-#ifndef _WIN32
+#ifdef _WIN32
+    _putenv_s("PITFALL_MUSIC_DIR", tmp.string().c_str());
+#else
     setenv("PITFALL_MUSIC_DIR", tmp.string().c_str(), 1);
 #endif
     engine::Options opts;
     game::Game g(dir, opts);
-#ifndef _WIN32
+#ifdef _WIN32
+    _putenv_s("PITFALL_MUSIC_DIR", "");                 // (an empty value removes it)
+#else
     unsetenv("PITFALL_MUSIC_DIR");
 #endif
     g.setMode(game::Mode::Playing);

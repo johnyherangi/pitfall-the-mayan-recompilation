@@ -750,7 +750,7 @@ void condorStun(ObjCtx& ctx, Obj& o) {
         f->w(0x26) = 0x6663;
         f->w(0x4e) = 0x46;
         int dx = int(ctx.rnd() & 0x1f); if (d7 & 1) dx = -dx;
-        f->x += dx;
+        f->x = int16_t(f->x + dx);
         f->w(0x3a) = int16_t(ctx.rnd() & 7);
         f->y += int(ctx.rnd() & 0x1f) - 0x10;
         f->w(0x58) = 0x40;

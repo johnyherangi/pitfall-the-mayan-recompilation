@@ -12,7 +12,7 @@ project(PitfallMayanRecompilation LANGUAGES CXX)
 #   pitfall         - the game executable (Win32/GDI front end, like the original;
 #                     optional SDL2 front end with -DPITFALL_USE_SDL=ON)
 #
-# Build (Visual Studio 2022):
+# Build (Visual Studio 2022, or 2026 with "Visual Studio 18 2026"):
 #   cmake -S . -B build -G "Visual Studio 17 2022" -A x64
 #   cmake --build build --config Release
 # Then copy the original game's *.PH files next to pitfall.exe (or pass the
@@ -28,9 +28,11 @@ option(PITFALL_BUILD_TESTS "Build the asset round-trip tests" ON)
 option(PITFALL_WARNINGS    "Enable strict compiler warnings" ON)
 
 if(MSVC)
-    add_compile_options(/utf-8 /EHsc)
+    add_compile_options(/utf-8 /EHsc /bigobj)
     if(PITFALL_WARNINGS)
-        add_compile_options(/W4 /permissive-)
+        # C4310 (a cast truncates a constant): the logic's constants are written as the original's
+        # 16-bit words, int16_t(0xffb8) for -0x48.
+        add_compile_options(/W4 /permissive- /wd4310)
     endif()
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS NOMINMAX WIN32_LEAN_AND_MEAN)
 else()

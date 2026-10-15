@@ -69,7 +69,7 @@ decompiled code by a test or a rendered image.
 | Level script ported | levers (type 26, "up" in front of one: Harry's 44-tick `hyipull`, the lever's 11-step animation, the `0x45b1fc` entry's flag set), doors (type 31, slide open when their lever's flag is set and Harry is 0x40 px away), chutes (type 33, hatch Harry stands on, opens when the lever is pulled, he drops through and it closes behind), one-way doors (type 173, shut behind Harry 40..144 px past, class 3 wall, flag 3 kept across deaths); the flag array `DAT_00466510..` and the runtime class table `DAT_004658c0` are rebuilt at level start / restart as the original does; the chute's sounds wait for channel 0 (`FUN_004262c8`) as the original's |
 | Bungee details | the handler (type 27, `0x40c5fe`) as the original: the catch with one of Harry's three hanging scripts (`0x45aaa4 ..`), the stretch and the rebound, the releases into his own states `0x42c3bc` (the big jump, hyivjump) and `0x42c2cc` (falling, hyifall), the camera looking down while he hangs (`DAT_004658a6`, his state `0x429fe2`); its quirk of re-entering itself at the top of a bounce until the position fraction carries is reproduced literally |
 | Objects not ported yet | only the types whose templates no level places (58, 77, 94): drawn in their template frame, they do nothing (`h_default`) |
-| Loltun vaults | levels 11..13 as the original: the vault set-up at the end of the restart, Harry's state `0x42756d`, the levers' Simon game, the letters, doors, rewards, the falling ceiling and its messages (`FUN_00434a30`), the exits (`*7`), and the vault render order (room in the parallax layer, ceiling in the main layer).  The levers' palette flash (`0x40b960` into the Genesis colours) is not shown |
+| Loltun vaults | levels 11..13 as the original: the vault set-up at the end of the restart, Harry's state `0x42756d`, the levers' Simon game, the letters, doors, rewards, the falling ceiling and its messages (`FUN_00434a30`), the exits (`*7`), and the vault render order (room in the parallax layer, ceiling in the main layer).  The levers' palette flash (`0x40b960`) goes into the Genesis colours (`0x462654`, its flag `DAT_0046654f`), which the PC never reads, so there is none, as in the original |
 | Mine carts and the ride | the ridden cart (15: track of both planes, slope frames, brake lever and sparks, wall crash, thrown out of a fast drop), the pushed cart (19), the runaway carts (98 / 0x63); level 7's scripted intro (`FUN_0043426d`) and the Balankanche ride (115 with its lights, runaway carts, coins, vapours and the 0x600-px loop) |
 | Weapons | the whip (box table `0x4612e0`), sling stones (type 5) with the power shot's sparkle trail, the big stone (type 4) and its screen-clearing blast (types 0x89 / 0x8a), and the boomerang (types 6 / 0x87: flight path, homing, bounce cells, the return, riding it), each from its handler, the blast's white flash (`DAT_0046b1b0`) included |
 | Triggers | the ids the original's code tests, in Harry's states (`FUN_00430229` and the probes: start, exit, plane switch, water, priority 0x30/0x31, ropes 0x19 / 0x1a / 0xf9, doors, invisible walls) and in the handlers (lever / door / chute / one-way door scripts, piston phases, pot contents). The object template's byte 8 is a Genesis sound-channel class (`FUN_004263a6`, a stub in the PC build), not a spawn sound. Trigger id 2 is a wall for objects only (class 3 during each handler, cleared by thrown things) and id 3 a wall for Harry only while he is on the ground, as the original sets them per tick |
@@ -78,14 +78,16 @@ decompiled code by a test or a rendered image.
 | Map screen | level 19 as the original: the set-up at the end of the restart (`0x431c99`: the path by the level left, the pegs of up to three paths before it, the next level), the camera's pan along the path a peg every 16 ticks with its plinks, the jungle sounds (`FUN_00431a67`), the next level's name in `ltr_lg` letters rising at the end, the buttons or a key (after 30 ticks) or 180 ticks going on (`*1`), and its map drawn wrapping both ways (`0x43718c`) |
 | Atari 2600 level | level 20 as the original: its start, screens and their 255 descriptors, the object pass (crocodiles, rolling logs, the scorpion, the vine, pits, swamps, fires, cobras, the 32 treasures), Harry's running, jumping, ladders, walls, holes and the vine, the deaths and the pause after them (`*3`), the clock, the game over and `*6`, the HUD and the copyright line in `chrs2600`, and the screen drawn from the two strips of the map (`0x437078`), a button or a key leaving the game over; the pits' palette flags (0x2000 / 0x4000) select Genesis palette lines, which the PC ignores as well |
 
-## Not ported yet — the rest of the Genesis-derived game logic
+## The Genesis-derived game logic as a whole, and the builds
 
 The machine-translated 68000 half of the binary (`0x401000–0x437fff`) is ported routine by routine: Harry's
 states, the object system and 140 of its behaviour types, the camera and spawner, the triggers and level
 scripts, the map screen, the 2600 level, the continue screen, the title, the cutscenes, level 24, the engine's
 transitions, CD audio, the typed cheat codes, the parallax's water effects and the original's window (menu, status
-bar, dialogs, property sheet) and the disc through MCI.  What is left: a build with MSVC itself (the Windows build
-is checked with clang / llvm-mingw, and run under Wine).
+bar, dialogs, property sheet) and the disc through MCI.  The Windows build is checked with MSVC 14.50 (Visual Studio
+2026, the 10.0.26100 SDK) at `/W4 /permissive-` with no warnings, its `ph_tests` giving the g++ build's results and
+its game running (cl, lib, rc and link run under Wine 6 with MSVC's own `vcruntime140_1.dll`, whose C++ exception
+handling Wine 6's lacks), and with clang / llvm-mingw.
 
 The Genesis half's own palette fades (`DAT_0046655e` .. `DAT_00466568`: the death colours, the continue screen's
 match, a boss's) are written but never read on the PC (`FUN_004263e3`, the Genesis routine that ran them, is a
@@ -96,5 +98,6 @@ games (the demos advance it too).
 
 ## Known gaps in the asset layer
 
-* `.trg` ids other than those listed above; `kTriggerClass` semantics.
-* `.als` object *type* handlers for the types listed as not ported.
+* Not every `.trg` id and class byte has a name: the code tests them as the original does, and `kTriggerClass`
+  is the original's table (`0x461f8e`) as it is.
+* `.als` object types no level places (58, 77, 94) have no handler of their own.

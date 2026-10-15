@@ -22,16 +22,18 @@ tests/           asset round-trip and gameplay tests
 third_party/stb/ stb_vorbis (public domain / MIT), for Ogg rips of the CD's music
 ```
 
-## Building (Visual Studio 2022)
+## Building (Visual Studio 2022 or 2026)
 
 ```
-cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64      (or "Visual Studio 18 2026")
 cmake --build build --config Release
 ctest --test-dir build -C Release
 ```
 
 This produces `build\Release\pitfall.exe` (the game), `phdump.exe` and
-`ph_tests.exe`.  No third-party dependencies are needed for the Win32 build
+`ph_tests.exe`.  The code builds with MSVC at `/W4 /permissive-` without a
+warning (checked with MSVC 14.50 and the Windows 10.0.26100 SDK, `ph_tests`
+giving the same results as the g++ build).  No third-party dependencies are needed for the Win32 build
 beyond the vendored `third_party/stb/stb_vorbis.c`.  For a portable SDL2 build
 add `-DPITFALL_USE_SDL=ON` (SDL 2.30 is fetched by CMake).  A MinGW / clang
 cross build works too (checked with llvm-mingw 20240619):
@@ -132,9 +134,10 @@ behaviour types, the camera and spawner, the triggers and level scripts, every
 boss, the Loltun vaults, the continue screen, the map screen, the Atari 2600
 level, the title, the intro, the reunion, the end and its credits, the
 typed cheat codes, the waterfalls and water effects, and the original's
-window with its menu, status bar, dialogs and property sheet.  Still to do:
-a build with MSVC itself.  See
-`docs/RECONSTRUCTION_LEDGER.md` for the exact status.
+window with its menu, status bar, dialogs and property sheet.  What still
+differs from the original is listed in `docs/RECONSTRUCTION_LEDGER.md`
+(the platform's parts: the mixer for Miles, the ini file for the registry,
+the full-screen modes, WinHelp).
 
 ## Legal
 
