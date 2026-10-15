@@ -507,8 +507,9 @@ void monkeyChatter(ObjCtx& ctx, Obj& o) {
 
 void monkeyThrowCactus(ObjCtx& ctx, Obj& o) {
     // 0x40e568: the cactus (type 0x1d) leaves the hand on frame 5 of mkztoss.
-    Obj* c = ctx.spawn();
+    Obj* c = ctx.spawn();                       // FUN_004356bc(1)
     if (!c) return;
+    c->w(0x26) = 0x6663;                        // (d0 != 0: FUN_004263a6)
     c->w(0x6c) = 0x14;
     c->x = int16_t(o.x + 0x10); c->y = int16_t(o.y - 8);
     c->sprite = ctx.spr("obrcactu");
@@ -2550,7 +2551,7 @@ void h_pitCreature(ObjCtx& ctx, Obj& o) {
     auto reposition = [&] {                       // 0x412525
         const int r = int(ctx.rnd() & 0x3f) - 0x20;
         o.x = int16_t(o.w(0x34) + r);
-        o.facing = uint8_t(r & 1);
+        o.facing = uint8_t(o.x & 1);              // the parity of the new x
         const uint32_t v = ctx.rnd();
         o.b(0x33) = uint8_t((v & 7) + 8);
         if (v & 1) { o.sprite = ctx.spr("obzpit2b"); o.script = kAnim_condorTurn; }
@@ -2571,6 +2572,7 @@ void h_pitCreature(ObjCtx& ctx, Obj& o) {
         if ((r & 2) == 0) ctx.sound0(0x14 + int(r & 1), 0);   // FUN_0042633d
     }
     if (animStep(ctx, o, o.anim(0x36), o.script, o.script == kAnim_run10 ? 4 : 3)) {
+        ctx.pl.objectSystem().cancelCurrentDisplay();   // [DAT_00465b8e] = -2
         o.frame = 0xff;
         reposition();
     }
@@ -2637,8 +2639,8 @@ void h_floorSpikes(ObjCtx& ctx, Obj& o) {
         exitDespawnFar(ctx, o);
         return;
     }
-    Obj* parts[3] = {o.link, o.link2, o.link3};
-    for (Obj* p : parts) if (!p || p->freed) { ctx.release(o); return; }
+    Obj* parts[3] = {o.link, o.link2, o.link3};                 // l3c / l40 / l44
+    for (Obj* p : parts) if (!p) { ctx.release(o); return; }
     o.b(0x34) -= 1;
     if (int8_t(o.b(0x34)) < 0) {
         o.b(0x34) = 2;
@@ -2651,7 +2653,7 @@ void h_floorSpikes(ObjCtx& ctx, Obj& o) {
         }
         if (extend) {
             if (o.b(0x33) != 3) {
-                if (o.b(0x33) == 0) ctx.sound1(0xc6, 8);
+                if (o.b(0x33) == 0 && !ctx.channel1Busy()) ctx.sound1(0xc6, 8);
                 o.b(0x33) += 1;
                 if (o.b(0x33) == 3) {
                     if (Obj* s = ctx.spawn()) {
@@ -3330,28 +3332,38 @@ void h_bossDeathBurst(ObjCtx& ctx, Obj& o) {
 
 // 0x41018c (+ the screen placement at 0x4335ce): the boss health meter, type 0x30.
 void h_bossMeter(ObjCtx& ctx, Obj& o) {
-    using jaguar::kHitPoints;
-    Obj* d2 = o.link; Obj* d3 = o.link2; Obj* pct = o.link3;
-    if (!d2 || !d3 || !pct || d2->freed || d3->freed || pct->freed) { ctx.release(o); return; }
+    ctx.pl.hudAdd(o);                                                   // 0x4150a2: placed by FUN_0043348e
+    Obj* d2 = o.link; Obj* d3 = o.link2; Obj* pct = o.link3;            // l32 / l36 / l60
+    if (!d2 || !d3 || !pct) return;
     o.behind = d2->behind = d3->behind = pct->behind = 0xff;
     pct->frame = 0;
-    // Only the level-0 jaguar is ported (the type 0x69 / 0x8c and level-8 bosses read other records).
-    Obj* boss = ctx.boss ? ctx.pl.bossObject() : nullptr;
-    if (boss && boss->type == 55) {
-        const int left = std::max(0, kHitPoints - int(boss->hits));
-        const int percent = (left * 100 / kHitPoints) & 0x7f;
-        o.frame = uint8_t(percent / 100); d2->frame = uint8_t(percent / 10 % 10); d3->frame = uint8_t(percent % 10);
-        if (o.frame == 0) { o.frame = 0xff; if (d2->frame == 0) d2->frame = 0xff; }   // FUN_00431a3f + 0x41047e
-        if (o.w(0x3c) != -0x30) o.w(0x3c) -= 1;                                      // slides in from below
-    } else {
-        o.frame = 0xff; d2->frame = 0xff; d3->frame = 0;
-        if (o.w(0x3c) < 0) o.w(0x3c) += 1;                                           // and back out
+    // Whose hit count it shows: on level 10 the record at l5a while l56 is a type 0x69 boss,
+    // else a type 0x8c boss at l50, else the boss at trg+0x1f4 (0x3e hit points on level 8,
+    // 0x1e elsewhere).
+    const Obj* hp = nullptr;
+    int full = 0;
+    if (ctx.levelNo == 10) {
+        const Obj* b = ctx.pl.objAt(uint32_t(o.l(0x56)));
+        if (b && b->type == 0x69) { hp = ctx.pl.objAt(uint32_t(o.l(0x5a))); full = 0x30; }
+    } else if (o.l(0x50) != 0) {
+        const Obj* b = ctx.pl.objAt(uint32_t(o.l(0x50)));
+        if (b && b->type == 0x8c) { hp = b; full = 0x26; }
+    } else if (ctx.pl.bossActive()) {
+        hp = ctx.pl.bossObject();
+        full = ctx.levelNo == 8 ? 0x3e : 0x1e;
     }
-    int x = ctx.camX + 0x82;
-    if (o.b(0x5a) == 1) x -= 0x1c; else if (o.b(0x5a) == 2) x += 0x14;
-    o.x = int16_t(x); d2->x = int16_t(x + 8); d3->x = int16_t(x + 16); pct->x = int16_t(x + 16 + 9);
-    const int y = ctx.camY + 0xde + o.w(0x3c);                                       // DAT_004667a8 (status bar slide) = 0
-    o.y = d2->y = d3->y = int16_t(y); pct->y = int16_t(y + 0xe);
+    if (!hp) {                                                          // 0x4104b5: hidden, sliding back out
+        o.frame = 0xff; d2->frame = 0xff; d3->frame = 0;
+        if (o.w(0x3c) < 0) o.w(0x3c) += 1;
+        return;
+    }
+    const int left = uint8_t(full - hp->hits);                         // (a byte subtraction: an overkill wraps round)
+    const int percent = (left * 100 / full) & 0x7f;
+    Harry& h = ctx.harry;                                               // FUN_00431a3f: the digits at 0x466556..5b
+    for (int k = 0, v = percent, p = 100000; k < 6; ++k, p /= 10) { h.b(0x466556 + k) = uint8_t(v / p); v %= p; }
+    o.frame = h.b(0x466559); d2->frame = h.b(0x46655a); d3->frame = h.b(0x46655b);
+    if (o.frame == 0) { o.frame = 0xff; if (d2->frame == 0) d2->frame = 0xff; }
+    if (o.w(0x3c) != -0x30) o.w(0x3c) -= 1;                             // slides in from below
 }
 
 void h_jaguar(ObjCtx& ctx, Obj& o) {
@@ -3603,7 +3615,7 @@ bool blockedAhead(ObjCtx& ctx, Obj& o) {
 Obj* spawnBone(ObjCtx& ctx, Obj& o) {
     Obj* b = ctx.spawnFrom(o, true);            // FUN_0043546e(1)
     if (!b) return nullptr;
-    b->w(0x26) = 0x6663;
+    b->w(0x26) = 0x6663;                        // (d0 != 0: FUN_004263a6)
     b->sprite = ctx.spr("skzbone"); b->frame = 0;
     b->script = kAnim2_boneTumble; b->l(0x50) = 0;
     b->b(0x5a) = o.b(0x5c); b->type = 0x1d;
@@ -3614,15 +3626,38 @@ Obj* spawnBone(ObjCtx& ctx, Obj& o) {
 // 0x413a70: the READY countdown ran out - pick the next move.
 void decide(ObjCtx& ctx, Obj& o) {
     const uint8_t v = o.b(0x50);
-    if (v == 2) { startScript(o, kThrow, kAnim2_skullThrow); exitDespawnWide(ctx, o); return; }
-    const int d = harryDx(ctx, o);
-    if (!between(d, -0x50, 0x50)) {                                   // Harry out of reach
-        if (v == 3) { o.b(0x32) = kWalk; o.w(0x34) = 0; walk(ctx, o); return; }
-        o.b(0x32) = kMorph; o.w(0x34) = 0; exitDespawnWide(ctx, o); return;
+    if (v != 2) {
+        const int d = harryDx(ctx, o);
+        if (!between(d, -0x50, 0x50)) {                               // Harry out of reach
+            if (v == 3) { o.b(0x32) = kWalk; o.w(0x34) = 0; walk(ctx, o); return; }
+            o.b(0x32) = kMorph; o.w(0x34) = 0; exitDespawnWide(ctx, o); return;
+        }
+        if (v == 1 || (v == 3 && between(d, -0x30, 0x30))) {         // 0x413b1e: the chop
+            startScript(o, kChop, kAnim2_skullChop);
+            exitDespawnWide(ctx, o);
+            return;
+        }
     }
-    if (v == 3 && !between(d, -0x30, 0x30)) { startScript(o, kThrow, kAnim2_skullThrow); exitDespawnWide(ctx, o); return; }
-    startScript(o, kChop, kAnim2_skullChop);
+    startScript(o, kThrow, kAnim2_skullThrow);                        // 0x413b3a
     exitDespawnWide(ctx, o);
+}
+
+// 0x4132ec: a hit while a sling stone's velocity is on record (DAT_00466788, of which each
+// weapon test clears only the low word) knocks a bone loose from where that stone hit
+// (DAT_00466782 / 84), unless the skeleton is a skull or dying.
+void stoneKnocksBone(ObjCtx& ctx, Obj& o) {
+    Harry& h = ctx.harry;
+    if (h.l(0x466788) == 0) return;
+    if (spriteIs(o, "skiroll") || spriteIs(o, "skimorph") || spriteIs(o, "skijaw") || spriteIs(o, "skidie")) return;
+    Obj* b = spawnBone(ctx, o);
+    if (!b) return;
+    b->b(0x68) = 0xff;
+    b->x = h.w(0x466782); b->y = h.w(0x466784);
+    const int32_t v = h.l(0x466788);
+    moveX(*b, v);
+    b->l(0x32) = v >> 1;
+    b->l(0x3a) = 0; b->l(0x3e) = 0x6e00;
+    b->l(0x36) = int32_t(ctx.rnd() & 0x1ffff) - 0x40000;
 }
 
 // state 0 (0x41383d): the pile of bones stirs until Harry comes within 160 px.
@@ -3843,6 +3878,8 @@ void h_skullWarrior(ObjCtx& ctx, Obj& o) {
         if (harryDx(ctx, o) >= 0) o.facing = 1;
     }
     if (ctx.freeze) {                                                     // 0x413065: stop-watch
+        // (d5 is not loaded here: the weapon test runs with whatever value the code before
+        // left in it.  0 stands in for it, so any hit kills.)
         if (!weaponHit(ctx, o, 0).z) {
             if (spriteIs(o, "skiroll") || spriteIs(o, "skimorph") || spriteIs(o, "skijaw") || spriteIs(o, "skidie")) {
                 ctx.sparkleBurst(o, (ctx.rnd() & 1) ? kSparkleOffsetsB : kSparkleOffsetsA);   // 0x433725
@@ -3858,12 +3895,10 @@ void h_skullWarrior(ObjCtx& ctx, Obj& o) {
         return;
     }
     if (o.b(0x32) != kDying) {
-        bool killed = false;
-        const bool hit = weaponHits(ctx, o, o.b(0x5a), &killed);
-        // (0x4132ec: a sling stone that hits knocks a bone loose from the stone's position;
-        // stones are not thrown yet.)
+        const WeaponHit r = weaponHit(ctx, o, o.b(0x5a));
         if (o.b(0x50) == 1) {
-            if (hit) {
+            if (r.d1) {
+                stoneKnocksBone(ctx, o);
                 const uint8_t s = o.b(0x32);
                 if (s == kIdle || s == kRollHome || s == kRoll || s == kReform) {
                     if (o.w(0x38) == 0) { exitDespawnWide(ctx, o); return; }
@@ -3875,11 +3910,14 @@ void h_skullWarrior(ObjCtx& ctx, Obj& o) {
                 rollHome(ctx, o);
                 return;
             }
-        } else if (killed) {                                                // 0x4134d8
-            o.b(0x32) = kDying; o.w(0x34) = 0;
-            ctx.sound(0x42);
-            dying(ctx, o);
-            return;
+        } else {
+            if (r.d1) stoneKnocksBone(ctx, o);
+            if (r.d0) {                                                     // 0x4134d8
+                o.b(0x32) = kDying; o.w(0x34) = 0;
+                ctx.sound1(0x42, 0xa);
+                dying(ctx, o);
+                return;
+            }
         }
     }
     int y = o.y + 0xd;                                                      // 0x413244: stay on the floor
@@ -4036,7 +4074,7 @@ void h_fish(ObjCtx& ctx, Obj& o) {
     }
     const uint32_t r = ctx.rnd();
     o.x = int16_t(o.w(0x34) + int(r & 0x3f) - 0x20);
-    o.facing = uint8_t(r & 1);
+    o.facing = uint8_t(o.x & 1);                    // the parity of the new x
     o.b(0x33) = uint8_t((ctx.rnd() & 0x3f) + 0x30);
     exitDespawnFar(ctx, o);
 }
@@ -4077,7 +4115,7 @@ int init(ObjCtx& ctx, Obj& o) {
 // rumble).
 void tail(ObjCtx& ctx, Obj& o) {
     priorityTrigger(ctx, o, 0);                                          // 0x4301ce
-    if (!ctx.g.soundPlaying(0xd1)) ctx.sound(0xd1);                      // (FUN_004261d1: channel 1 free?)
+    if (!ctx.channel1Busy()) ctx.sound1(0xd1, 3);                        // the rumble, whenever channel 1 is free (FUN_004261d1)
     o.l(0x54) += o.l(0x50);                                              // roll angle
     if (o.l(0x54) < 0) {
         o.l(0x54) += 0xc0000;
@@ -4274,16 +4312,16 @@ void h_firePit(ObjCtx& ctx, Obj& o) {
         o.l(0x5a) = 0;
         Obj* t = ctx.spawnFrom(o, true);                                 // FUN_0043546e(2)
         if (!t) { ctx.pl.restoreEntry(o); ctx.release(o); return; }
-        t->w(0x26) = 0x6663;
+        t->w(0x26) = 0x6663;                                             // (d0 != 0: FUN_004263a6)
         t->sprite = ctx.spr("fxifirer"); t->flags = 0x2000;
-        o.link = t;
+        o.link = t;                                                      // l50
     }
     if (!ctx.freeze) {
         o.l(0x5a) -= 0x8800;
         if (o.l(0x5a) < 0) {
             o.l(0x5a) += 0x10000;
             o.w(0x36) += 1;
-            if (o.w(0x36) == 15) ctx.sound0(8, 5);                       // 0x45ae48: the roar (FUN_0042633d(8, 0x60))
+            if (o.w(0x36) == 15 && !ctx.channel0Busy()) ctx.sound0(8, 5); // 0x45ae48: the roar (FUN_0042633d(8, 0x60))
         }
     }
     if (o.w(0x36) >= kFrames) o.w(0x36) = 0;
@@ -4295,7 +4333,7 @@ void h_firePit(ObjCtx& ctx, Obj& o) {
     o.x = int16_t(o.w(0x46) + key(i, 1));
     o.y = int16_t(o.w(0x48) - key(i, 2));
     int tailY = 0;
-    if (o.link && !o.link->freed) {
+    if (o.link) {
         Obj& t = *o.link;
         t.frame = uint8_t(key(i, 3) - 1);                                // (0x8004 entries read as frame 3)
         t.x = int16_t(o.w(0x46) + key(i, 4));
@@ -4305,11 +4343,11 @@ void h_firePit(ObjCtx& ctx, Obj& o) {
     o.behind = 0;
     const bool secondSheet = o.sprite && o.sprite->name() == "fx0firep";
     if (!secondSheet && between(tailY, 0xd, 0x11)) o.behind = 0xff;    // (sic: compares the tail's absolute y)
-    if (!ctx.freeze && !secondSheet && o.frame >= 0xa) harryContact(ctx, o, 0x28);
-    const int dx = o.x - ctx.camX, dy = o.y - ctx.camY;                  // 0x40f584: its own window
+    if (!ctx.freeze && !secondSheet && int8_t(o.frame - 0xa) >= 0) harryContact(ctx, o, 0x28);
+    const int dx = int16_t(o.x - ctx.camX), dy = int16_t(o.y - ctx.camY);   // 0x40f584: its own window
     if (dx < -0xc8 || dx >= 0x208 || dy < -0xa0 || dy >= 0x17c) {
-        if (o.link && !o.link->freed) ctx.release(*o.link);
         ctx.pl.restoreEntry(o); ctx.release(o);
+        if (o.link) ctx.release(*o.link);
     }
 }
 
@@ -4597,9 +4635,9 @@ void h_fireball(ObjCtx& ctx, Obj& o) {
         return;
     }
     auto die = [&] { o.w(0x32) = 0x100; exitDespawnWide(ctx, o); };
-    if (o.frame < 4) {
-        Obj* p = o.link;
-        if (!p || p->freed || p->type != 45 || p->b(0x32) != 0) { o.w(0x32) = 0x100; return; }
+    if (int8_t(o.frame - 4) < 0) {
+        Obj* p = o.link;                                                 // l50: the priest
+        if (!p || p->type != 45 || p->b(0x32) != 0) { o.w(0x32) = 0x100; return; }
         if (p->b(0x6b) != 0) { exitDespawnWide(ctx, o); return; }        // the priest flinches: hold
     }
     o.w(0x6a) += 1;
@@ -4612,7 +4650,7 @@ void h_fireball(ObjCtx& ctx, Obj& o) {
         if (o.frame != 5 && o.frame != 4) { exitDespawnWide(ctx, o); return; }
     }
     if (!weaponHit(ctx, o, 0).z) { die(); return; }
-    if (ctx.touchesHarry(o)) { ctx.hurtHarry(0x11); o.w(0x32) = 0x100; }  // 0x407b0f
+    if (harryContactNow(ctx, o, 0x11)) o.w(0x32) = 0x100;               // 0x407b0f
     if (vx > 0) o.facing = 0; else if (vx < 0) o.facing = 0xff;
     if (!between(o.w(0x64) - o.y, -0x28, 0x40)) { die(); return; }
     moveX(o, o.l(0x5a));
@@ -4680,14 +4718,14 @@ void h_firePriest(ObjCtx& ctx, Obj& o) {
     if (o.frame == 6) {
         const bool behind = ctx.harry.x() < o.x ? o.facing == 0 : o.facing != 0;
         if (behind) { o.w(0x52) = 0x100; exitDespawnFar(ctx, o); return; }
-        Obj* f = o.link2;
-        if (f && !f->freed && f->type == 0x2c) { exitDespawnFar(ctx, o); return; }   // its fireball still burns
-        o.link2 = nullptr;
+        Obj* f = o.link2;                                                // l64
+        if (f && f->type == 0x2c) { exitDespawnFar(ctx, o); return; }   // its fireball still burns
+        o.link2 = nullptr;                                               // (l64 = Harry's record, whose type is 1 or 0xff)
     }
     anim2Step(ctx, o, kAnim2_priestMain, 0x36, 4);
     if (o.b(0x3a) == 0 && o.l(0x36) == 4) {                              // 0x45a833: the fireball appears
         if (Obj* f = ctx.spawn()) {                                      // FUN_004356bc(3)
-            f->w(0x26) = 0x6663;
+            f->w(0x26) = 0x6663;                                         // (d0 != 0: FUN_004263a6)
             o.link2 = f;
             ctx.sound0(0x28, 8);                                         // FUN_0042633d(0x28, 0x60)
             f->type = 0x2c; f->facing = o.facing;

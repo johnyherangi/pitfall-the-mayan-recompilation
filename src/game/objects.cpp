@@ -15,14 +15,6 @@ namespace game {
 
 uint32_t ObjCtx::rnd() { return pl.random(); }
 
-void ObjCtx::sound(int id) { if (id) g.playSound(id); }
-
-void ObjCtx::soundNear(const Obj& o, int id) {
-    // FUN_00423134 opcodes 0xee/0xef: within 128 px horizontally, -0x60..0x80 vertically.
-    const int dx = o.x - harry.x(), dy = o.y - harry.y();
-    if (dx >= -0x80 && dx < 0x80 && dy >= -0x60 && dy < 0x80) sound(id);
-}
-
 void ObjCtx::hurtHarry(int amount) { pl.hurtHarry(amount); }
 bool ObjCtx::sound0(int id, int pri) { return pl.sound0(id, pri); }
 bool ObjCtx::sound1(int id, int pri) { return pl.sound1(id, pri); }
@@ -63,8 +55,9 @@ void ObjCtx::release(Obj& o) { pl.objectSystem().free(o); }
 
 Obj* ObjCtx::spawnEffect(Obj& at, const ph::Sprite* sprite, const uint8_t* script, int ticks) {
     // 0x433914: a type 0x68 effect at the object's position playing `script`.
-    Obj* e = spawn();
+    Obj* e = spawn();                                  // FUN_004356bc(2): every caller passes d2 = 2
     if (!e) return nullptr;
+    e->w(0x26) = 0x6663;                               // (d0 != 0: FUN_004263a6)
     e->x = at.x; e->y = at.y;
     e->sprite = sprite;
     e->script = script;

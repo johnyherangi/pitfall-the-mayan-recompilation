@@ -48,6 +48,7 @@ void PlayLogic::enter(Game& g) {
     boss_ = nullptr;
     ch0Pri_ = ch0Id_ = ch0Hold_ = ch1Pri_ = ch1Id_ = 0;
     objects_.reset();
+    hud_.clear();                                                           // 0x4331c4
     h_.w(0x4658ac) = int16_t(lv.columns);                                   // the level size in cells
     h_.w(0x4658ae) = int16_t(lv.hasBg ? lv.bg.hTiles / 2 : 14);
     h_.w(0x465bae) = int16_t(lv.hasBg ? lv.bg.wTiles * 8 : 320);           // and in pixels
@@ -172,7 +173,8 @@ void PlayLogic::tick(Game& g) {
     readPad();                                             // FUN_004263f3
     updateCamera(g);                                       // FUN_00404714
     harryUpdate();                                         // FUN_00426810
-    if (!debug) spawnObjects(g);                           // FUN_0043348e
+    if (!debug) hudPlacement();                            // FUN_0043348e
+    if (!debug) spawnObjects(g);                           // (FUN_00403fa0 belongs inside FUN_00404714, not ported exactly yet)
     if (level_ != 7) displayList(g);                       // FUN_00434f6c
     runObjects(g);                                         // FUN_00405170
     timers();                                              // FUN_00433a09
@@ -461,6 +463,40 @@ void PlayLogic::updateCamera(Game& g) {
     fs.scrollY = sy;
 }
 
+void PlayLogic::hudPlacement() {
+    // FUN_0043348e: the objects 0x4150a2 listed in the last object pass follow the camera.
+    const int16_t cx = h_.w(0x4658b4), cy = h_.w(0x4658b6);
+    for (int i : hud_) {
+        Obj& o = objects_.record(i);
+        switch (o.type) {
+        case 0x9b: o.x = int16_t(cx + 0x83); o.y = int16_t(cy + 0x54); break;
+        case 0x97:
+            if (o.w(0x46) != 0) o.w(0x46) -= 1;
+            else { o.w(0x32) += 5; if (o.w(0x32) == 0xeb) o.w(0x46) = 0x90; }
+            o.x = int16_t(cx - 0x5d + o.w(0x32)); o.y = int16_t(cy + 0x5e);
+            break;
+        case 7: o.x = cx; break;
+        case 0x7e: o.x = int16_t(cx - o.w(0x32)); break;
+        case 0x4b: o.x = int16_t(cx - 0x10); o.y = int16_t(cy + 0x50); break;
+        case 0x30: {                                                        // 0x4335ce: the boss meter
+            Obj* d2 = o.link; Obj* d3 = o.link2; Obj* pct = o.link3;      // l32 / l36 / l60
+            int16_t x = int16_t(cx + 0x82);
+            if (o.b(0x5a) == 1) x = int16_t(x - 0x1c);
+            if (o.b(0x5a) == 2) x = int16_t(x + 0x14);
+            o.x = x;
+            x = int16_t(x + 8); if (d2) d2->x = x;
+            x = int16_t(x + 8); if (d3) d3->x = x;
+            if (pct) pct->x = int16_t(x + 9);
+            const int16_t y = int16_t(cy + h_.w(0x4667a8) + 0xde + o.w(0x3c));
+            o.y = y; if (d2) d2->y = y; if (d3) d3->y = y;
+            if (pct) pct->y = int16_t(y + 0xe);
+            break;
+        }
+        default: break;
+        }
+    }
+}
+
 void PlayLogic::spawnObjects(Game& g) {
     // FUN_00403fa0 / FUN_00404016 / FUN_00404269 / FUN_004042fe: objects whose
     // .als cell enters a margin around the camera are instantiated from their
@@ -504,6 +540,7 @@ void PlayLogic::runObjects(Game& g) {
     h_.w(0x466508) = 0;
     h_.b(0x465b73) = 0;        // 0x4051c4: DAT_00465b73 is cleared before every object pass; a platform sets it again
     h_.b(0x4658c3) = 0;        // 0x4051ab: trigger id 3 (a wall for Harry on the ground) never stops objects
+    hud_.clear();              // 0x405170: the list 0x4150a2 fills starts again
     ObjCtx ctx{g, *this, g.level(), h_};
     ctx.levelNo = level_;
     ctx.camX = h_.w(0x4658b4); ctx.camY = h_.w(0x4658b6);   // DAT_004658b4 / b6

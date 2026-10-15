@@ -80,6 +80,7 @@ public:
     Obj* bossObject() const { return boss_; }
     bool bossActive() const { return h_.b(0x466507) != 0; }
     void startBossOutro() { h_.b(0x465d49) = 1; }   // DAT_00465d49 (FUN_0043426d)
+    void hudAdd(const Obj& o) { hud_.push_back(objects_.indexOf(o)); }   // 0x4150a2: FUN_0043348e places it next tick
 
 private:
     friend struct HarryAccess;
@@ -127,6 +128,7 @@ private:
 
     // ---- play_logic.cpp ----
     void updateCamera(Game& g);
+    void hudPlacement();                        // FUN_0043348e
     void spawnObjects(Game& g);
     void runObjects(Game& g);
     void timers();                              // FUN_00433a09
@@ -136,6 +138,7 @@ private:
     int level_ = 0;                  // DAT_00466535
     Harry h_;                        // 0x465800 .. 0x4668ff
     ObjectSystem objects_;
+    std::vector<int> hud_;           // 0x466874: the records 0x4150a2 listed in the last object pass
     std::vector<uint8_t> als_;       // the working copy of the .als ids (0 = alive, collected or killed)
     struct Killed { uint8_t count = 0, id = 0; int als = -1; };
     Killed killed_[19];              // 0x465a40 .. 0x465ad8

@@ -112,8 +112,6 @@ struct ObjCtx {
 
     // helpers shared by the handlers (objects.cpp)
     uint32_t rnd();                                    // FUN_0043387e
-    void sound(int id);                                // FUN_004261b0 / FUN_004262d9 / FUN_004261e2
-    void soundNear(const Obj& o, int id);              // only when Harry is within 128 px
     bool sound0(int id, int pri);                      // FUN_004262d9 / FUN_0042633d: channel 0 by priority
     bool sound1(int id, int pri);                      // FUN_004261e2: channel 1 by priority
     void soundNow(int id);                             // FUN_004261b0: channel 1, no priority test
@@ -161,6 +159,8 @@ public:
     bool moveToTail(Obj& o);
     // One object pass (0x405170): every object in the list runs its handler.
     void tick(ObjCtx& ctx);
+    // [DAT_00465b8e] = -2: the running object's display entry is cancelled (not drawn).
+    void cancelCurrentDisplay() { if (curList_ && curSlot_ < curList_->size()) (*curList_)[curSlot_] = -2; }
     Obj& record(int i) { return recs_[size_t(i)]; }
     const Obj& record(int i) const { return recs_[size_t(i)]; }
     int indexOf(const Obj& o) const { return int(&o - recs_.data()); }
