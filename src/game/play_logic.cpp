@@ -456,8 +456,24 @@ void PlayLogic::harryDeath() {
     if (h_.spriteIs("hyislice")) { h43118d(); return; }
     if (b72 == 0x80) { h430eb6(); return; }
     if (level_ == 0xe || b72 == 0x7f) {
-        notPorted(0x430ca8);                                // the continue screen
-        h430eb6();
+        // 0x430ca8: the continue screen is over.  Off to the left ("no") the game is over; off
+        // to the right (x 0xc8, or 0xc0 on) a continue is used: four lives (three on hard), no
+        // score, no treasures, back to the level ("*1"); otherwise "*0" again while there are
+        // continues.  (The Genesis wait loop after the "*2" is never reached on the PC.)
+        if (exiting_) return;
+        exiting_ = true;
+        if (b72 == 0x7e) { game_->command("*2"); return; }
+        h_.l(0x466535) = 0;
+        PlayerStats& st = game_->stats();
+        if (h_.x() == 0xc8 || !neg(h_.x() - 0xc0)) {
+            st.continues = (st.continues - 1) & 0xff;
+            st.lives = (st.difficulty != 0 && !game_->demoPlaying()) ? 3 : 4;   // DAT_00462694
+            st.score = 0;
+            st.treasures = 0;
+            game_->command("*1");
+            return;
+        }
+        game_->command(st.continues == 0 ? "*2" : "*0");
         return;
     }
     if (b72 == 0x7e || b72 == 0x7c) {
@@ -651,8 +667,8 @@ uint8_t PlayLogic::textGlyph(uint8_t d0, uint32_t& d3) {
 }
 
 void PlayLogic::spawnText(const char* text, int x, int y, uint8_t type) {
-    // FUN_00434a30 (DAT_00466782 / 84 the position, DAT_00465c58 the type, kept across it)
-    const uint8_t keepType = h_.b(0x465c58);
+    // FUN_00434a30 (DAT_00466782 / 84 the position, DAT_00465c58 the type: the callers set it
+    // before the call, which keeps it across the body, so it stays the type afterwards)
     h_.b(0x465c58) = type;
     h_.w(0x466782) = int16_t(x);
     h_.w(0x466784) = int16_t(y);
@@ -706,7 +722,6 @@ void PlayLogic::spawnText(const char* text, int x, int y, uint8_t type) {
         else if (d3 == 0x470240) { a5->flags = 0xc000; i += 2; }
         h_.w(0x466782) += kData_glyphWidths[i];
     }
-    h_.b(0x465c58) = keepType;
 }
 
 // ---------------------------------------------------------------- camera, objects, display

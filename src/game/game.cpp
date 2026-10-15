@@ -104,6 +104,9 @@ void Game::startLevel(int level) {
         // FUN_00427e30: the game logic clamps its own camera a little tighter on two levels.
         if (level == 0) fs_.maxScrollY = 0x32e & 0xfff0;
         if (level == 6) fs_.maxScrollX = 0x13c3;
+    } else {
+        fs_.maxScrollX = 0x280;                          // 0x44654c: a level without a background
+        fs_.maxScrollY = 0xe0;
     }
     fb_.clear();
     if (level == kTitleScreen || level == kIntro || level == kCredits) {
@@ -154,6 +157,14 @@ void Game::tick(const engine::HostInput& host) {
     fs_.joypad = pad;
 
     if (mode_ == Mode::Paused) return;
+    if (mode_ == Mode::GameOver) {
+        // "*2": the engine stands still on the game-over screen, then the title
+        if (--gameOverTicks_ > 0) return;
+        demoPos_ = kDemoNotActive;
+        mode_ = Mode::Title;
+        startLevel(kTitleScreen);
+        return;
+    }
 
     // ---- FUN_00443370 ---------------------------------------------------
     ++fs_.globalFrame;
@@ -174,6 +185,25 @@ void Game::tick(const engine::HostInput& host) {
 void Game::command(const char* cmd) {
     // The WinMain switch on DAT_0046b1a8[1], the cases of the vortex warps.
     switch (cmd[1]) {
+    case '0':                                            // 0x444200: the continue screen; the level is kept for "*1"
+        mixer_.stopAll();
+        nextLevel_ = levelNo_;
+        requestLevel(kContinueScreen);
+        break;
+    case '2':                                            // 0x44423d: game over
+        mixer_.stopAll();
+        if (demoPos_ == kDemoNotActive) {
+            // the sound 0x20 and "[GAME OVER]" on a black screen for 3 s (the engine waits for
+            // them), then the title
+            playSound(0x20);
+            mode_ = Mode::GameOver;
+            gameOverTicks_ = 180;
+            return;
+        }
+        demoPos_ = kDemoNotActive;
+        mode_ = Mode::Title;
+        requestLevel(kTitleScreen);
+        break;
     case '1':                                            // 0x444216: the level kept (after the map screen, a continue)
         mixer_.stopAll();                                // FUN_0043e470 (then 750 ms unless on the map)
         requestLevel(nextLevel_);
@@ -243,8 +273,59 @@ void Game::tickAttract() {
     }
 }
 
+uint8_t Game::bigGlyph(uint8_t ch, int& width) {
+    // FUN_00431b73: the frame of ltr_lg for a character and its width (the frame's own); a
+    // character it does not know is one of the two spaces, by turns (DAT_0046a878).
+    uint8_t g;
+    if (ch >= 'A' && ch <= 'Z') g = uint8_t(ch - 'A');
+    else switch (ch) {
+        case '2': g = 0x1a; break;
+        case '3': g = 0x1b; break;
+        case '5': g = 0x1c; break;
+        case '6': g = 0x1d; break;
+        case '9': g = 0x1e; break;
+        case '\\': g = 0x24; break;
+        case '.': g = 0x25; break;
+        case ',': g = 0x26; break;
+        case ':': g = 0x27; break;
+        case '?': g = 0x28; break;
+        case '!': g = 0x29; break;
+        case '-': g = 0x2a; break;
+        case '[': g = 0x2b; break;
+        case ']': g = 0x2e; break;
+        default:
+            bigSpace_ = uint8_t((bigSpace_ + 1) & 1);
+            g = uint8_t(0x2c + bigSpace_);
+            break;
+    }
+    const ph::Sprite* spr = assets_->sprite("ltr_lg");
+    width = spr && g < spr->frameCount() ? spr->frame(g).w : 0;
+    return g;
+}
+
+void Game::renderGameOver() {
+    // 0x44426b: the whole buffer cleared and "[GAME OVER]" drawn by FUN_00431bfb: ltr_lg letters
+    // centred on x 0xa0, at y 0x5f of the screen.
+    fb_.clear();
+    const char* text = "[GAME OVER]";
+    int total = 0;
+    for (const char* c = text; *c; ++c) { int w; bigGlyph(uint8_t(*c), w); total += w; }
+    int x = 0xa0 - (total >> 1);
+    const engine::View view{0, 0};
+    for (const char* c = text; *c; ++c) {
+        int w;
+        engine::SpriteInstance s;
+        s.frame = bigGlyph(uint8_t(*c), w);
+        s.sprite = assets_->sprite("ltr_lg");
+        s.x = x; s.y = 0x5f; s.flags = engine::kSprVisible;
+        if (s.sprite) renderer_.drawSprite(s, view);
+        x += w;
+    }
+}
+
 void Game::render() {
     // ---- FUN_00443c90: snapshot the logic state --------------------------
+    if (mode_ == Mode::GameOver) { renderGameOver(); return; }
     snap_ = fs_;
     engine::View view{snap_.scrollX, snap_.scrollY};
     deferred_.clear();
@@ -349,22 +430,12 @@ void Game::setRandomSeed(uint32_t s0, uint32_t s1) {
 }
 
 void Game::loseLife() {
-    // FUN_00430eb6's tail: a life gone, "*3" starts the level again at the checkpoint.  With
-    // none left, "*0" goes to the continue screen (level 14, not ported: the continue is taken
-    // at once, as its 0x430d09 does, and "*1" loads the level again from its start), or with
-    // no continues either "*2" ends the game.
-    if (--stats_.lives > 0) { restartLevel(); return; }
-    if (stats_.continues <= 0) {
-        stats_ = PlayerStats{};
-        mode_ = Mode::Title;
-        requestLevel(kTitleScreen);
-        return;
-    }
-    --stats_.continues;
-    stats_.lives = stats_.difficulty ? 3 : 4;
-    stats_.score = 0;
-    stats_.treasures = 0;
-    requestLevel(levelNo_);
+    // FUN_00430eb6's tail: a life gone (a byte), "*3" starts the level again at the checkpoint;
+    // with none left "*0" goes to the continue screen while there are continues, else "*2" ends
+    // the game.
+    stats_.lives = (stats_.lives - 1) & 0xff;
+    if (stats_.lives != 0) { restartLevel(); return; }
+    command(stats_.continues != 0 ? "*0" : "*2");
 }
 
 void Game::drawTextWorld(int x, int y, const char* text) {

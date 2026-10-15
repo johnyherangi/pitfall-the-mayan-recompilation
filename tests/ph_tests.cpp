@@ -93,7 +93,7 @@ namespace { int jaguarTest(const std::string& dir); int bungeeTest(const std::st
             int vortexTest(const std::string& dir); int deathTest(const std::string& dir); int vaultTest(const std::string& dir);
             int stoneJaguarTest(const std::string& dir); int jaguarManTest(const std::string& dir);
             int warriorSpiritTest(const std::string& dir); int atari2600Test(const std::string& dir);
-            int mapScreenTest(const std::string& dir); }
+            int mapScreenTest(const std::string& dir); int continueTest(const std::string& dir); }
 namespace {
 int gameplayTests(const std::string& dir) {
     int fails = 0;
@@ -131,6 +131,7 @@ int gameplayTests(const std::string& dir) {
     fails += warriorSpiritTest(dir);
     fails += atari2600Test(dir);
     fails += mapScreenTest(dir);
+    fails += continueTest(dir);
     return fails;
 }
 }
@@ -849,6 +850,64 @@ int mapScreenTest(const std::string& dir) {
     for (int t = 0; t < 100 && skipAt < 0; ++t) { g.tick(t % 2 ? jump : idle); if (g.levelNumber() != 19) skipAt = t; }
     if (skipAt < 29 || skipAt > 32 || g.levelNumber() != 1) { std::printf("FAIL: map: a button went on at %d (level %d)\n", skipAt, g.levelNumber()); ++fails; }
     std::printf("map: 13 paths in %d ticks; a button goes on at %d\n", total, skipAt);
+    return fails;
+}
+}
+
+// The last life lost: the continue screen (level 14) with "continues N" and the letters found;
+// a button there walks Harry off to the right and takes a continue (four lives, no score, back
+// to the level); "down" first walks him off to the left: "[GAME OVER]" for three seconds, then
+// the title.  Without continues the game is over at once.
+namespace {
+int continueTest(const std::string& dir) {
+    int fails = 0;
+    engine::Options opts;
+    game::Game g(dir, opts);
+    engine::HostInput idle, button, down;
+    button.keyDown['W'] = true;
+    down.keyDown[0x28] = true;
+    auto loseAll = [&](int level, int continues) {
+        g.setMode(game::Mode::Playing);
+        g.newGame();
+        g.startLevel(level);
+        g.stats().continues = continues;
+        g.stats().letters = 0x05;                                       // P and T found
+        g.stats().score = 1234;
+        g.stats().lives = 1;
+        g.loseLife();
+        g.tick(idle);
+    };
+    // yes
+    loseAll(2, 3);
+    if (g.levelNumber() != 14) { std::printf("FAIL: continue: no continue screen (level %d)\n", g.levelNumber()); return fails + 1; }
+    game::PlayLogic* pl = game::g_debugLogic;
+    int t = 0;
+    for (; t < 120; ++t) g.tick(idle);
+    int letters = 0, shown = 0, digit = -1;
+    for (const game::Obj* o : pl->objectSystem().list()) {
+        if (o->type == 0x18) { ++letters; shown += o->frame != 0xff; }
+        if (o->type == 108 && o->sprite && o->sprite->name() == "ltr_sm" && o->frame >= 0x1a && o->frame < 0x24) digit = o->frame - 0x1a;
+    }
+    if (letters != 7 || shown != 2 || digit != 3) { std::printf("FAIL: continue: %d letters, %d shown, digit %d\n", letters, shown, digit); ++fails; }
+    int out = -1;
+    for (; t < 1200 && out < 0; ++t) { g.tick(t == 150 ? button : idle); if (g.levelNumber() != 14) out = t; }
+    if (out < 0 || g.levelNumber() != 2 || g.stats().lives != 4 || g.stats().continues != 2 || g.stats().score != 0) {
+        std::printf("FAIL: continue: yes led to level %d (lives %d, continues %d, score %d)\n", g.levelNumber(), g.stats().lives, g.stats().continues, g.stats().score);
+        ++fails;
+    }
+    // no
+    loseAll(5, 2);
+    int over = -1, title = -1;
+    for (int i = 0; i < 1500 && title < 0; ++i) {
+        g.tick(i > 30 && i < 40 ? down : i == 150 ? button : idle);
+        if (over < 0 && g.mode() == game::Mode::GameOver) over = i;
+        if (g.levelNumber() == 15) title = i;
+    }
+    if (over < 0 || title - over < 170 || title - over > 190) { std::printf("FAIL: continue: no led to the game over at %d, the title at %d\n", over, title); ++fails; }
+    // no continues left
+    loseAll(5, 0);
+    if (g.mode() != game::Mode::GameOver) { std::printf("FAIL: continue: without continues the game is not over (level %d)\n", g.levelNumber()); ++fails; }
+    std::printf("continue: yes out at %d; no: game over at %d, title at %d\n", out, over, title);
     return fails;
 }
 }

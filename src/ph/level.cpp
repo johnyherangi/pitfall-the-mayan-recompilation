@@ -96,8 +96,9 @@ LevelData loadLevel(int level, const std::string& dataDir, Palette& pal) {
     if (!files.extra.empty()) { lv.extra = loadBg(files.extra); lv.hasExtra = true; }
     if ((level == 0 || level == 5) && lv.hasParallax) lv.parallaxLinear = LinearBitmap::expand(lv.parallax);
 
-    // Column tables (FUN_004331d8 / FUN_00433d0b iterate DAT_004658ac = wTiles/2 columns).
-    lv.columns = lv.hasBg ? lv.bg.wTiles / 2 : 0;
+    // Column tables (FUN_004331d8 / FUN_00433d0b iterate DAT_004658ac = wTiles/2 columns; a level
+    // without a background, the continue screen, has 0x28: FUN_004460e0 at 0x446538).
+    lv.columns = lv.hasBg ? lv.bg.wTiles / 2 : 0x28;
     if (lv.columns > 0) {
         if (!lv.det.empty()) lv.collision = ColumnTable(lv.det, 4, lv.columns, false);
         if (!lv.dt2.empty()) lv.collision2 = ColumnTable(lv.dt2, 4, lv.columns, false);

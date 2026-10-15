@@ -8330,6 +8330,53 @@ void h_vortex(ObjCtx& ctx, Obj& o) {
     exitDespawnFar(ctx, o);
 }
 
+// ---------------------------------------------------------------- the continue screen
+
+// 0x40b880: type 24, the letters P-I-T-F-A-L-L the continue screen shows: its handler jumps
+// straight to the pass's next object (what follows the jump, a level-10 HUD placement, is dead).
+void h_inert(ObjCtx&, Obj&) {}
+
+// 0x41e250: type 157, the continue screen's sign (mi_sign).  The camera stays at y 0x2a.  At its
+// first run it writes "continues N" in ltr_sm letters (type 108 at (0x50, 0xbe); N the
+// continues, 9 at most) and puts up the P-I-T-F-A-L-L letters found (type 24, mi_ptfal, frames
+// 0x4619d8, at y 0xe2 from x 0x92, 0x1d apart; a letter not found is not shown).  Its frame
+// follows Harry's: 1 at his frame 0xd, 0 at 0x13.  While the match burns it rotates five words
+// of the Genesis palette (0x46266a .. 0x462672) every sixth tick, which the PC does not show.
+void h_continueSign(ObjCtx& ctx, Obj& o) {
+    Harry& h = ctx.harry;
+    o.flags = 0x4000;
+    h.w(0x4658b6) = 0x2a;
+    if (o.b(0x5a) == 0) {
+        o.b(0x5a) = 0xff;
+        char text[] = "continues  ";                               // 0x45bfd2, copied to 0x4661b8
+        const int c = std::min(ctx.g.stats().continues & 0xff, 9);
+        text[10] = char('0' + c);
+        ctx.pl.spawnText(text, 0x50, 0xbe, 0x6c);                    // FUN_00434a30
+        static const uint8_t kFrames[] = {0, 1, 2, 3, 4, 5, 5};     // 0x4619d8
+        int16_t x = 0x92;
+        uint8_t bit = 1;
+        for (uint8_t f : kFrames) {
+            Obj* a5 = ctx.spawnFrom(o, true, 2);                     // FUN_0043546e
+            if (!a5) break;
+            a5->x = x;
+            x = int16_t(x + 0x1d);
+            a5->type = 0x18;
+            a5->y = 0xe2;
+            a5->frame = (ctx.g.stats().letters & bit) ? f : 0xff;   // DAT_00465896
+            bit = uint8_t(bit << 1);
+            a5->setSprite(ctx.spr("mi_ptfal"));
+        }
+    }
+    if (h.frame() == 0xd) { o.frame = 1; o.setSprite(ctx.spr("mi_sign")); }
+    if (h.frame() == 0x13) { o.setSprite(ctx.spr("mi_sign")); o.frame = 0; }
+    if (h.cont() != 0x4299ad) return;
+    o.behind = 0xff;
+    o.b(0x32) -= 1;
+    if (int8_t(o.b(0x32)) >= 0) return;
+    o.b(0x32) = 5;
+    h.b(0x46654f) = 0xff;
+}
+
 // ---------------------------------------------------------------- default
 
 // Types without a port yet: show the template frame and leave when far away.
@@ -8480,6 +8527,8 @@ Handler ObjectSystem::handler(uint8_t type) {
     case 105:  return h_warriorSpirit;
     case 106:  return h_spiritPart;
     case 176:  return h_lastLetter;
+    case 24:   return h_inert;
+    case 157:  return h_continueSign;
     case 0:    return nullptr;
     default:   return h_default;
     }

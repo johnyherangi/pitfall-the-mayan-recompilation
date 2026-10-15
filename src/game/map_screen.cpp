@@ -126,46 +126,16 @@ void PlayLogic::mapAmbient() {
     }
 }
 
-uint8_t PlayLogic::mapGlyph(uint8_t ch, int& width) {
-    // FUN_00431b73: the frame of ltr_lg for a character and its width (the frame's own); a
-    // character it does not know is one of the two spaces, by turns.
-    uint8_t g;
-    if (ch >= 'A' && ch <= 'Z') g = uint8_t(ch - 'A');
-    else switch (ch) {
-        case '2': g = 0x1a; break;
-        case '3': g = 0x1b; break;
-        case '5': g = 0x1c; break;
-        case '6': g = 0x1d; break;
-        case '9': g = 0x1e; break;
-        case '\\': g = 0x24; break;
-        case '.': g = 0x25; break;
-        case ',': g = 0x26; break;
-        case ':': g = 0x27; break;
-        case '?': g = 0x28; break;
-        case '!': g = 0x29; break;
-        case '-': g = 0x2a; break;
-        case '[': g = 0x2b; break;
-        case ']': g = 0x2e; break;
-        default:
-            mapSpace_ = uint8_t((mapSpace_ + 1) & 1);         // DAT_0046a878
-            g = uint8_t(0x2c + mapSpace_);
-            break;
-    }
-    const ph::Sprite* spr = game_->findSprite("ltr_lg");
-    width = spr && g < spr->frameCount() ? spr->frame(g).w : 0;
-    return g;
-}
-
 void PlayLogic::mapText(const char* s, int y) {
     // FUN_00431ad5: the string in ltr_lg letters (type 2 objects at the head of the list, drawn in
     // front), centred on x 0x98 of the screen, at y.
     int total = 0;
-    for (const char* c = s; *c; ++c) { int w; mapGlyph(uint8_t(*c), w); total += w; }
+    for (const char* c = s; *c; ++c) { int w; game_->bigGlyph(uint8_t(*c), w); total += w; }
     int x = 0x98 - (total >> 1) + h_.w(0x4658b4);             // DAT_0046a870 / 74
     const int yy = y + h_.w(0x4658b6);
     for (const char* c = s; *c; ++c) {
         int w;
-        const uint8_t g = mapGlyph(uint8_t(*c), w);
+        const uint8_t g = game_->bigGlyph(uint8_t(*c), w);
         Obj* o = newObjAtHarry(1);                            // FUN_004356bc (a6 = Harry here)
         if (o) {
             o->setSprite(game_->findSprite("ltr_lg"));

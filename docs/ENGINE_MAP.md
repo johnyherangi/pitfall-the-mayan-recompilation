@@ -124,6 +124,18 @@ the data section, so the first demo is demo 0, and each demo starts a new game (
 | `0x4668c4` | collision shape heights | `ph::kCollisionHeights` |
 | `0x461f8e` | trigger class table | `ph::kTriggerClass` |
 
+## Lives out: the continue screen (level 14) and the game over
+
+`FUN_00430eb6` ends with the lives (a byte) one down: `*3` while any are left, else `*0` while there are continues,
+else `*2`.  `*0` (0x444200) keeps the level in `DAT_0045050c` and loads level 14, which has no background (the level
+load makes it 0x28 by 0xe cells, 0x446538); its `.als` places the sign (type 157: the camera at y 0x2a, "continues N"
+in `ltr_sm`, the letters found as type 24) and Harry's state `0x42989c` / `0x4299ad` strikes the match, up / down
+choose, a button confirms and he walks off.  `FUN_00430a69` then takes him at `0x430ca8`: off to the left (0x7e) `*2`;
+at x 0xc8 or from 0xc0 on, a continue: four lives (three on hard), no score, no treasures, `*1` back to the level;
+otherwise `*0` / `*2` again.  `*2` (0x44423d) plays sound 0x20, clears the screen and writes "[GAME OVER]" in `ltr_lg`
+(`FUN_00431bfb`, centred on x 0xa0 at y 0x5f), waits 3 s and loads the title (a demo goes to the title at once).
+`FUN_00434a30` keeps the caller's `DAT_00465c58` (the letters' type) across its body, so the type stays there after it.
+
 ## The map screen (level 19, `src/game/map_screen.cpp`)
 
 A level's exit (`0x430912`) keeps the level in `DAT_0046b1ac` and asks for `*4`, which loads level 19 (level 22 after the
@@ -256,10 +268,12 @@ markerFlame `0x41ae9a`, 119 whipLever `0x41aee0`, 121 rideMarker `0x41b208`, 122
 135 boomerangBack `0x41bcb2`, 137 stonePiece `0x41bfe2`, 138 stoneSpark `0x41c420`, 140 stoneJaguar `0x41c4c2`, 141
 stoneJaguarBase `0x41d47a`, 142 heart `0x41d520`, 147 coin
 `0x41d876`, 148 pitWheel `0x41d9e6`, 149 wheelSpawner `0x41dbf2`, 150 ceilingRock `0x41dc50`, 151 hudText `0x41dd6e`,
-153 jaguarFight `0x41ddac`, 154 jaguarRope `0x41e032`, 155 hudGo `0x41e110`, 156 hangingPouch `0x41e132`, 158 jagMan
+153 jaguarFight `0x41ddac`, 154 jaguarRope `0x41e032`, 155 hudGo `0x41e110`, 156 hangingPouch `0x41e132`, 157 continueSign
+`0x41e250`, 158 jagMan
 `0x41e462`, 159 jagManClaw `0x41f24c`, 160 eyes `0x41f2c2`, 161 dot `0x41f320`, 164 snakeRespawner
 `0x41f5e6`, 166 vaultReward `0x41f6ae`, 169 ropeSpawner `0x41fc1a`, 170 oneUpFly `0x41fd26`, 172 treeSnake `0x420090`, 173 oneWayDoor `0x42068c`,
-174 leanLever `0x4208f8`, 176 lastLetter `0x420abf`.
+174 leanLever `0x4208f8`, 176 lastLetter `0x420abf`; 24 (`0x40b880`, the continue screen's P-I-T-F-A-L-L letters)
+jumps straight on (`h_inert`).
 
 Notes on some of them: the jaguar boss's states are INTRO `0x411391`, GO `0x41124d`, POUNCE `0x411054`, REVERSE
 `0x41190f`, RUN `0x411651`, CROUCH `0x410f1f`, ROAR `0x41119c`, STOP `0x41156b`; the bungee vine drives Harry's state

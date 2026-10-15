@@ -128,6 +128,7 @@ public:
     void completeLevel();                                             // 0x430912: the level is kept (DAT_0046b1ac), "*4"
     int tourLevel() const { return tourLevel_; }                      // DAT_0046b1ac: the level last completed
     void setNextLevel(int l) { nextLevel_ = l; }                      // DAT_0045050c: the level "*1" loads
+    uint8_t bigGlyph(uint8_t ch, int& width);                         // FUN_00431b73: ltr_lg's frame for a character
     void loseLife();                                                  // FUN_00430eb6's tail: "*3", or a continue / game over
     void restartLevel() { pendingRestart_ = true; }                   // "*3" (FUN_004360e9): the logic starts again in place
     // The transitions of the vortex warps, "*50" .. "*53", "*6" and "*7" (the WinMain command
@@ -169,6 +170,7 @@ private:
     void renderTitle();                // FUN_004426e0 title animation
     void renderVault();                // FUN_00443c90's layer order on the Loltun vaults
     void renderAtari2600();            // FUN_00436fb4 at 0x437078: the 2600 level's screen
+    void renderGameOver();             // "*2": 0x44426b
 
     uint8_t levelFlags_[32] = {};
     uint8_t rng_[12] = {};             // DAT_00466772: three longs at +0 / +4 / +8 (+6 overlaps them)
@@ -192,6 +194,8 @@ private:
     int pendingLevel_ = -1;
     bool pendingRestart_ = false;
     int demoIndex_ = -1;               // DAT_0046fbbc (-1 in the data section: the first demo is demo 0)
+    int gameOverTicks_ = 0;            // "*2": the 3 s the engine waits on the game-over screen
+    uint8_t bigSpace_ = 0;             // DAT_0046a878: which of ltr_lg's two spaces is next
     int tourLevel_ = 0;                // DAT_0046b1ac: the level last completed (the map screen's path)
     int nextLevel_ = 0;                // DAT_0045050c: the level "*1" loads (the map's next one, the one a continue goes back to)
     int demoPos_ = 0;                  // DAT_0046fb8c (0x800 == not in demo)

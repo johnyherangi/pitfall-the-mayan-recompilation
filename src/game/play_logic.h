@@ -227,7 +227,6 @@ private:
     void mapArrived();                          // 0x4323b4
     void mapAmbient();                          // FUN_00431a67
     void mapPeg(Obj& o, uint32_t va);           // a peg of the path at va
-    uint8_t mapGlyph(uint8_t ch, int& width);   // FUN_00431b73
     void mapText(const char* s, int y);         // FUN_00431ad5
     void mapExit();                             // "*1"
     void listAll();                             // FUN_00435174: Harry, then the objects from the tail
@@ -262,7 +261,6 @@ private:
     int32_t mapEnd_ = 0;             // DAT_004601c0: the ticks the map waits at the end of its path
     uint32_t mapNamed_ = 0;          // DAT_0046a87c: the next level's name is up
     uint32_t mapKeysOff_ = 0;        // DAT_0046a88a: the ticks before the buttons count
-    uint8_t mapSpace_ = 0;           // DAT_0046a878: which of the two space glyphs is next
 };
 
 // Item handler (type 2, 0x405328) effect table at 0x45a8d4: sprite -> effect.
