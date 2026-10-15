@@ -88,7 +88,8 @@ int main(int argc, char** argv) {
 
 // ---- gameplay smoke tests (appended) --------------------------------------
 namespace { int jaguarTest(const std::string& dir); int bungeeTest(const std::string& dir); int stoneTest(const std::string& dir);
-            int vortexTest(const std::string& dir); int deathTest(const std::string& dir); int vaultTest(const std::string& dir); }
+            int vortexTest(const std::string& dir); int deathTest(const std::string& dir); int vaultTest(const std::string& dir);
+            int stoneJaguarTest(const std::string& dir); }
 namespace {
 int gameplayTests(const std::string& dir) {
     int fails = 0;
@@ -121,6 +122,7 @@ int gameplayTests(const std::string& dir) {
     fails += vortexTest(dir);
     fails += deathTest(dir);
     fails += vaultTest(dir);
+    fails += stoneJaguarTest(dir);
     return fails;
 }
 }
@@ -420,6 +422,89 @@ int vaultTest(const std::string& dir) {
         std::printf("FAIL: vault rewards: score +%d, lives %d -> %d\n", g.stats().score - score0, lives0, g.stats().lives); ++fails;
     }
     std::printf("vault: solved at tick %d, out at %d, ceiling down to %d, score +%d\n", solvedAt, outAt, lowest, g.stats().score - score0);
+    return fails;
+}
+}
+
+// The stone jaguars of the Lost City of Copan (types 140 / 141 / 153 / 154): flown in from the
+// right (the .als scan meets the statues again only while the camera comes left, with Harry
+// beside them), Harry walks into the arena and whips whatever comes near while staying healed.
+// Both jaguars must wake, one must leap up onto the ledge, both must die, the rope must come
+// down; Harry then climbs it, jumps left onto the walkway and walks out of the level (0x5f).
+namespace {
+int stoneJaguarTest(const std::string& dir) {
+    int fails = 0;
+    engine::Options opts; opts.allowCheat = true;
+    game::Game g(dir, opts);
+    g.startLevel(3); g.setMode(game::Mode::Playing);
+    game::PlayLogic* pl = game::g_debugLogic;
+    if (!pl) { std::printf("FAIL: no play logic for level 3\n"); return 1; }
+    const int legs[3][2] = {{2400, 700}, {2400, 140}, {2250, 140}};
+    for (const auto& leg : legs) {
+        for (int i = 0; i < 3000; ++i) {
+            const game::Harry& h = pl->harry();
+            if (std::abs(h.x() - leg[0]) <= 7 && std::abs(h.y() - leg[1]) <= 7) break;
+            engine::HostInput fly; fly.ctrlDown = true;
+            fly.keyDown[h.x() < leg[0] ? 0x27 : 0x25] = std::abs(h.x() - leg[0]) > 7;
+            fly.keyDown[h.y() < leg[1] ? 0x28 : 0x26] = std::abs(h.y() - leg[1]) > 7;
+            g.tick(fly);
+        }
+    }
+    int fightAt = -1, bothAwakeAt = -1, ledgeAt = -1, deadAt = -1, ropeAt = -1, climbedAt = -1, outAt = -1;
+    int phase = 0, segments = 0, ropeY = 0;
+    for (int t = 0; t < 12000 && g.levelNumber() == 3; ++t) {
+        game::Harry& h = pl->harry();
+        int awake = 0;
+        const game::Obj* rope = nullptr;
+        engine::HostInput in;
+        for (game::Obj* o : pl->objectSystem().list()) {
+            if (o->type == 0x8c) {
+                const uint32_t st = uint32_t(o->l(0x32));
+                if (st != 0x41cb3a) awake += 1;
+                if (st == 0x41d195 && ledgeAt < 0) ledgeAt = t;
+                if (st != 0x41cb3a && std::abs(o->x - h.x()) < 70 && t % 3 == 0) in.keyDown['Q'] = true;
+            }
+            if (o->type == 0x9a) rope = o;
+        }
+        if (fightAt < 0 && h.b(0x465c60)) fightAt = t;
+        if (bothAwakeAt < 0 && awake == 2) bothAwakeAt = t;
+        if (deadAt < 0 && fightAt >= 0 && h.ul(0x465c58) == 0 && h.ul(0x465c5c) == 0) deadAt = t;
+        if (rope && ropeAt < 0) {
+            ropeAt = t;
+            for (const game::Obj* s = rope; s; s = pl->objAt(uint32_t(const_cast<game::Obj*>(s)->l(0x46))))
+                if (s != rope) ++segments;
+        }
+        if (rope) ropeY = rope->y;
+        const bool onRope = h.w(0x466508) != 0 && !h.onGround();
+        if (rope && phase == 0) phase = 1;
+        if (phase == 1 && onRope) phase = 2;
+        if (phase == 2 && h.y() <= 4) { phase = 3; climbedAt = t; }
+        if (phase == 0) {
+            if (std::abs(h.x() - 1990) > 4) in.keyDown[h.x() < 1990 ? 0x27 : 0x25] = true;
+        } else {
+            in = engine::HostInput{};
+            if (phase == 1) {                                          // under the rope, jump up to it
+                if (std::abs(h.x() - 1968) > 3) in.keyDown[h.x() < 1968 ? 0x27 : 0x25] = true;
+                else { in.keyDown[0x26] = true; if (t % 40 < 6) in.keyDown['W'] = true; }
+            } else if (phase == 2) {
+                in.keyDown[0x26] = true;                               // climb
+            } else {
+                in.keyDown[0x25] = true;                               // jump off to the left, walk out
+                if (onRope && t % 8 < 4) in.keyDown['W'] = true;
+            }
+        }
+        pl->healHarry();
+        g.tick(in);
+        if (g.levelNumber() != 3) outAt = t;
+    }
+    if (fightAt < 0) { std::printf("FAIL: the stone jaguars' fight never started\n"); ++fails; }
+    if (bothAwakeAt < 0) { std::printf("FAIL: the second stone jaguar never woke\n"); ++fails; }
+    if (ledgeAt < 0) { std::printf("FAIL: no stone jaguar leapt up onto the ledge\n"); ++fails; }
+    if (deadAt < 0) { std::printf("FAIL: the stone jaguars did not die\n"); ++fails; }
+    if (ropeAt < 0 || segments != 8 || ropeY != -0x20) { std::printf("FAIL: the rope (segments %d, head y %d)\n", segments, ropeY); ++fails; }
+    if (outAt < 0 || g.levelNumber() != 4) { std::printf("FAIL: Harry did not leave the level by the rope (level %d)\n", g.levelNumber()); ++fails; }
+    std::printf("stone jaguars: fight at tick %d, both awake at %d, ledge at %d, dead at %d, rope at %d, top at %d, level 4 at %d\n",
+                fightAt, bothAwakeAt, ledgeAt, deadAt, ropeAt, climbedAt, outAt);
     return fails;
 }
 }

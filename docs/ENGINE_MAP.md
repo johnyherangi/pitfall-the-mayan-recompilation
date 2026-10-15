@@ -207,9 +207,10 @@ hidden1up `0x41a092`, 115 rideDirector `0x41a2ae`, 116 floorSkull `0x41a9fa`, 11
 markerFlame `0x41ae9a`, 119 whipLever `0x41aee0`, 121 rideMarker `0x41b208`, 122 harrySplash `0x41b24e`, 123 branch
 `0x41b2da`, 124 branchTip `0x41b424`, 125 branchPiece `0x41b5d8`, 126 rideLaneLight `0x41b628`, 127 rideCart
 `0x41b644`, 128 rideVapor `0x41b736`, 129 ripple `0x41b92e`, 130 deathCloud `0x41b9d1`, 132 / 133 scorpion `0x41baa0`,
-135 boomerangBack `0x41bcb2`, 137 stonePiece `0x41bfe2`, 138 stoneSpark `0x41c420`, 142 heart `0x41d520`, 147 coin
+135 boomerangBack `0x41bcb2`, 137 stonePiece `0x41bfe2`, 138 stoneSpark `0x41c420`, 140 stoneJaguar `0x41c4c2`, 141
+stoneJaguarBase `0x41d47a`, 142 heart `0x41d520`, 147 coin
 `0x41d876`, 148 pitWheel `0x41d9e6`, 149 wheelSpawner `0x41dbf2`, 150 ceilingRock `0x41dc50`, 151 hudText `0x41dd6e`,
-155 hudGo `0x41e110`, 156 hangingPouch `0x41e132`, 160 eyes `0x41f2c2`, 161 dot `0x41f320`, 164 snakeRespawner
+153 jaguarFight `0x41ddac`, 154 jaguarRope `0x41e032`, 155 hudGo `0x41e110`, 156 hangingPouch `0x41e132`, 160 eyes `0x41f2c2`, 161 dot `0x41f320`, 164 snakeRespawner
 `0x41f5e6`, 166 vaultReward `0x41f6ae`, 169 ropeSpawner `0x41fc1a`, 170 oneUpFly `0x41fd26`, 172 treeSnake `0x420090`, 173 oneWayDoor `0x42068c`,
 174 leanLever `0x4208f8`.
 
@@ -231,9 +232,22 @@ script `0x428a43`, 6 ticks a frame); the trigger under it then picks the exit: 0
 0x8a / 0x8b / 0x8c the vaults (`*53` from level 2, `*51` from level 4, `*52` from level 8), anything else the
 checkpoint (`FUN_00432615`).
 
-Still `h_default` (drawn in the template frame, never act): 105 the Warrior Spirit `0x420bd0`, and the later jaguars
-140 `0x41c4c2` / 158 `0x41e462`, with the objects only they spawn.  The
-boss meter's branches for types 0x69 / 0x8c and the level-8 boss are not ported.
+The stone jaguars of the Lost City of Copan (140) keep their state as the continuation address at +0x32:
+STATUE `0x41cb3a`, WAKE `0x41cdef`, RUN `0x41ce7c`, CROUCH `0x41cb8b`, POUNCE `0x41cccb`, REVERSE `0x41d356`, LEDGE
+LEAP `0x41d067`, LEDGE `0x41d195`, JUMP DOWN `0x41d251`.  A statue sleeps (released, its `.als` id put back) until
+Harry is at x >= 0x7ba above y 0xcb, so it is met again only while the camera comes left with Harry beside it; the
+first statue to see Harry in the arena (or a stone bounce off it) starts the fight: the controller (153, at the
+list's tail), a health meter for each jaguar (type 0x30 with b5a 1 / 2 and l50 = the jaguar, 0x26 hit points),
+`DAT_00466507`, and the jaguars at `0x465c58` / `0x465c5c`.  The controller wakes the first after 0x30 ticks (its
+base, 141, crumbles; 0x27 ticks later it roars) and the second after the first's sixth hit, then swaps the roles
+b5b (charge), b5c (attack: crouch and pounce, the leap onto the ledge) and b5d (come down) every 750 / 700 ticks;
+with both dead it turns into the head of the rope (154) with eight type-0 segments, which Harry climbs to jump
+onto the walkway that leads to the exit trigger 0x5f.  The fight start also copies the jaguars' colours into the
+Genesis palette line at `0x462654` and sets the Genesis music byte `DAT_004627bd`; the PC reads neither.
+
+Still `h_default` (drawn in the template frame, never act): 105 the Warrior Spirit `0x420bd0`, and the level-8
+jaguar 158 `0x41e462`, with the objects only they spawn.  The boss meter (48) has all its branches: the type 0x69
+boss on level 10, a type 0x8c jaguar at l50, the boss at trg+0x1f4 (0x3e hit points on level 8).
 
 Every ported handler has been checked against its disassembly, in address order.  Quirks of the original that
 are kept: the boar's grazing test reads a `d1` the contact test may have clobbered; the fire jet's roar count
@@ -243,4 +257,6 @@ reads the class byte the floor probe leaves in `d3`; the jaguar's `call 0x415b92
 `ret` pops it); each weapon test clears only the low word of `0x466788`; a ripple that ends cancels the
 display entry its twin had in the last pass; the pit wheel's slope reads raw `.det` bytes on a probe miss; the
 monkey's code at `0x40e914` is dead.  Documented and not emulated: the feather tests `+0x57` of whatever
-record `a5` was left at; the skull warrior's freeze path calls the weapon test with a stale `d5`.
+record `a5` was left at; the skull warrior's freeze path calls the weapon test with a stale `d5`; the stone
+jaguars' controller, turning into the rope, clears the frame of whatever record `a5` was left at.  The boss death
+(`0x415b92`) clears the long at +0x32 (the burst counts in both words).

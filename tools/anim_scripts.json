@@ -85,7 +85,9 @@
   "floatBob": "0x45bdc2",
   "harrySplash": "0x45be4a",
   "vaporSpin": "0x45be78",
-  "leverBack": "0x45bab2"
+  "leverBack": "0x45bab2",
+  "stoneJagWake": "0x45bb24",
+  "stoneJagReverse": "0x45bb38"
  },
  "anim2": {
   "monkeyToss": "0x45ab81",
@@ -108,7 +110,12 @@
   "priestMain": "0x45a82f",
   "fireball": "0x45abdc",
   "hawkDive": "0x45b147",
-  "deathFade": "0x45b323"
+  "deathFade": "0x45b323",
+  "stoneJagCrouch": "0x45b343",
+  "stoneJagLeap": "0x45b35a",
+  "stoneJagBigLeap": "0x45b370",
+  "stoneJagLand": "0x45b3a2",
+  "stoneJagHop": "0x45b3c6"
  },
  "raw": {
   "bungeeScripts": "0x45aaa4+0xc3",

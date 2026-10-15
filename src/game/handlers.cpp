@@ -5165,7 +5165,7 @@ void bossDeath(ObjCtx& ctx, Obj& o) {
         c->flags = uint16_t((o.flags & 0x8000) + 0x6000);
         c->sprite = ctx.spr("fx_deat2");
     }
-    o.type = 0x51; o.w(0x32) = 0; o.frame = 0xff;
+    o.type = 0x51; o.l(0x32) = 0; o.frame = 0xff;   // (the long: the burst counts in w32 and w34)
 }
 } // namespace jaguar
 
@@ -5429,6 +5429,436 @@ void h_jaguar(ObjCtx& ctx, Obj& o) {
             return;
         }
     }
+}
+
+// ---------------------------------------------------------------- stone jaguars (types 140 / 141 / 153 / 154)
+//
+// The end of the Lost City of Copan: two jaguar statues (type 140, 0x41c4c2) on stone bases
+// (type 141).  Harry walking into the arena (or a stone bouncing off a statue) starts the
+// fight: the statue that sees it locks the camera, spawns the fight's controller (type 153)
+// and a health meter for each jaguar.  The controller wakes the first jaguar after 0x30 ticks
+// (its base crumbles, and 0x27 ticks later it roars and runs) and the second once the first has
+// taken 6 hits, then keeps the two taking turns: every 750 / 700 ticks the roles change between
+// b5b (charging at full speed), b5c (attacking: it crouches and pounces at Harry, and leaps up
+// onto the ledge on the left) and b5d (jumps back down from the ledge).  With both dead the
+// controller becomes the rope out of the arena (type 154).  0x465c58 / 0x465c5c hold the two
+// jaguars (0 once dead), 0x465c60 "the fight has started".
+// Jaguar state: l32 the continuation address (the states below), w36 anim cursor, l38 vx (w3a
+// its integer part), l3e / b42 the pounce scripts' cursor, l50 the wake counter, the pounce's
+// vy or the ledge scripts' cursor (b54 its tick, w56 the jump-down timer), l52 the base, w4c a
+// tick counter, l5e the ledge jumps' vy, w6a the damage taken (hits = w6a >> 3, 0x26 kill),
+// b6c "a stone bounced off", b6d "the fight is on".
+namespace stoneJaguar {
+constexpr uint32_t kStatue = 0x41cb3a, kCrouch = 0x41cb8b, kPounce = 0x41cccb, kWake = 0x41cdef, kRun = 0x41ce7c,
+                   kLedgeLeap = 0x41d067, kLedge = 0x41d195, kJumpDown = 0x41d251, kReverse = 0x41d356;
+constexpr int kHitPoints = 0x26;
+
+void setState(Obj& o, uint32_t st) { o.l(0x32) = int32_t(st); }
+
+bool snapFloor(ObjCtx& ctx, Obj& o) {              // FUN_00425d6f at y + 0xd
+    int y = o.y + 0xd;
+    const bool found = ctx.floorSnap(o.x, y);
+    o.y = int16_t(y - 0xd);
+    return found;
+}
+
+// The other jaguar of the pair (null when there is none or it is dead).
+Obj* other(ObjCtx& ctx, const Obj& o) {
+    const Harry& h = ctx.harry;
+    const uint32_t a = h.ul(0x465c58) == ctx.pl.addrOf(&o) ? h.ul(0x465c5c) : h.ul(0x465c58);
+    return ctx.pl.objAt(a);
+}
+
+void toReverse(ObjCtx& ctx, Obj& o) {               // 0x41d042
+    o.sprite = ctx.spr("jgurevrs");
+    setState(o, kReverse);
+    o.w(0x36) = 0;
+}
+
+// 0x41c7dd: a health meter (type 0x30) for the jaguar at `jag`: b5a = 1 puts it left, 2 right.
+// (The original does not test the spawns.)
+void spawnMeter(ObjCtx& ctx, Obj& from, uint32_t jag, uint8_t side) {
+    Obj* m = ctx.spawnFrom(from, false, 1);         // FUN_004356bc(1)
+    if (!m) return;
+    m->sprite = ctx.spr("scoline"); m->flags = 0xe000;
+    m->b(0x5a) = side;
+    m->l(0x50) = int32_t(jag);
+    m->type = 0x30;
+    Obj** links[3] = {&m->link, &m->link2, &m->link3};   // l32 / l36 / l60
+    for (int i = 0; i < 3; ++i) {
+        Obj* d = ctx.spawnFrom(from, false, 1);
+        if (!d) return;
+        d->sprite = ctx.spr(i == 2 ? "mi_prcnt" : "scoline"); d->flags = 0xe000;
+        *links[i] = d;
+    }
+}
+
+// 0x41c697: the fight starts.
+void startFight(ObjCtx& ctx, Obj& o) {
+    Harry& h = ctx.harry;
+    o.b(0x6c) = 0;
+    o.b(0x6d) = 0xff;
+    h.b(0x466507) = 0xff;                            // a boss fight (trg+0x1f4 is left alone)
+    // 0x41c6ac: the Genesis boss music (FUN_004263a2(0x3c), a stub in the PC build) and the
+    // Genesis driver's byte DAT_004627bd (= DAT_00462696 * 3), which nothing on the PC reads.
+    if (Obj* f = ctx.spawnFrom(o, true, 1)) f->type = 0x99;   // FUN_0043546e(1)
+    h.b(0x465c60) = 0xff;
+    h.setUl(0x465c58, ctx.pl.addrOf(&o));
+    // 0x41c730: the jaguars' colours (0x45b3e4) into the Genesis palette line 2 at 0x462654
+    // (DAT_0046654f: changed); the PC build draws from its own palettes and reads neither.
+    o.flags = 0x4000;
+    ObjectSystem& os = ctx.pl.objectSystem();
+    for (Obj* p = os.first(); p; p = os.nextOf(*p))
+        if (p->type == 0x8c && p != &o) { h.setUl(0x465c5c, ctx.pl.addrOf(p)); p->flags = 0x6000; break; }
+    spawnMeter(ctx, o, h.ul(0x465c58), 1);
+    spawnMeter(ctx, o, h.ul(0x465c5c), 2);
+}
+} // namespace stoneJaguar
+
+void h_stoneJaguar(ObjCtx& ctx, Obj& o) {
+    using namespace stoneJaguar;
+    Harry& h = ctx.harry;
+    for (int pass = 0; pass < 8; ++pass) {         // `jmp 0x41c4c2`: a state change re-runs the handler
+        if (o.frame == 0xff) {
+            // Asleep (released, and respawned by the .als scan) until Harry is up in the arena.
+            if (h.x() < 0x7ba || h.y() >= 0xcb) { ctx.pl.restoreEntry(o); ctx.release(o); return; }
+            o.frame = 0;
+            if (o.x < 0x800) o.facing = 1;           // the left one looks right
+            h.setUl(0x465c58, 0); h.setUl(0x465c5c, 0); h.w(0x465c60) = 0;
+            o.w(0x6c) = 0;
+            snapFloor(ctx, o);
+            o.b(0x3c) = uint8_t((ctx.rnd() & 3) + 2);
+            o.y += 0xd;
+            setState(o, kStatue);
+            o.l(0x38) = -0x10000;
+            Obj* base = ctx.spawnFrom(o, false, 6);  // FUN_004356bc(6)
+            if (!base) { ctx.pl.restoreEntry(o); ctx.release(o); return; }
+            base->type = 0x8d;
+            base->sprite = ctx.spr("jgustone");
+            base->y += 3;
+            base->frame = 0;
+            base->facing = o.facing;
+            base->flags = 0x6000;
+            o.l(0x52) = int32_t(ctx.pl.addrOf(base));
+        }
+        // 0x41c60c: the camera stops on the arena once it gets there
+        const int16_t camX = h.w(0x4658b4);
+        if (h.w(0x465b0d) != 0 && camX < 0x7e4 && camX >= 0x7c0 && h.w(0x4658b6) == 0) {
+            h.w(0x465b09) = 0x71d; h.w(0x465b0b) = 0x7d5; h.w(0x465b0d) = 0;
+        }
+        if (h.b(0x465c60) == 0 && (o.b(0x6c) != 0 || (h.y() < 0xb8 && h.x() >= 0x7c0 && h.x() < 0x840)))
+            startFight(ctx, o);
+        // 0x41c97d: a statue sends stones back (and that starts the fight); awake, the weapons
+        // hurt it.  DAT_00466782 marks a hit for this tick.
+        h.b(0x466782) = 0;
+        if (uint32_t(o.l(0x32)) == kStatue) {
+            if (deflectStones(ctx, o)) o.b(0x6c) = 0xff;
+        } else {
+            o.hits = 0;
+            if (weaponHits(ctx, o, 0x1e, nullptr)) {
+                if (!ctx.channel0Busy() && (ctx.rnd() & 1) == 0) { ctx.rnd(); ctx.sound0(0x2a, 0xa); }   // FUN_0042633d(0x2a, 0x60, 0xa)
+                h.b(0x466782) = 0xff;
+                o.w(0x6a) += o.hits;
+            }
+            o.hits = uint8_t(uint16_t(o.w(0x6a)) >> 3);
+            if (o.hits + 1 > kHitPoints) {
+                if (h.ul(0x465c58) != ctx.pl.addrOf(&o)) h.setUl(0x465c5c, 0);
+                else h.setUl(0x465c58, 0);
+                jaguar::bossDeath(ctx, o);
+                h_bossDeathBurst(ctx, o);            // 0x415b92 runs straight into the 0x51 handler
+                return;
+            }
+            if (h.invulnerable() == 0 && harryContact(ctx, o, 0xf) && uint32_t(o.l(0x32)) == kPounce) {
+                h.b(0x465b55) = o.facing;            // shoved the way the jaguar is going
+                ctx.pl.harryCall(0x427167);
+            }
+        }
+
+        switch (uint32_t(o.l(0x32))) {
+        case kStatue:                                // 0x41cb3a: the controller sets w50 to wake it
+            o.hits = 0;
+            o.w(0x6a) = 0;
+            if (o.w(0x50) != 0) {
+                o.w(0x50) += 1;
+                if (o.w(0x50) == 0x27) {
+                    setState(o, kWake);
+                    o.l(0x38) = 0;
+                    o.sprite = ctx.spr("jguroar");
+                    o.y += 6;
+                    o.frame = 0;
+                    o.behind = 0xff;
+                    o.w(0x36) = 0;
+                }
+            }
+            return;
+        case kCrouch: {                              // 0x41cb8b: slows down, then pounces or runs on
+            if (o.w(0x3a) == 0) o.l(0x38) = 0;
+            else o.l(0x38) += o.w(0x3a) < 0 ? 0x4000 : -0x4000;
+            moveX(o, o.l(0x38));
+            if (!anim2Step(ctx, o, 0x3e, 4)) return;
+            // a pounce at Harry ahead, out at the arena's ends (but now and then not while he
+            // stands on the ground)
+            bool pounce = !h.onGround() || (ctx.rnd() & 3) != 0;
+            if (pounce) pounce = o.facing ? h.x() < 0x7b5 : h.x() >= 0x860;
+            if (pounce) pounce = int16_t(h.x() - o.x) >= 0 ? o.facing != 0 : o.facing == 0;
+            if (pounce) {
+                o.script = kAnim2_stoneJagLeap; o.l(0x3e) = 0;
+                o.l(0x50) = 0;
+                o.sprite = ctx.spr("jguleap");
+                setState(o, kPounce);
+                continue;
+            }
+            o.sprite = ctx.spr("jgurun");            // 0x41cc91
+            setState(o, kRun);
+            o.w(0x4c) = -0x50;
+            o.w(0x36) = 0x400;                       // (the cursor's tick byte: frame 0, 4 ticks into it)
+            o.l(0x38) = o.facing ? 0x30000 : -0x30000;
+            return;
+        }
+        case kPounce: {                              // 0x41cccb
+            if (anim2Step(ctx, o, 0x3e, 5)) {
+                o.sprite = ctx.spr("jgurun");
+                o.w(0x4c) = 0;
+                setState(o, kRun);
+                o.w(0x36) = 0x400;
+                return;
+            }
+            moveX(o, o.l(0x38));
+            const int32_t vy = o.l(0x50);
+            moveY(o, vy);
+            o.l(0x50) += 0x5000;
+            if (vy >= 0) {
+                if (o.y >= 0x3d0) { o.y = 0x3d0; o.l(0x50) = 0; }
+                else if (snapFloor(ctx, o)) o.l(0x50) = 0;
+            }
+            // (0x41cdba: the type 55 jaguar's spring at its leap's second frame, 0x45ac59, which
+            // this script's cursor never points at)
+            return;
+        }
+        case kWake:                                  // 0x41cdef: comes to life, then runs
+            if (animStep(ctx, o, o.anim(0x36), kAnim_stoneJagWake, 3)) {
+                o.w(0x4c) = 0;
+                setState(o, kRun);
+                o.sprite = ctx.spr("jgurun");
+                o.b(0x5a) = 0xff;
+                continue;
+            }
+            snapFloor(ctx, o);
+            return;
+        case kRun: {                                 // 0x41ce7c
+            animStep(ctx, o, o.anim(0x36), kAnim_run8, 3);
+            const bool right = uint8_t(o.facing ^ 1) == 0;   // (the facing byte is flipped around the call)
+            if (o.b(0x5b)) jaguar::accelerate(o, 0x5500, 6, right);                          // 0x411a7a
+            else jaguar::accelerate(o, 0x5500, ctx.levelNo == 8 ? 6 : 5, right);              // 0x411a3e
+            moveX(o, o.l(0x38));
+            if (o.b(0x5c) != 0 && o.b(0x5b) == 0) {
+                // attacking: Harry 0x50 .. 0x70 px ahead at speed -> crouch for a pounce
+                if (o.w(0x4c) < 8) {
+                    o.w(0x4c) += 1;
+                } else if (int8_t(o.hits - 0x13) < 0) {
+                    int16_t d = int16_t(h.x() - o.x);
+                    bool fast = o.w(0x3a) >= 3;
+                    if (!fast && o.w(0x3a) < -3) { fast = true; d = int16_t(-d); }
+                    if (fast && d >= 0x50 && d < 0x70) {
+                        o.script = kAnim2_stoneJagCrouch; o.l(0x3e) = 0;
+                        o.sprite = ctx.spr("jgurn2lo");
+                        setState(o, kCrouch);
+                        continue;
+                    }
+                }
+            }
+            // the arena's ends
+            if (o.x >= 0x888) { if (o.facing != 0) { toReverse(ctx, o); continue; } return; }
+            if (o.x < 0x778) { if (o.facing == 0) { toReverse(ctx, o); continue; } return; }
+            if (o.b(0x5c) != 0 && o.facing == 0 && o.x >= 0x81a && o.x < 0x83a) {   // 0x41cfa4: up onto the ledge
+                o.script = kAnim2_stoneJagBigLeap; o.l(0x50) = 0; o.w(0x54) = 0;
+                setState(o, kLedgeLeap);
+                o.w(0x36) = 0;
+                o.l(0x5e) = 0;
+                continue;
+            }
+            if (o.b(0x5c) != 0 || o.b(0x5b) != 0) return;
+            // 0x41cffc: Harry 80 px behind at speed -> turn around
+            if (o.w(0x3a) < 4 && o.w(0x3a) >= -5) return;
+            const int16_t d = int16_t(h.x() - o.x);
+            if (o.facing ? d < -0x50 : d >= 0x50) { toReverse(ctx, o); continue; }
+            return;
+        }
+        case kLedgeLeap: {                           // 0x41d067: crouches to a stop, then leaps up to the left
+            anim2Step(ctx, o, 0x50, 4);
+            moveX(o, o.l(0x38));
+            if (o.w(0x3a) != 0) { o.l(0x38) += 0x6000; o.l(0x5e) = int32_t(0xfff83fff); }
+            else o.l(0x38) = 0;
+            if (o.l(0x50) < 0x1c) return;            // the leap starts at the script's jguleap frames
+            o.x -= 5;
+            moveY(o, o.l(0x5e));
+            o.l(0x5e) += 0x4200;
+            if (o.l(0x5e) < 0) return;
+            if (!snapFloor(ctx, o)) return;
+            ctx.sound1(0x5a, 9);
+            setState(o, kLedge);
+            o.w(0x36) = 0;
+            o.script = kAnim2_stoneJagLand; o.l(0x50) = 0; o.l(0x54) = 0;
+            o.l(0x38) = -0x30000;
+            continue;
+        }
+        case kLedge:                                 // 0x41d195: on the ledge until the controller sets b5d
+            if (o.w(0x3a) != 0) o.l(0x38) += 0x2000;
+            else o.l(0x38) = 0;
+            moveX(o, o.l(0x38));
+            o.b(0x5c) = 0;
+            if (o.sprite && o.sprite->name() == "jgulow" && o.b(0x5d) != 0) {
+                o.l(0x5e) = int32_t(0xfffd8000);
+                setState(o, kJumpDown);
+                o.w(0x36) = 0;
+                o.script = kAnim2_stoneJagHop; o.l(0x50) = 0; o.l(0x54) = 0;
+                o.l(0x38) = 0x2a000;
+                ctx.sound0(0xc7, 0xa);               // FUN_004262d9
+                continue;
+            }
+            anim2Step(ctx, o, 0x50, 4);
+            return;
+        case kJumpDown:                              // 0x41d251: back down into the arena
+            anim2Step(ctx, o, 0x50, 4);
+            moveX(o, o.l(0x38));
+            moveY(o, o.l(0x5e));
+            o.l(0x5e) += 0x4000;
+            o.w(0x56) += 1;
+            if (o.w(0x56) < 0x20 || o.l(0x5e) < 0) return;
+            if (!snapFloor(ctx, o)) return;
+            ctx.sound1(0x5a, 9);
+            o.w(0x4c) = 0;
+            setState(o, kRun);
+            o.sprite = ctx.spr("jgurun");
+            o.b(0x5a) = 0xff;
+            o.facing = 1;
+            o.l(0x38) = 0x30000;
+            continue;
+        case kReverse: {                             // 0x41d356
+            // charging past the right end: the other one is told to come down off the ledge and charge
+            if (o.b(0x5b) != 0 && o.facing != 0 && o.x >= 0x8a0 && o.x < 0x8c0)
+                if (Obj* p = other(ctx, o)) { p->b(0x5d) = 0xff; p->b(0x5b) = 0xff; }
+            if (animStep(ctx, o, o.anim(0x36), kAnim_stoneJagReverse, 4)) {
+                o.facing ^= 1;
+                o.sprite = ctx.spr("jgurun");
+                o.w(0x4c) = 0;
+                setState(o, kRun);
+                o.w(0x36) = 6;
+                continue;
+            }
+            if (int8_t(o.frame - 6) >= 0) jaguar::accelerate(o, 0x3000, ctx.levelNo == 8 ? 6 : 5, o.facing == 0);
+            else if (o.w(0x3a) != 0) o.l(0x38) += o.w(0x3a) < 0 ? 0x5000 : -0x5000;
+            moveX(o, o.l(0x38));
+            snapFloor(ctx, o);
+            return;
+        }
+        default:
+            return;
+        }
+    }
+}
+
+// 0x41d47a: type 141, a statue's base.  It keeps 0x14 px above the floor; when the controller
+// wakes its jaguar (w32 = 1, which starts the anim cursor at its second frame) it crumbles.
+void h_stoneJaguarBase(ObjCtx& ctx, Obj& o) {
+    int y = o.y + 9;
+    ctx.floorSnap(o.x, y);
+    o.y = int16_t(y - 0x14);
+    if (o.w(0x32) == 0) return;
+    if (o.b(0x3c) == 0) { o.b(0x3c) = 0xff; ctx.sound0(0xe, 0xe); }   // FUN_0042633d(0xe, 0x40, 0xe)
+    if (animStep(ctx, o, o.anim(0x32), kAnim_turn7, 4)) ctx.release(o);
+}
+
+// 0x41ddac: type 153, the stone jaguars' fight (see h_stoneJaguar).  w32 the wake-up count,
+// b34 "both awake", w3c the turn timer, b42 the turn, l46 / l4a the jaguars in their roles.
+void h_jaguarFight(ObjCtx& ctx, Obj& o) {
+    Harry& h = ctx.harry;
+    auto wake = [&](uint32_t jag) {                 // the jaguar's wake counter and its base's cursor
+        Obj* j = ctx.pl.objAt(jag);
+        if (!j) return;
+        j->w(0x50) = 1;
+        if (Obj* base = ctx.pl.objAt(uint32_t(j->l(0x52)))) base->w(0x32) = 1;
+    };
+    if (o.w(0x32) != 0x30) {
+        o.w(0x32) += 1;
+        o.b(0x42) = 1;
+        if (o.w(0x32) != 0x30) return;
+        wake(h.ul(0x465c58));
+    }
+    if (o.b(0x34) == 0) {
+        Obj* first = ctx.pl.objAt(h.ul(0x465c58));
+        if (!first || int8_t(first->hits - 6) < 0) return;
+        o.b(0x34) = 0xff;
+        wake(h.ul(0x465c5c));
+        first->b(0x5c) = 0xff;
+        o.w(0x3c) = 0x2ee;
+        o.l(0x46) = int32_t(h.ul(0x465c58));
+        o.l(0x4a) = int32_t(h.ul(0x465c5c));
+    }
+    const uint32_t j1 = h.ul(0x465c58), j2 = h.ul(0x465c5c);
+    if (j1 + j2 == 0) {
+        // 0x41de9c: both dead.  The camera may go left again, and this becomes the head (not
+        // drawn) of a rope of eight segments (type 0, placed by the head) that comes down.
+        h.w(0x465b09) = 0x600;
+        o.type = 0x9a;
+        o.l(0x32) = 0;
+        ctx.pl.endBoss();                           // DAT_00466507 = 0
+        o.x = 0x7b0; o.y = -0xa0;
+        o.sprite = ctx.spr("r_r");
+        // (0x41ded0: the original also clears the frame of whichever record a5 was left pointing at)
+        Obj* prev = &o;
+        for (int i = 0; i < 8; ++i) {
+            Obj* s = ctx.spawnFrom(*prev, true, 0);  // FUN_0043546e(0)
+            if (!s) return;                          // (the original then writes through a null pointer)
+            s->frame = 0;
+            s->sprite = ctx.spr("r_r");
+            prev->l(0x46) = int32_t(ctx.pl.addrOf(s));
+            prev = s;
+        }
+        prev->frame = 1;                             // the rope's end
+        return;
+    }
+    if (j1 == 0) { if (Obj* j = ctx.pl.objAt(j2)) j->b(0x5d) = 0xff; return; }   // one left: off the ledge
+    if (j2 == 0) { if (Obj* j = ctx.pl.objAt(j1)) j->b(0x5d) = 0xff; return; }
+    o.w(0x3c) -= 1;
+    if (o.w(0x3c) != 0) return;
+    o.b(0x42) += 1;
+    Obj* a = ctx.pl.objAt(uint32_t(o.l(0x46)));
+    Obj* b = ctx.pl.objAt(uint32_t(o.l(0x4a)));
+    if (o.b(0x42) == 2) {                            // 700 ticks on: the second one charges
+        o.b(0x42) = 0;
+        o.w(0x3c) = 0x2bc;
+        if (b) b->b(0x5b) = 0xff;
+        return;
+    }
+    o.w(0x3c) = 0x2ee;                               // 750 ticks on: the roles swap
+    if (a) { a->b(0x5b) = 0; a->b(0x5c) = 0; a->b(0x5d) = 0xff; }
+    if (b) { b->b(0x5b) = 0; b->b(0x5c) = 0xff; b->b(0x5d) = 0; }
+    const int32_t t = o.l(0x46); o.l(0x46) = o.l(0x4a); o.l(0x4a) = t;
+}
+
+// 0x41e032: type 154, the rope out of the jaguars' arena: the head slides down 0x80 px, the
+// segments hang below it 16 px apart, and Harry in reach of it can climb it (DAT_00466508).
+// While he climbs it (hyidrope) the rope is drawn in front of him, but for his frames 1, 2, 6, 7.
+void h_jaguarRope(ObjCtx& ctx, Obj& o) {
+    Harry& h = ctx.harry;
+    uint8_t behind = 0xff;
+    if (h.spriteIs("hyidrope")) {
+        const uint8_t f = h.frame();
+        if (f != 1 && f != 2 && f != 6 && f != 7) behind = 0;
+    }
+    o.behind = behind;
+    if (o.w(0x32) != 0x80) { o.w(0x32) += 2; o.y += 2; }
+    int16_t y = o.y;
+    Obj* s = &o;
+    for (int guard = 0; guard < ObjectSystem::kPoolSize; ++guard) {
+        y = int16_t(y + 0x10);
+        s->behind = behind;
+        s = ctx.pl.objAt(uint32_t(s->l(0x46)));
+        if (!s) break;
+        s->y = y;
+    }
+    if (harryOnBox(ctx, o, -8, 8, -192, 160)) h.w(0x466508) = o.x;   // the box at 0x45bfca
 }
 
 // ---------------------------------------------------------------- skull warrior (type 66, 0x412fc2)
@@ -7077,6 +7507,10 @@ Handler ObjectSystem::handler(uint8_t type) {
     case 107:  return h_vaultIntro;
     case 108:  return h_textLetter;
     case 166:  return h_vaultReward;
+    case 140:  return h_stoneJaguar;
+    case 141:  return h_stoneJaguarBase;
+    case 153:  return h_jaguarFight;
+    case 154:  return h_jaguarRope;
     case 0:    return nullptr;
     default:   return h_default;
     }
