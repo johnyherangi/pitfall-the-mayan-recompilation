@@ -1,6 +1,6 @@
 // SDL2 front end (portable).  Build with -DPITFALL_USE_SDL=ON.
 //
-// Same game loop as the Win32 front end: a 60 Hz logic tick, the 320x224 view
+// Same game loop as the Win32 front end: a logic tick every 17 ms, the 320x224 view
 // converted through the palette into an RGB texture, sound mixed in the SDL
 // audio callback.  Keyboard input is translated to the Windows virtual-key
 // codes the engine's key bindings use.
@@ -93,7 +93,7 @@ int main(int argc, char** argv) {
             }
         }
         const Uint64 now = SDL_GetPerformanceCounter();
-        acc += double(now - last) / freq * 60.0;
+        acc += double(now - last) / freq * (1000.0 / 17.0);    // the original's 17 ms timer
         last = now;
         if (acc > 6) acc = 6;
         bool ticked = false;

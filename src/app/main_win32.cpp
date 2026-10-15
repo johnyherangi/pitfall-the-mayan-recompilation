@@ -2,9 +2,9 @@
 //
 // Mirrors the original presentation path (FUN_0043c210 WinMain, FUN_004388c0
 // WndProc, FUN_00443b90 present, FUN_0043e1c0 DIB setup):
-//   * a 60 Hz logic tick driven by a multimedia timer (the original used
-//     timeSetEvent(17 ms)); here the tick is paced in the message loop with
-//     timeGetTime so no callback-thread locking is needed,
+//   * a logic tick every 17 ms, as the original's multimedia timer
+//     (timeSetEvent(17, 17, FUN_004448c0)); here the tick is paced in the
+//     message loop with timeGetTime so no callback-thread locking is needed,
 //   * the back buffer is copied to the window with BitBlt / StretchBlt,
 //   * sound effects go through waveOut (the original used WAIL32 / Miles).
 //
@@ -353,7 +353,7 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, PWSTR, int) {
     UpdateWindow(g_app.hwnd);
     startAudio();
 
-    // Main loop (FUN_00439fd0) with a 60 Hz logic tick.
+    // Main loop (FUN_00439fd0) with a logic tick every 17 ms (58.8 Hz).
     timeBeginPeriod(1);
     DWORD last = timeGetTime();
     double acc = 0;
@@ -368,7 +368,7 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, PWSTR, int) {
         }
         if (!running) break;
         const DWORD now = timeGetTime();
-        acc += double(now - last) * 60.0 / 1000.0;
+        acc += double(now - last) / 17.0;
         last = now;
         if (acc > 6) acc = 6;                                      // don't spiral after a stall
         bool ticked = false;

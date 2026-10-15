@@ -267,22 +267,22 @@ inline void halfMinuteTick(Obj& o) {
 // 0x412629: stop-watch freeze: spawn a sparkle instead of acting.
 void freezeSparkle(ObjCtx& ctx, Obj& o);
 
-// Animation scripts (anim_scripts_data.cpp, generated).
-extern const uint8_t kAnim_snakeEmerge[], kAnim_snakeMiss[], kAnim_snakeLunge[], kAnim_snakeHit[],
-    kAnim_turn7[], kAnim_turn4[], kAnim_run10[], kAnim_sparkle1[], kAnim_sparkle2[], kAnim_death14[],
-    kAnim_boomerangSpin[], kAnim_heart[], kAnim_heartBoss[], kAnim_splash[], kAnim_flyWings[],
-    kAnim_condorTurn[], kAnim_condorStun[], kAnim_feather[], kAnim_ratTurn[], kAnim_ratFall[], kAnim_ratRun[],
-    kAnim_batDrop[], kAnim_batFly[], kAnim_batBite[], kAnim_spiderThread[], kAnim_webBounceA[], kAnim_webBounceH[],
-    kAnim_eyesBlink[], kAnim_marker[], kAnim_markerFlame[], kAnim_vineMonkey[], kAnim_treeSnakeSpit[],
-    kAnim_treeSnakeUp[], kAnim_treeSnakeHang[], kAnim_plantHit[], kAnim_plantBreathe[], kAnim_plantOpen[],
-    kAnim_boarGraze[], kAnim_boarToss[], kAnim_boarRun[], kAnim_rat2Run[], kAnim_rockShatter[], kAnim_webSway[], kAnim_pit[],
-    kAnim_run8[], kAnim_jaguarIntro[], kAnim_jaguarReverse[], kAnim_bungeeStub[],
-    kAnim_skullChatter[], kAnim_skullQuiet[], kAnim_skullRoll[], kAnim_boneIdle[], kAnim_potShards[], kAnim_fireJet[], kAnim_tongueBounce[], kAnim_tongueClose[], kAnim_gargoyle[], kAnim_axeSpin[],
-    kAnim_skullMorph[], kAnim_skullWalk[], kAnim_skullDie[], kAnim_ballDrop[], kAnim_splashRing[], kAnim_rippleRing[], kAnim_spearThrust[],
-    kAnim_snakeLunge2[], kAnim_spitFly[], kAnim_spitSplat[], kAnim_crocBite[], kAnim_crocDive[], kAnim_priestTurn[], kAnim_fireballDie[],
-    kAnim_guardShotLow[], kAnim_guardShotHigh[], kAnim_guardTurn[], kAnim_guardPeel[], kAnim_guardWalk[],
-    kAnim_hawkGlide[], kAnim_crocLeap[], kAnim_splashRing2[], kAnim_treeSnakeLimp[], kAnim_cartSpark[], kAnim_floatBob[], kAnim_harrySplash[], kAnim_vaporSpin[],
-    kAnim_leverBack[], kAnim_stoneJagWake[], kAnim_stoneJagReverse[], kAnim_jagManSwipeFx[];
+// Animation scripts (anim_scripts_data.cpp, generated): pointers into the original memory around them.
+extern const uint8_t *const kAnim_snakeEmerge, *const kAnim_snakeMiss, *const kAnim_snakeLunge, *const kAnim_snakeHit,
+    *const kAnim_turn7, *const kAnim_turn4, *const kAnim_run10, *const kAnim_sparkle1, *const kAnim_sparkle2, *const kAnim_death14,
+    *const kAnim_boomerangSpin, *const kAnim_heart, *const kAnim_heartBoss, *const kAnim_splash, *const kAnim_flyWings,
+    *const kAnim_condorTurn, *const kAnim_condorStun, *const kAnim_feather, *const kAnim_ratTurn, *const kAnim_ratFall, *const kAnim_ratRun,
+    *const kAnim_batDrop, *const kAnim_batFly, *const kAnim_batBite, *const kAnim_spiderThread, *const kAnim_webBounceA, *const kAnim_webBounceH,
+    *const kAnim_eyesBlink, *const kAnim_marker, *const kAnim_markerFlame, *const kAnim_vineMonkey, *const kAnim_treeSnakeSpit,
+    *const kAnim_treeSnakeUp, *const kAnim_treeSnakeHang, *const kAnim_plantHit, *const kAnim_plantBreathe, *const kAnim_plantOpen,
+    *const kAnim_boarGraze, *const kAnim_boarToss, *const kAnim_boarRun, *const kAnim_rat2Run, *const kAnim_rockShatter, *const kAnim_webSway, *const kAnim_pit,
+    *const kAnim_run8, *const kAnim_jaguarIntro, *const kAnim_jaguarReverse, *const kAnim_bungeeStub,
+    *const kAnim_skullChatter, *const kAnim_skullQuiet, *const kAnim_skullRoll, *const kAnim_boneIdle, *const kAnim_potShards, *const kAnim_fireJet, *const kAnim_tongueBounce, *const kAnim_tongueClose, *const kAnim_gargoyle, *const kAnim_axeSpin,
+    *const kAnim_skullMorph, *const kAnim_skullWalk, *const kAnim_skullDie, *const kAnim_ballDrop, *const kAnim_splashRing, *const kAnim_rippleRing, *const kAnim_spearThrust,
+    *const kAnim_snakeLunge2, *const kAnim_spitFly, *const kAnim_spitSplat, *const kAnim_crocBite, *const kAnim_crocDive, *const kAnim_priestTurn, *const kAnim_fireballDie,
+    *const kAnim_guardShotLow, *const kAnim_guardShotHigh, *const kAnim_guardTurn, *const kAnim_guardPeel, *const kAnim_guardWalk,
+    *const kAnim_hawkGlide, *const kAnim_crocLeap, *const kAnim_splashRing2, *const kAnim_treeSnakeLimp, *const kAnim_cartSpark, *const kAnim_floatBob, *const kAnim_harrySplash, *const kAnim_vaporSpin,
+    *const kAnim_leverBack, *const kAnim_stoneJagWake, *const kAnim_stoneJagReverse, *const kAnim_jagManSwipeFx;
 extern const uint8_t kData_bungeeScripts[];      // 0x45aaa4: Harry's bungee animation triples (see h_bungee)
 extern const uint8_t kData_firePath[];           // 0x45ad94: the fire pit's 59 keyframes {frame, dx, dy, tailFrame, tailDx, tailDy} (int16)
 extern const uint8_t kData_priestDeath[];        // 0x45a849: the fire priest's collapse (a byte script; its cursor jumps past the first 0xf0)

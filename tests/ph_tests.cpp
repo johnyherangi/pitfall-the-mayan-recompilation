@@ -106,7 +106,15 @@ int gameplayTests(const std::string& dir) {
     // Ceiba Jungle: the pouch left of the start is collected by walking left.
     g.setMode(game::Mode::Playing); g.startLevel(0);
     const int lives0 = g.stats().lives;
-    for (int i = 0; i < 90; ++i) g.tick(i < 2 ? idle : left);
+    // The HUD slides in: DAT_00451940 is 0x30 less the start's tick, put back after the 14
+    // pre-ticks, then 3 less a tick; the logic's tick count went up by 2 + 14.
+    const uint32_t ticks0 = g.logicTicks();
+    if (g.state().hudSlide != 0x2d) { std::printf("FAIL: HUD slide %d at the start of level 0\n", g.state().hudSlide); ++fails; }
+    for (int i = 0; i < 90; ++i) {
+        g.tick(i < 2 ? idle : left);
+        if (i == 4 && g.state().hudSlide != 0x2d - 15) { std::printf("FAIL: HUD slide %d after 5 ticks\n", g.state().hudSlide); ++fails; }
+    }
+    if (g.state().hudSlide != 0 || g.logicTicks() != ticks0 + 90) { std::printf("FAIL: HUD slide %d, logic ticks %u\n", g.state().hudSlide, g.logicTicks() - ticks0); ++fails; }
     if (g.stats().score <= 0) { std::printf("FAIL: no treasure collected on level 0 (score %d)\n", g.stats().score); ++fails; }
     // Xibalba Falls: running off the start ledge into the gorge costs a life and restarts the level.
     g.startLevel(1);
@@ -563,6 +571,8 @@ int jaguarManTest(const std::string& dir) {
                 if (st != 0x41ecc3 && shownAt < 0) shownAt = t;
                 if (st == 0x41eac3 && manAt < 0) manAt = t;
                 if (st != 0x41ecc3 && std::abs(o->x - h.x()) < 70 && t % 3 == 0) in.keyDown['Q'] = true;
+                // on the arena floor, keep near it
+                if (st != 0x41ecc3 && std::abs(o->x - h.x()) >= 60 && h.y() > 280) in.keyDown[o->x < h.x() ? 0x25 : 0x27] = true;
             }
             if (o->type == 0x9f && clawAt < 0) clawAt = t;
         }

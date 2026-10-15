@@ -233,7 +233,7 @@ collision plane, `0x18` gravity flip section, `0x1d` sling swing anchor,
 (`"*51"`–`"*53"`), `0xd0` water.  `kTriggerClass[id]` (`0x461f8e`) gives
 each id a class byte the handlers test.
 
-### Harry physics (16.16 fixed point, per 60 Hz tick)
+### Harry physics (16.16 fixed point, per 17 ms tick)
 
 | quantity | value | source |
 |----------|-------|--------|

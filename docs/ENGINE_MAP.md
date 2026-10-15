@@ -22,7 +22,7 @@ function boundaries are unreliable there; the full decompilation is kept in
 | `0x43c210`   | `WinMain`: window, DIB, arena, timer, loads init.ph    | `src/app/main_win32.cpp`, `Game::Game` |
 | `0x4388c0`   | `WndProc` (menus, property sheet, WM_0x658 CD control) | `main_win32.cpp` (menu subset)        |
 | `0x439fd0`   | message loop                                           | `main_win32.cpp` / `main_sdl.cpp`     |
-| `0x4448c0`   | 17 ms multimedia-timer tick                            | tick pacing in the front ends         |
+| `0x4448c0`   | the 17 ms multimedia-timer callback: the engine tick (unless paused, busy or loading), `DAT_00450fa8` + 1 every time | the front ends call `Game::tick` every 17 ms; `Game::timerTicks_` |
 | `0x443370`   | per-tick engine update: input, logic dispatch, parallax camera | `Game::tick`, `game/camera.cpp` |
 | `0x443c90`   | frame composition, level transitions, attract sequencing | `Game::render`, `Game::tickAttract` |
 | `0x443b90`   | present (BitBlt / StretchBlt of the 320×224 view)      | `present()` in the front ends         |
@@ -46,7 +46,7 @@ function boundaries are unreliable there; the full decompilation is kept in
 | `0x442dc0`   | "front" sprites after hi-priority tiles                | `Game::render` second pass            |
 | `0x4387c0`   | raw cell draw (font / digits)                          | `Renderer::drawCell`                  |
 | `0x442600`   | text drawing                                           | `Renderer::drawText`                  |
-| `0x442fa0`   | HUD (score, lives, weapon, ammo)                       | `game/hud.cpp`                        |
+| `0x442fa0`   | HUD: score, the damage crocodile and `mi_life` (`FUN_00435d45`), lives, treasures, weapon, ammo; "DEMONSTRATION" in a demo | `Game::renderHud`, `Game::hudMeter` (`game/hud.cpp`) |
 | `0x444940`   | joypad from keyboard / joystick / demo script          | `engine::Input`, `Game::tick`         |
 | `0x4400f0` / `0x4404a0` | registry options load / save                | `engine::Options`                     |
 | `0x43ee50`   | string resources (titles, errors)                      | `ph::levelName`, literals             |
@@ -67,6 +67,10 @@ function boundaries are unreliable there; the full decompilation is kept in
 | `0x46aa94`   | sprite display list (20-byte entries), end `0x46aa90` | `FrameState::displayList` |
 | `0x4517f8`   | joypad bits (Genesis layout)             | `FrameState::joypad`         |
 | `0x45190c`   | ticks since level start                  | `FrameState::frame`          |
+| `0x451940`   | the HUD's slide (`DAT_004667a8` as the logic left it) | `FrameState::hudSlide` |
+| `0x4601d9` / `0x4601d5` | the logic's tick count / the tick of Harry's last landing sound (never reset) | `Game::logicTicks_ / lastLandTick_` |
+| `0x450fa8`   | the timer callbacks (the blink of "PAUSED" and "DEMONSTRATION") | `Game::timerTicks_` |
+| `0x462694`   | hard, set each tick from `DAT_0046fb78` (normal while a demo plays) | `Game::hardMode()` |
 | `0x46fb74`   | global tick counter                      | `FrameState::globalFrame`    |
 | `0x46fbbc` / `0x46fb8c` | demo index / demo position     | `Game::demoIndex_/demoPos_`  |
 | `0x46d050`   | paused                                   | `Mode::Paused`               |
@@ -88,6 +92,8 @@ title, `*9` credits.  The engine adds the shake (`DAT_004517ec`) to the main scr
 draw their room as the parallax layer at the main scroll (rounded to 8 px, `FUN_0043731c`, its priority tiles after the
 sprites) and their ceiling as the main layer over everything at the parallax scroll (`0x4371a5`).  A level load runs one logic tick in `FUN_00435fc0` and one engine tick (thirteen more on levels
 0, 2, 5, 8 and 16, the table `0x46ffa0`) before its first frame; `*3` runs the one logic tick and the thirteen.
+`DAT_00451940` (the HUD's slide) is saved before these engine ticks and put back after them, so the HUD slides in
+from where the logic's start left it (0x2d) whatever they did.
 Title → attract: after 0x5a0 ticks play demo 0 (level 0), demo 1 (level 1),
 demo 2 (level 20 — the Atari 2600 easter-egg level), then the intro (21); `DAT_0046fbbc` (the demo index) is -1 in
 the data section, so the first demo is demo 0, and each demo starts a new game (`FUN_004324c6`, 0x44484d).
@@ -123,6 +129,28 @@ the data section, so the first demo is demo 0, and each demo starts a new game (
 | `0x4658ac` | level width in 16-px columns | `LevelData::columns` |
 | `0x4668c4` | collision shape heights | `ph::kCollisionHeights` |
 | `0x461f8e` | trigger class table | `ph::kTriggerClass` |
+
+## The logic's end (`0x4363bd`) and the HUD
+
+Every path of `FUN_0043628c` (the usual tick and levels 19 .. 24) ends at `0x4363bd`, and `FUN_00435fc0` / `FUN_004360e9`
+jump there again after their own call of it (so the tick count `DAT_004601d9` goes up by two at a start): the camera
+for the engine, `DAT_004601d9` + 1, the damage cleared under the `DAT_0046d054` cheat, the score shown (at most 999999,
+`DAT_00451914`), 50 treasures a continue (at most 9), the lives 1 .. 10 (none: 10), the ammunition at most 99, and
+`DAT_00451940` = `DAT_004667a8`.  `FUN_0043628c` starts with the reverse, `DAT_004667a8` = `DAT_00451940`, and
+`FUN_00435fc0` / `FUN_004360e9` set `DAT_00451940` before their tick.  `DAT_004667a8` is 0x30 after `FUN_00432615`
+and the timers take 3 a tick: the HUD's top row is at `DAT_004518e4` = 0x10 - slide, the bottom at `DAT_00451904` =
+0x10 + slide (0x1c / 4 in a 200-line display mode).  An engine exit skips the end (the port runs the tick out but not
+the end).
+
+`FUN_00442fa0` draws on levels 0 .. 10, 14 and 16 .. 18 (on 14 the score alone): the score, "%06d" in `scoline`
+cells; then `FUN_00435d45`: the meter (`FUN_00435c4e`, 1 + 2·damage/22, or /15 on hard, the damage taken as at most
+0x96 / 100 — and a full meter kills Harry, `DAT_00465b72` = 0xff, unless he is in `0x428dce` / `0x428cdb`) puts the
+crocodile at x 0xd8 + meter with its jaws at meter/2 + 1 (at most 7), or at 0xfc, 8 px higher and shut once Harry is
+dead; `mi_life` at 0x107 plays 0 .. 10 a step every 7 ticks when the meter goes down, 0x15 / 0x16 / 0xc .. 0x14 when a
+1-up reaches it (`0x41ff20` sets `DAT_0046fa38` and `DAT_00451a24`), and from a meter of 10 blinks (frame 0xb when
+`DAT_004601d9 & 0xa0` is 0) and from 13 flashes; then "x" and the lives, the coin and the treasures, and but on level 7
+the weapon (pouch, boomerang, stone) and its ammunition.  The demos show the HUD too, with "DEMONSTRATION" while
+`DAT_00450fa8 & 0x30`.
 
 ## Lives out: the continue screen (level 14) and the game over
 

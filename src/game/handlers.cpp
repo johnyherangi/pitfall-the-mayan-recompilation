@@ -85,7 +85,7 @@ void applyPickup(ObjCtx& ctx, Obj& o) {
         st.ammoCount[1] = uint8_t(st.ammoCount[1] + 1); st.score += 500; ctx.sound0(0x35, 7);
     } else if (n == "mi_pouc2") {                       // 0x405a22
         ctx.sound1(0xfc, 0xa); st.score += 50;
-        st.ammoCount[0] = uint8_t(st.ammoCount[0] + (st.difficulty == 1 ? 8 : 10));
+        st.ammoCount[0] = uint8_t(st.ammoCount[0] + (ctx.hard ? 8 : 10));
     } else if (n == "fx_hrtbt") {                       // 0x405935: heals 0x28
         ctx.sound1(0xfb, 9); st.score += 500;
         Harry& h = ctx.harry;
@@ -348,6 +348,7 @@ void h_oneUpFly(ObjCtx& ctx, Obj& o) {
     }
     o.w(0x50) -= 1;
     if (o.w(0x50) < 0) {
+        ctx.g.lifeIconOneUp();                        // DAT_00451a24 = DAT_004601d9, DAT_0046fa38 = 1
         PlayerStats& st = ctx.g.stats();
         st.lives += 1;                                // (capped at 10 at the end of the tick)
         st.score += 5000;

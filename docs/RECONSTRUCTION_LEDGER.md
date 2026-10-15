@@ -18,7 +18,9 @@ decompiled code by a test or a rendered image.
 | Sprite blitter incl. all four flip variants and clipping rules | `FUN_00438140`; H-flip verified by image |
 | Line-scrolled parallax for levels 0/5 with horizontal wrap | `FUN_00436534` first branch |
 | Text / glyph mapping | `FUN_00442600`, `FUN_004387c0` |
-| HUD layout (score digits, lives, weapon, ammo positions) | `FUN_00442fa0` |
+| HUD (`FUN_00442fa0`, `FUN_00435d45`): the "%06d" score, the crocodile's place, jaws and dead pose, `mi_life`'s animations (the meter going down, a 1-up arriving, the blink and flash near the end), lives, treasures, weapon, ammo, the levels it is drawn on, shown in the demos with "DEMONSTRATION"; the slide in from the edges after a start or restart (`DAT_00451940` / `DAT_004667a8`, put back after the pre-ticks) | rendered frames of level 0 and demo 0; `tests/ph_tests.cpp` checks the slide (0x2d at the start, 0 after 15 ticks) and the tick count |
+| The logic's end `0x4363bd` on every path (twice at a start or restart), the logic ticks a level load and `*3` run before the first frame (`0x46ffa0`), the hard flag set each tick (normal in a demo), the tick counts that are never reset (`DAT_004601d9`, `DAT_004601d5`) | `PlayLogic::epilogue`, `Game::preTicks`, `Game::hardMode` |
+| Tick pacing: the 17 ms timer (58.8 Hz), the game-over wait of 3000 ms, the blink of "PAUSED" on the timer's count | `FUN_004448c0`, `0x44423d` |
 | Joypad bit layout, default key bindings, joystick thresholds | `FUN_00444940`, data at `0x46d08c` |
 | Option names and defaults | `FUN_004400f0` |
 | Sound bank (138 ids), CD track tables | `FUN_0043ce10`, `0x46e130`, `0x470470` |
@@ -39,6 +41,8 @@ decompiled code by a test or a rendered image.
 | Forest leaf line-scroll band | 32-entry wave table reproduced by shape, not copied from `DAT_00455010` |
 | Title screen animation | final composition + blink only; the seven logo pieces drop in on frames 0xd2–0x163 (`FUN_004426e0`) |
 | Palette fades (`FUN_00441c50`) and `AnimatePalette` effects | not ported |
+| Engine exits inside the logic tick | `engineExit` unwinds the tick at once; the port runs the tick out and skips only its end (`0x4363bd`) |
+| "PAUSED" | drawn with `TextOutA` in the original, in the 8×8 font here |
 | Audio | software mixer instead of Miles; CD music/ambience tracks are listed but not played. The game logic's two sample channels and their priorities (`FUN_004262d9` / `FUN_004261e2`) are modelled |
 | Options UI | the original property sheet (`PropertySheetA`, "System / Sound / Difficulty / Joystick / Keyboard / Language") is replaced by a menu; settings persist in `pitfall.ini` instead of the registry |
 | Full-screen modes | DISPDIB 320×200 mode replaced by a stretched borderless window |
@@ -70,13 +74,20 @@ decompiled code by a test or a rendered image.
 
 The machine-translated 68000 half of the binary (`0x401000–0x437fff`) is ported routine by routine: Harry's
 states, the object system and 140 of its behaviour types, the camera and spawner, the triggers and level
-scripts.  What is left: the map screen's
-set-up at the end of the restart (`0x431c99`), the logic ticks a level load and `*3` run before the first frame, the
-palette fades (`DAT_0046b1b0`), CD music, and the MSVC build.
+scripts, the map screen, the 2600 level and the continue screen.  What is left: the palette fades
+(`FUN_00441c50`, `DAT_0046b1b0`, the fade out / in around `*1` .. `*4` with their 750 ms waits), CD music, the
+intro, title, credits, ending and reunion room logic (levels 15, 21 .. 24), the typed cheat codes (`0x439868`,
+e.g. the invincibility of `DAT_0046d054`), the per-level water effects of `FUN_00443370` / `FUN_00437ba0`, and
+the MSVC build.
+
+For the fades: the 1-up's arrival (`0x41ff34` / `0x41ff56`) writes the word 1 at `a0 + 0x5a` and `a0 + 0x6a`,
+a0 being left in the sparkle table by the same tick's sparkle (the arrival always falls on one): two words of
+the death fade's target palette at `0x46212e` (0x462142 + 4r and 0x462152 + 4r, r the sparkle's corner, 4 bytes
+lower when the sparkle found no free record), which the PC keeps in writable data.
 
 ## Known gaps in the asset layer
 
 * `.trg` ids other than those listed above; `kTriggerClass` semantics.
 * `.als` object *type* handlers for the types listed as not ported.
-* Level 14 (continue screen) has no `.bg`; the original draws it from sprites.
-* Levels 19/22/23 have special renderers in `FUN_00436fb4` (level 20's is ported: `Game::renderAtari2600`).
+* Levels 22/23 have special renderers in `FUN_00436fb4` (levels 19 and 20's are ported: the wrapped map and
+  `Game::renderAtari2600`).

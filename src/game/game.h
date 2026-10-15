@@ -2,7 +2,7 @@
 // level flow.  Mirrors the Windows engine half of PITFALL.EXE:
 //
 //   WinMain  FUN_0043c210   -> Game::Game / init
-//   tick     FUN_00443370   -> Game::tick     (60 Hz logic step, timer driven)
+//   tick     FUN_00443370   -> Game::tick     (a logic step every 17 ms, timer driven)
 //   render   FUN_00443c90   -> Game::render   (compose one frame)
 //   level    FUN_004460e0   -> Game::startLevel
 //
@@ -51,6 +51,7 @@ struct FrameState {
     std::vector<engine::SpriteInstance> displayList;   // 0x46aa94 (20-byte entries)
     uint32_t joypad = 0, joypadPrev = 0; // DAT_004517f8 / edge detection
     int atariScreen = 0;                 // DAT_00465ba8: the 2600 level's screen (FUN_00436fb4 reads it as it draws)
+    int hudSlide = 0;                    // DAT_00451940: DAT_004667a8 as the logic left it (0x4364f9), the HUD's slide-in
     int frame = 0;                       // DAT_0045190c (ticks since level start)
     int globalFrame = 0;                 // DAT_0046fb74
 };
@@ -64,9 +65,8 @@ struct PlayerStats {
     int ammoCount[3] = {0x14, 2, 1};   // DAT_00466528 stones, DAT_00466529 boomerangs, DAT_0046652a big stones (FUN_004324c6)
     int letters = 0;      // DAT_00465896: P-I-T-F-A-L-L letter bits (mi_ptfal frame)
     bool secret1up = false;   // DAT_00466504: this level's hidden 1-up has been revealed (cleared on a new game and at the level exit)
-    int difficulty = 0;
     int damage = 0;       // DAT_00465b19 mirrored for the HUD (FUN_00435c4e)
-    bool harryDead = false;
+    bool harryDead = false;   // DAT_00465b72 == 0xff: the HUD's crocodile closes on the hidden life icon
     int& ammo() { return ammoCount[weapon < 0 || weapon > 2 ? 0 : weapon]; }
     int ammo() const { return ammoCount[weapon < 0 || weapon > 2 ? 0 : weapon]; }
 };
@@ -94,7 +94,7 @@ public:
     void startLevel(int level);
     void setLogic(std::unique_ptr<LevelLogic> logic);
 
-    // FUN_00443370: one logic step at 60 Hz.  `host` is the raw host input.
+    // FUN_004448c0 / FUN_00443370: one callback of the 17 ms timer.  `host` is the raw host input.
     void tick(const engine::HostInput& host);
     // FUN_00443c90: compose a frame into the framebuffer.
     void render();
@@ -131,6 +131,7 @@ public:
     uint8_t bigGlyph(uint8_t ch, int& width);                         // FUN_00431b73: ltr_lg's frame for a character
     void loseLife();                                                  // FUN_00430eb6's tail: "*3", or a continue / game over
     void restartLevel() { pendingRestart_ = true; }                   // "*3" (FUN_004360e9): the logic starts again in place
+    bool exitPending() const { return pendingLevel_ >= 0 || pendingRestart_ || mode_ == Mode::GameOver; }   // a command is set (DAT_0046b1a8)
     // The transitions of the vortex warps, "*50" .. "*53", "*6" and "*7" (the WinMain command
     // switch at 0x4445ef / 0x444661 / 0x4446bd).
     void command(const char* cmd);
@@ -162,15 +163,30 @@ public:
     void seedRandom();                 // FUN_00434815 (new game): the fixed seeds
     void setRandomSeed(uint32_t s0, uint32_t s1);   // DAT_00466772 / DAT_00466776 (0x415c48: a boss dies)
     bool demoPlaying() const { return demoPos_ != 0x800; }   // DAT_00466500 (DAT_0046fb8c != 0x800)
+    // DAT_00462694 as FUN_0043628c sets it every tick: the difficulty option (DAT_0046fb78),
+    // normal while a demo plays.
+    bool hardMode() const { return options_.difficulty != 0 && !demoPlaying(); }
+    // DAT_004601d9 / DAT_004601d5: the logic's tick count (0x4363fd, twice at a level start) and
+    // the tick of Harry's last landing sound; the engine never resets them.
+    uint32_t& logicTicks() { return logicTicks_; }
+    uint32_t& lastLandTick() { return lastLandTick_; }
+    // 0x41ff20: the collected 1-up reaches the lives (type 0xaa): mi_life's 1-up animation.
+    void lifeIconOneUp() { hudAnim_.oneUp = true; hudAnim_.oneUpStart = logicTicks_; }
+    bool invincible() const { return invincible_; }   // DAT_0046d054: the typed cheat (0x439868) clears the damage each tick
 
 private:
     void computeParallax();            // FUN_00443370 per-level switch
     void tickAttract();                // title / demo sequencing (FUN_00443c90 tail)
     void renderHud();                  // FUN_00442fa0
+    void hudMeter(engine::SpriteInstance& croc, engine::SpriteInstance& life, int top);   // FUN_00435d45
     void renderTitle();                // FUN_004426e0 title animation
     void renderVault();                // FUN_00443c90's layer order on the Loltun vaults
     void renderAtari2600();            // FUN_00436fb4 at 0x437078: the 2600 level's screen
     void renderGameOver();             // "*2": 0x44426b
+    bool pollJoypad(const engine::HostInput& host);   // FUN_00444940
+    void engineTick();                 // FUN_00443370 after the joypad
+    void preTicks(int n);              // the engine ticks a level load / "*3" runs before the first frame
+    static int preTickCount(int level);   // 0x46ffa0: 13 on levels 0, 2, 5, 8, 16
 
     uint8_t levelFlags_[32] = {};
     uint8_t rng_[12] = {};             // DAT_00466772: three longs at +0 / +4 / +8 (+6 overlaps them)
@@ -195,6 +211,7 @@ private:
     bool pendingRestart_ = false;
     int demoIndex_ = -1;               // DAT_0046fbbc (-1 in the data section: the first demo is demo 0)
     int gameOverTicks_ = 0;            // "*2": the 3 s the engine waits on the game-over screen
+    engine::HostInput lastHost_;       // the host input of the last tick (the pre-ticks poll it again)
     uint8_t bigSpace_ = 0;             // DAT_0046a878: which of ltr_lg's two spaces is next
     int tourLevel_ = 0;                // DAT_0046b1ac: the level last completed (the map screen's path)
     int nextLevel_ = 0;                // DAT_0045050c: the level "*1" loads (the map's next one, the one a continue goes back to)
@@ -204,6 +221,19 @@ private:
     int cloudDrift_ = 0;               // DAT_00450f94 accumulator for drifting layers
     int ruinsCounter_ = 0;             // DAT_004517e0
     int titlePan_ = 0;                 // DAT_00451a10
+    uint32_t logicTicks_ = 0;          // DAT_004601d9
+    uint32_t lastLandTick_ = 0;        // DAT_004601d5
+    uint32_t timerTicks_ = 0;          // DAT_00450fa8: the 17 ms timer's callbacks (FUN_004448c0), paused or not
+    bool invincible_ = false;          // DAT_0046d054 (the cheat codes are not ported yet)
+    // FUN_00435d45's own state (engine globals; DAT_0046b178 and DAT_0046fa38 cleared by a new game).
+    struct HudAnim {
+        uint32_t prevMeter = 0;        // DAT_0046b178: the meter as last drawn
+        bool healing = false;          // DAT_0046b180: the meter went down, mi_life's frames 0 .. 10
+        uint32_t healStart = 0;        // DAT_0046b17c
+        bool oneUp = false;            // DAT_0046fa38: a 1-up arrived, frames 0x15 / 0x16 ...
+        bool oneUpGlow = false;        // DAT_0046b184: ... then 0xc .. 0x14
+        uint32_t oneUpStart = 0;       // DAT_00451a24
+    } hudAnim_;
     std::vector<engine::DeferredTile> deferred_;
     bool quit_ = false;
 };

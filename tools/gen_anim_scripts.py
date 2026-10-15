@@ -77,11 +77,26 @@ slots = json.load(open(os.path.join(root, 'tools', 'sprite_slots.json')))
 out = ['// GENERATED from PITFALL.EXE data (tools/gen_anim_scripts.py) - object animation scripts.',
        '// Format: see tools/gen_anim_scripts.py / game::animStep (FUN_00423134) and anim2Step (FUN_004237a5).',
        '#include "game/objects.h"', 'namespace game {']
-for name, addr in scripts['anim'].items():
-    a = int(addr, 16)
-    n = script_len(a)
-    bytes_ = rd(a, n)
-    out.append(f'const uint8_t kAnim_{name}[] = {{' + ', '.join(f'0x{b:02x}' for b in bytes_) + f'}};  // {addr}')
+# The FUN_00423134 scripts are kept with the memory around them: a handler may switch
+# scripts on the same cursor (a byte) and read past the end of the shorter one, as the
+# heart pickup does between 0x45a8b2 and 0x45a8be.  Scripts within 0x200 bytes of each
+# other share a block, which runs on 0x100 bytes past the last one's start.
+anim = sorted((int(addr, 16), name) for name, addr in scripts['anim'].items())
+blocks = []
+for a, name in anim:
+    end = a + max(script_len(a), 0x100)
+    if blocks and a - blocks[-1]['last'] <= 0x200:
+        blocks[-1]['names'].append((a, name)); blocks[-1]['last'] = a; blocks[-1]['end'] = max(blocks[-1]['end'], end)
+    else:
+        blocks.append({'start': a, 'last': a, 'end': end, 'names': [(a, name)]})
+for i, b in enumerate(blocks):
+    data = rd(b['start'], b['end'] - b['start'])
+    out.append(f'const uint8_t kAnimMem{i}[] = {{  // {b["start"]:#x} .. {b["end"]:#x}')
+    for o in range(0, len(data), 24):
+        out.append('    ' + ', '.join(f'0x{x:02x}' for x in data[o:o + 24]) + ',')
+    out.append('};')
+    for a, name in b['names']:
+        out.append(f'const uint8_t* const kAnim_{name} = kAnimMem{i} + {a - b["start"]:#x};  // {a:#x}, {script_len(a)} bytes')
 sprites = []
 for name, addr in scripts['anim2'].items():
     if '+' in addr:                                   # "0xaddr+len": a fixed length (no 0xf0 terminator)

@@ -220,6 +220,7 @@ private:
     const uint8_t* a26Room() const;             // [DAT_00465e9e]: the screen's descriptor
     void a26ClearButtons();
     void a26Frame(Game& g, int entry);          // level 20 in FUN_0043628c (0) / FUN_004360e9 (1) / FUN_00435fc0 (2)
+    void epilogue(Game& g);                     // 0x4363bd: the end every path of FUN_0043628c shares
 
     // ---- map_screen.cpp: level 19 (0x431c99, FUN_00432038) ----
     void mapSetup();                            // 0x431c99, the end of the restart on level 19
@@ -247,8 +248,6 @@ private:
     // Sound channel state (FUN_004262d9 / FUN_004261e2).
     uint8_t ch0Pri_ = 0, ch0Id_ = 0, ch0Hold_ = 0;   // DAT_004627be / DAT_004627bf / DAT_004627c2
     uint8_t ch1Pri_ = 0, ch1Id_ = 0;                 // DAT_004627c0 / DAT_004627c1
-    uint32_t tickCount_ = 0;         // DAT_004601d9 (incremented every tick of the main loop)
-    uint32_t lastLandSound_ = 0;     // DAT_004601d5
     int altIdle_ = 0;                // DAT_0046d04c: F10 was pressed (the special idle animation)
     uint32_t fadeCmd_ = 0;           // DAT_0046b1b0
     uint8_t trgRam_[0x200] = {};     // [DAT_00450510] + 0x1f4 ..

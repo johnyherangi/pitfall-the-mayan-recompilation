@@ -1407,9 +1407,9 @@ void PlayLogic::h42a896() {
     h_.setCont(0x42a8f9);
     h_.w(0x465b47) = 0;
     h_.w(0x465b9e) = 0;
-    if (!channel0Busy() && tickCount_ - lastLandSound_ >= 0x28) {
+    if (!channel0Busy() && game_->logicTicks() - game_->lastLandTick() >= 0x28) {
         sound0(0x3e, 4);
-        lastLandSound_ = tickCount_;
+        game_->lastLandTick() = game_->logicTicks();
     }
     h42a8f9();
 }
@@ -1424,9 +1424,9 @@ void PlayLogic::h42a92e() {
     h_.setCont(0x42a991);
     h_.w(0x465b47) = 0;
     h_.w(0x465b9e) = 0;
-    if (!channel0Busy() && tickCount_ - lastLandSound_ >= 0x28) {
+    if (!channel0Busy() && game_->logicTicks() - game_->lastLandTick() >= 0x28) {
         sound0(0x1e, 4);
-        lastLandSound_ = tickCount_;
+        game_->lastLandTick() = game_->logicTicks();
     }
     h42a991();
 }
@@ -2515,9 +2515,9 @@ void PlayLogic::h42cdb6() {
         }
     }
     // landed
-    if (tickCount_ - lastLandSound_ >= 0x28 && !channel0Busy()) {
+    if (game_->logicTicks() - game_->lastLandTick() >= 0x28 && !channel0Busy()) {
         sound0(0x1e, 4);
-        lastLandSound_ = tickCount_;
+        game_->lastLandTick() = game_->logicTicks();
     }
     if (h_.w(0x465ba6) != 0) {
         if (h_.w(0x465ba6) < 0) { if (h_.b(0x466767)) { h42e25e(); return; } }

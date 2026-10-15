@@ -52,10 +52,9 @@ void PlayLogic::enter(Game& g) {
     if (g.warp().fromAtari) h_.b(0x465b39) = 0xff;            // (before the level start: the checkpoint stays)
     levelStart();                                              // FUN_0043256f
     g.warp().fromAtari = g.warp().fromVault = false;           // DAT_004601c4 / DAT_004504cc
-    FrameState& fs = g.state();
-    fs.scrollX = h_.w(0x4658b4);
-    fs.scrollY = h_.w(0x4658b6);
-    displayList(g);
+    g.state().hudSlide = h_.uw(0x4667a8);                      // 0x4360d3: DAT_00451940 for the tick
+    tick(g);                                                   // 0x4360df: a logic tick
+    epilogue(g);                                               // 0x4360e4: and its end once more
 }
 
 void PlayLogic::restart(Game& g) {
@@ -66,10 +65,9 @@ void PlayLogic::restart(Game& g) {
     deathTimer_ = 0;
     restartAtCheckpoint();                                     // FUN_00432615
     g.warp().fromAtari = g.warp().fromVault = false;
-    FrameState& fs = g.state();
-    fs.scrollX = h_.w(0x4658b4);
-    fs.scrollY = h_.w(0x4658b6);
-    displayList(g);
+    g.state().hudSlide = h_.uw(0x4667a8);                      // 0x4361c0
+    tick(g);                                                   // 0x4361cc: a logic tick
+    epilogue(g);                                               // 0x4361d1
 }
 
 void PlayLogic::levelStart() {
@@ -316,18 +314,15 @@ void PlayLogic::restartBody() {
 void PlayLogic::tick(Game& g) {
     game_ = &g;
     level_ = g.levelNumber();
-    if (level_ == kAtari2600Level) { a26Frame(g, 0); return; }   // 0x436224: FUN_004263f3, 0x4020d1
     FrameState& fs = g.state();
+    h_.w(0x4667a8) = int16_t(fs.hudSlide);                 // 0x4362ad: the slide as the engine has it (the pre-ticks put it back)
+    if (level_ == kAtari2600Level) { a26Frame(g, 0); return; }   // 0x436224: FUN_004263f3, 0x4020d1
     if (level_ == kMapScreen) {                            // 0x436215: FUN_004263f3, FUN_00432038
         fs.displayList.clear();
         specialExited_ = false;
         readPad();
         mapTick();
-        if (specialExited_) return;
-        fs.scrollX = h_.w(0x4658b4);
-        fs.scrollY = h_.w(0x4658b6);
-        fs.bob = h_.w(0x465b02);
-        ++tickCount_;
+        if (!specialExited_) epilogue(g);                  // (engineExit skips it)
         return;
     }
     const bool debug = (fs.joypad & 0x100) != 0;
@@ -351,16 +346,23 @@ void PlayLogic::tick(Game& g) {
         harryDeath();                                      // FUN_00430a69
     }
     if (level_ == 7) displayList(g);
+    fs.vaultCeiling = int16_t(tw(0x1f4));
+    // An exit (engineExit) leaves FUN_0043628c without its end; the port runs the tick out.
+    if (!g.exitPending()) epilogue(g);
+}
+
+void PlayLogic::epilogue(Game& g) {
+    // 0x4363bd: the camera for the engine, the tick count, then the numbers the HUD shows.
+    // (DAT_004517f4 = DAT_00465cf6 is never read; DAT_004517e8 = DAT_0046652f, the stop-watch,
+    // stills the water effects of FUN_00443370 / FUN_00437ba0, which are not ported.)
+    FrameState& fs = g.state();
     fs.scrollX = h_.w(0x4658b4);
     fs.scrollY = h_.w(0x4658b6);
     fs.bob = h_.w(0x465b02);
-    fs.vaultCeiling = int16_t(tw(0x1f4));
-    // FUN_00435c4e (the damage meter, drawn every frame): a full meter kills
-    const int limit = g.stats().difficulty ? 100 : 0x96;
-    if (h_.damage() >= limit && h_.cont() != 0x428dce && h_.cont() != 0x428cdb) h_.b(0x465b72) = 0xff;
-    g.stats().damage = h_.damage();
-    g.stats().harryDead = h_.b(0x465b72) != 0;
-    // 0x436435: the stats for the HUD: 50 treasures make a continue (max 9), ammo stops at 99
+    ++g.logicTicks();                                      // DAT_004601d9
+    if (g.invincible()) h_.damage() = 0;                   // DAT_0046d054
+    // 0x436435: 50 treasures make a continue (at most 9), the lives are 1 .. 10 (none left:
+    // 10), the ammunition at most 99.  (The score is shown up to 999999, DAT_00451914.)
     PlayerStats& st = g.stats();
     while ((st.treasures & 0xff) >= 0x32) {
         st.treasures = uint8_t(st.treasures - 0x32);
@@ -368,9 +370,16 @@ void PlayLogic::tick(Game& g) {
         if (st.continues >= 0xa) st.continues = 9;
         sound1Now(0x22);
     }
-    if (st.lives > 0xa) st.lives = 0xa;                    // (the original also turns 0 into 10; 0 is handled at the death)
+    if (uint32_t(st.lives - 1) >= 0xa) st.lives = 0xa;
     for (int& a : st.ammoCount) if ((a & 0xff) >= 0x64) a = 0x63;
-    ++tickCount_;                                          // DAT_004601d9
+    fs.hudSlide = h_.uw(0x4667a8);                         // 0x4364f9: DAT_00451940
+    // FUN_00435c4e, which the HUD runs as it draws the crocodile (levels 0 .. 10 and 16 .. 18):
+    // a full meter kills Harry.
+    if (level_ <= kWarriorSpirit || (level_ >= kPalenqueRuins && level_ <= kJainaIslandFalls)) {
+        if (h_.damage() >= (g.hardMode() ? 0x64 : 0x96) && h_.cont() != 0x428dce && h_.cont() != 0x428cdb) h_.b(0x465b72) = 0xff;
+    }
+    st.damage = h_.damage();
+    st.harryDead = h_.b(0x465b72) == 0xff;
 }
 
 void PlayLogic::timers() {
@@ -467,7 +476,7 @@ void PlayLogic::harryDeath() {
         PlayerStats& st = game_->stats();
         if (h_.x() == 0xc8 || !neg(h_.x() - 0xc0)) {
             st.continues = (st.continues - 1) & 0xff;
-            st.lives = (st.difficulty != 0 && !game_->demoPlaying()) ? 3 : 4;   // DAT_00462694
+            st.lives = game_->hardMode() ? 3 : 4;   // DAT_00462694
             st.score = 0;
             st.treasures = 0;
             game_->command("*1");
@@ -633,7 +642,7 @@ void PlayLogic::markKilled(const Obj& o) {
     // 0x4081fc: kept in the 0x465a40 list (if there is room) to come back after 15 seconds;
     // on the easy setting the monkeys are not.
     if (o.als < 0) return;
-    if (!game_->stats().difficulty && o.type == 0x23) return;
+    if (!game_->hardMode() && o.type == 0x23) return;
     for (Killed& k : killed_)
         if (k.count == 0) { k.count = 0xf; k.id = o.id; k.als = o.als; return; }
 }
@@ -771,7 +780,7 @@ void PlayLogic::runObjects(Game& g) {
     ObjCtx ctx{g, *this, g.level(), h_};
     ctx.levelNo = level_;
     ctx.camX = h_.w(0x4658b4); ctx.camY = h_.w(0x4658b6);   // DAT_004658b4 / b6
-    ctx.hard = g.stats().difficulty != 0;
+    ctx.hard = g.hardMode();                                 // DAT_00462694
     objects_.tick(ctx);
     runStrayReturns();
 }

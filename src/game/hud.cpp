@@ -8,66 +8,107 @@
 
 namespace game {
 
+void Game::hudMeter(engine::SpriteInstance& croc, engine::SpriteInstance& life, int top) {
+    // FUN_00435d45 with FUN_00435c4e: the damage meter (1 + 2 * damage / 22, or / 15 on hard,
+    // the damage taken as at most 0x96 / 100) moves the crocodile along and opens its jaws;
+    // mi_life plays its own frames.  (FUN_00435c4e's full-meter death is in the logic's tick.)
+    const bool hard = hardMode();                                   // DAT_00462694
+    const int dmg = std::min(stats_.damage & 0xff, hard ? 0x64 : 0x96) * 2;
+    const int step = hard ? 0xf : 0x16;
+    uint32_t meter = 1;                                             // DAT_0046b18c
+    for (int t = step; dmg - t >= 0; t += step) ++meter;
+    if (meter < hudAnim_.prevMeter) { hudAnim_.healing = true; hudAnim_.healStart = logicTicks_; }
+    hudAnim_.prevMeter = meter;
+    const int sx = snap_.scrollX, sy = snap_.scrollY;               // DAT_0046fba0 / DAT_0046fba4
+    croc.sprite = findSprite("mi_croc");
+    croc.flags = engine::kSprVisible;
+    if (stats_.harryDead) {                                         // DAT_00465b72 == 0xff: the jaws shut on the life icon
+        croc.x = sx + 0xfc; croc.y = sy + top + 8; croc.frame = 0;
+    } else {
+        croc.x = sx + 0xd8 + int(meter); croc.y = sy + top + 0x10;
+        croc.frame = std::min(meter / 2 + 1, 7u);
+    }
+    life.sprite = findSprite("mi_life");
+    life.x = sx + 0x107; life.y = sy + top + 2;
+    uint32_t frame = 0;
+    bool visible = true;
+    const uint32_t now = logicTicks_;                               // DAT_004601d9
+    if (stats_.harryDead) {
+        visible = false;
+    } else if (hudAnim_.oneUpGlow && now - hudAnim_.oneUpStart < 0x48) {
+        hudAnim_.healing = false;
+        frame = (now - hudAnim_.oneUpStart) / 8 + 0xc;              // the glow, 0xc .. 0x14
+    } else {
+        if (hudAnim_.oneUpGlow) { hudAnim_.healing = false; hudAnim_.oneUpGlow = false; }
+        if (hudAnim_.oneUp) {
+            hudAnim_.healing = false;
+            const uint32_t d = now - hudAnim_.oneUpStart;
+            frame = d < 0xa ? 0x15 : 0x16;
+            if (d >= 0x14) {
+                hudAnim_.oneUpGlow = true;
+                hudAnim_.oneUpStart = now;
+                hudAnim_.oneUp = false;
+                frame = 0xc;
+            }
+        } else if (hudAnim_.healing) {
+            frame = uint16_t((now - hudAnim_.healStart + 1) / 7);   // frames 0 .. 10, a step every 7 ticks
+            if (frame >= 0xb) { frame = 0; hudAnim_.healing = false; }
+        } else if (meter >= 0xa) {
+            if ((now & 0xa0) == 0) frame = 0xb;                     // a blink now and then
+            if (meter >= 0xd && (now & 0x10)) visible = false;      // and near the end it flashes
+        }
+    }
+    life.frame = frame;
+    life.flags = visible ? engine::kSprVisible : 0u;
+}
+
 void Game::renderHud() {
+    // FUN_00442fa0.  The top row sits at DAT_004518e4 = 0x10 - slide, the bottom at
+    // DAT_00451904 = 0x10 + slide, the slide being DAT_00451940 (0x30 at a restart, 3 less a tick:
+    // the HUD slides in from the edges).  (In a 200-line display mode, DAT_0046e02c without
+    // DAT_00453058, the bases are 0x1c and 4.)
     const int sx = snap_.scrollX;
-    const bool gameplayLevel =
-        levelNo_ != kTitleScreen && levelNo_ < kMapScreen && (levelNo_ < kLoltunVault2 || levelNo_ > kLoltunVault1);
-    if (gameplayLevel && mode_ != Mode::Attract) {
-        const ph::RawImage& digits = assets_->scoline;        // DAT_004504d8
-        const int topY = 0x10 - 4;                            // DAT_004518e4 - 4 (HUD slide offset 0)
-        // Score: six digits right-aligned, cells 0..9 of scoline, x = 0x10 .. 0x38.
+    const int top = 0x10 - snap_.hudSlide;                          // DAT_004518e4
+    const int bottom = 0x10 + snap_.hudSlide;                       // DAT_00451904
+    const engine::View view{snap_.scrollX, snap_.scrollY};
+    if (levelNo_ != kTitleScreen && levelNo_ < kMapScreen && (levelNo_ < kLoltunVault2 || levelNo_ > kLoltunVault1)) {
+        const ph::RawImage& digits = assets_->scoline;              // DAT_004504d8
+        // The score: "%06d" of DAT_00451914 (at most 999999), cells 0..9 of scoline at x 0x10 .. 0x38.
         char buf[16];
-        std::snprintf(buf, sizeof buf, "%6d", stats_.score);
-        for (int i = 0; i < 6; ++i)
-            if (buf[i] >= '0' && buf[i] <= '9') renderer_.drawCell(digits, buf[i] - '0', 0x10 + i * 8, topY, sx);
-        if (levelNo_ < 0xc || levelNo_ > 0xf) {
-            // Health (FUN_00435c4e / FUN_00435d45): the crocodile's jaws open as the
-            // damage meter rises - meter = 1 + 2*damage/22 (/15 on hard), frame = meter/2 + 1,
-            // and Harry's life icon (mi_life) sits at the top right.
-            const int step = stats_.difficulty ? 0xf : 0x16;
-            int meter = 1;
-            for (int t = step; std::min(stats_.damage, stats_.difficulty ? 100 : 0x96) * 2 - t >= 0; t += step) ++meter;
-            engine::SpriteInstance croc;
-            croc.sprite = findSprite("mi_croc");
-            croc.x = sx + 0xd8 + meter; croc.y = snap_.scrollY + 0x10 + 0x10;
-            croc.frame = stats_.harryDead ? 0u : uint32_t(std::min(7, meter / 2 + 1));
-            croc.flags = engine::kSprVisible;
-            renderer_.drawSprite(croc, engine::View{snap_.scrollX, snap_.scrollY});
-            engine::SpriteInstance life;
-            life.sprite = findSprite("mi_life");
-            life.x = sx + 0x107; life.y = snap_.scrollY + 0x10 + 2;
-            // Idle blink animation (frames 0..0xb, blink on frame & 0xa0 == 0 -> 0xb).
-            life.frame = ((snap_.globalFrame & 0xa0) == 0 && meter >= 10) ? 0xbu : 0u;
-            life.flags = engine::kSprVisible;
-            renderer_.drawSprite(life, engine::View{snap_.scrollX, snap_.scrollY});
+        std::snprintf(buf, sizeof buf, "%06d", std::min(std::max(stats_.score, 0), 999999));
+        for (int i = 0; i < 6; ++i) renderer_.drawCell(digits, buf[i] - '0', 0x10 + i * 8, top - 4, sx);
+        if (levelNo_ < kLoltunVault3 || levelNo_ > kTitleScreen) {
+            engine::SpriteInstance croc, life;                      // DAT_004518f0 / DAT_00451920
+            hudMeter(croc, life, top);
+            renderer_.drawSprite(croc, view);
+            renderer_.drawSprite(life, view);
             // Lives in reserve: "x N" (DAT_00451804 = DAT_00466527 - 1).
-            renderer_.drawCell(digits, 10, 0x11b, topY, sx);
-            renderer_.drawCell(digits, std::clamp(stats_.lives - 1, 0, 9), 0x127, topY, sx);
-            // Treasures: coin icon + "x" cell + two digits (DAT_00451a28).
-            engine::SpriteInstance coin;
+            renderer_.drawCell(digits, 10, 0x11b, top - 4, sx);
+            renderer_.drawCell(digits, std::clamp(stats_.lives - 1, 0, 9), 0x127, top - 4, sx);
+            // Treasures: the coin and "x NN" (DAT_00451a28).
+            engine::SpriteInstance coin;                            // DAT_00451970
             coin.sprite = findSprite("mi_coin");
-            coin.x = sx + 0x107; coin.y = snap_.scrollY + 0xc4 + 0x10;
+            coin.x = sx + 0x107; coin.y = snap_.scrollY + bottom + 0xc4;
             coin.flags = engine::kSprVisible;
-            renderer_.drawSprite(coin, engine::View{snap_.scrollX, snap_.scrollY});
-            const int bottomY = 0x10 + 0xb6;
-            renderer_.drawCell(digits, 10, 0x112, bottomY, sx);
-            renderer_.drawCell(digits, stats_.treasures / 10, 0x11d, bottomY, sx);
-            renderer_.drawCell(digits, stats_.treasures % 10, 0x125, bottomY, sx);
+            renderer_.drawSprite(coin, view);
+            renderer_.drawCell(digits, 10, 0x112, bottom + 0xb6, sx);
+            renderer_.drawCell(digits, stats_.treasures / 10, 0x11d, bottom + 0xb6, sx);
+            renderer_.drawCell(digits, stats_.treasures % 10, 0x125, bottom + 0xb6, sx);
             if (levelNo_ != kBalankancheMine) {
-                // Weapon icon (DAT_00451938) + ammo count (DAT_00451908).
+                // The weapon (DAT_00451938) and its ammunition (DAT_00451908).
                 const char* icon = stats_.weapon == 1 ? "mirbmrng" : stats_.weapon == 2 ? "mi_stonb" : "ob_pouch";
-                engine::SpriteInstance w;
+                engine::SpriteInstance w;                           // DAT_00451950
                 w.sprite = findSprite(icon);
-                w.x = sx + 0x1e; w.y = snap_.scrollY + 0xbe + 0x10;
+                w.x = sx + 0x1e; w.y = snap_.scrollY + bottom + 0xbe;
                 w.flags = engine::kSprVisible;
-                renderer_.drawSprite(w, engine::View{snap_.scrollX, snap_.scrollY});
-                renderer_.drawCell(digits, 10, 0x28, bottomY, sx);
-                renderer_.drawCell(digits, stats_.ammo() / 10, 0x32, bottomY, sx);
-                renderer_.drawCell(digits, stats_.ammo() % 10, 0x3a, bottomY, sx);
+                renderer_.drawSprite(w, view);
+                renderer_.drawCell(digits, 10, 0x28, bottom + 0xb6, sx);
+                renderer_.drawCell(digits, stats_.ammo() / 10, 0x32, bottom + 0xb6, sx);
+                renderer_.drawCell(digits, stats_.ammo() % 10, 0x3a, bottom + 0xb6, sx);
             }
         }
     }
-    if (mode_ == Mode::Attract && (snap_.frame & 0x30) != 0)
+    if (demoPlaying() && (timerTicks_ & 0x30) != 0)
         renderer_.drawText(assets_->font, 0x70, 0xe, "DEMONSTRATION", sx);     // s_DEMONSTRATION
     if (options_.frameRate) {
         char fps[16];

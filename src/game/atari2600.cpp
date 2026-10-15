@@ -61,7 +61,7 @@ void PlayLogic::a26Exit(const char* cmd) {
 void PlayLogic::a26Frame(Game& g, int entry) {
     // FUN_00435fc0 / FUN_004360e9 / FUN_0043628c on level 20: the display list starts empty, then
     // the level's start (0x401e00), a screen's start (0x401f3c) or a tick (the joypad, 0x4020d1);
-    // the first two run on into a tick.  0x4363bd passes the camera on (engineExit skips it).
+    // the first two run on into a tick.  0x4363bd ends them (engineExit skips it).
     game_ = &g;
     level_ = g.levelNumber();
     FrameState& fs = g.state();
@@ -71,11 +71,7 @@ void PlayLogic::a26Frame(Game& g, int entry) {
     else if (entry == 1) a26Screen();
     else { readPad(); a26Tick(); }
     fs.atariScreen = h_.uw(0x465ba8);                         // (FUN_00436fb4 reads it as it draws)
-    if (specialExited_) return;
-    fs.scrollX = h_.w(0x4658b4);
-    fs.scrollY = h_.w(0x4658b6);
-    fs.bob = h_.w(0x465b02);
-    ++tickCount_;
+    if (!specialExited_) epilogue(g);
 }
 
 // ---------------------------------------------------------------- the start

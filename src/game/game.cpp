@@ -125,6 +125,7 @@ void Game::startLevel(int level) {
         else logic_ = std::make_unique<ExplorerLogic>();
     }
     if (logic_) logic_->enter(*this);
+    preTicks(1 + preTickCount(level));                   // FUN_004460e0's end (on the title: no logic, the counters and the pan)
 }
 
 void Game::togglePause() {
@@ -132,8 +133,9 @@ void Game::togglePause() {
     else if (mode_ == Mode::Paused) mode_ = Mode::Playing;
 }
 
-void Game::tick(const engine::HostInput& host) {
-    // ---- FUN_00444940: joypad -------------------------------------------
+bool Game::pollJoypad(const engine::HostInput& host) {
+    // FUN_00444940: the joypad from the keyboard / joystick, or from the demo script.  False when
+    // a key ended the demo (DAT_004517f8 = 0xff, which FUN_0043628c turns into "*2": the title).
     fs_.joypadPrev = fs_.joypad;
     uint32_t pad;
     if (levelNo_ >= kLoltunVault2 && levelNo_ <= kLoltunVault1) pad = engine::Input::pollVaultKeys(host);
@@ -141,8 +143,7 @@ void Game::tick(const engine::HostInput& host) {
     input_.bindings = options_.keys;
 
     if (demoPos_ != kDemoNotActive && mode_ == Mode::Attract) {
-        // Demo playback: any real key press ends the demo (DAT_004517f8 = 0xff).
-        if (pad != 0) { mode_ = Mode::Title; demoPos_ = kDemoNotActive; startLevel(kTitleScreen); return; }
+        if (pad != 0) { mode_ = Mode::Title; demoPos_ = kDemoNotActive; startLevel(kTitleScreen); return false; }
         if (--demoCountdown_ <= 0) {
             const DemoScript& d = demoScript(demoIndex_);
             const uint8_t frames = d.pairs[demoPos_], buttons = d.pairs[demoPos_ + 1];
@@ -155,6 +156,43 @@ void Game::tick(const engine::HostInput& host) {
         pad = demoButtons_;
     }
     fs_.joypad = pad;
+    return true;
+}
+
+void Game::engineTick() {
+    // FUN_00443370 after its joypad: the frame counters, the logic (FUN_0043628c) and the
+    // per-level parallax camera.
+    ++fs_.globalFrame;
+    ++fs_.frame;
+    if (levelNo_ != kTitleScreen && logic_) logic_->tick(*this);
+    computeParallax();
+}
+
+void Game::preTicks(int n) {
+    // Engine ticks before the first frame: FUN_004460e0 runs one after the level's logic start
+    // and thirteen more on levels 0, 2, 5, 8 and 16 (the table at 0x46ffa0), the "*3" path the
+    // thirteen alone.  FUN_00443370 does nothing once a command is set.  DAT_00451940 is put
+    // back after them, so the HUD slides in from where the logic's start left it.
+    const int slide = fs_.hudSlide;
+    for (int i = 0; i < n; ++i) {
+        if (exitPending()) break;
+        if (!pollJoypad(lastHost_)) return;              // (a key ended the demo: the title is loaded)
+        if (mode_ == Mode::Paused) break;
+        engineTick();
+    }
+    fs_.hudSlide = slide;
+}
+
+int Game::preTickCount(int level) {
+    static const uint8_t kTable[0x20] = {1, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1};   // 0x46ffa0
+    return level >= 0 && level < 0x20 && kTable[level] ? 13 : 0;
+}
+
+void Game::tick(const engine::HostInput& host) {
+    // One callback of the 17 ms timer (FUN_004448c0).
+    ++timerTicks_;                                                   // DAT_00450fa8
+    lastHost_ = host;
+    if (!pollJoypad(host)) return;
 
     if (mode_ == Mode::Paused) return;
     if (mode_ == Mode::GameOver) {
@@ -166,11 +204,7 @@ void Game::tick(const engine::HostInput& host) {
         return;
     }
 
-    // ---- FUN_00443370 ---------------------------------------------------
-    ++fs_.globalFrame;
-    ++fs_.frame;
-    if (levelNo_ != kTitleScreen && logic_) logic_->tick(*this);   // FUN_0043628c(level)
-    computeParallax();
+    engineTick();                                                    // FUN_00443370
     tickAttract();
 
     if (pendingLevel_ >= 0) { const int l = pendingLevel_; pendingLevel_ = -1; startLevel(l); }
@@ -179,6 +213,7 @@ void Game::tick(const engine::HostInput& host) {
         pendingRestart_ = false;
         mixer_.stopAll();
         if (logic_) logic_->restart(*this);
+        preTicks(preTickCount(levelNo_));
     }
 }
 
@@ -197,7 +232,7 @@ void Game::command(const char* cmd) {
             // them), then the title
             playSound(0x20);
             mode_ = Mode::GameOver;
-            gameOverTicks_ = 180;
+            gameOverTicks_ = 177;                        // 3000 ms of timeGetTime: 177 ticks of 17 ms
             return;
         }
         demoPos_ = kDemoNotActive;
@@ -238,7 +273,8 @@ void Game::command(const char* cmd) {
 void Game::newGame() {
     // FUN_004324c6 with the title's set-up: lives, ammo, score and the cross-level state.
     stats_ = PlayerStats{};
-    stats_.difficulty = options_.difficulty;
+    hudAnim_.oneUp = false;                              // DAT_0046fa38
+    hudAnim_.prevMeter = 0;                              // DAT_0046b178
     std::memset(levelFlags_, 0, sizeof levelFlags_);
     const bool cheat = warp_.cheat;
     warp_ = Warp{};                                      // DAT_0046a884 / 86 / 88 = 0, DAT_00450fc8 = 1
@@ -357,7 +393,7 @@ void Game::render() {
 
     if (levelNo_ == kTitleScreen) renderTitle();
     renderHud();                                                   // FUN_00442fa0
-    if (mode_ == Mode::Paused) renderer_.drawText(assets_->font, 0x82, 0x60, "PAUSED", snap_.scrollX);
+    if (mode_ == Mode::Paused && (timerTicks_ & 0x60) != 0) renderer_.drawText(assets_->font, 0x82, 0x60, "PAUSED", snap_.scrollX);   // TextOutA in the original
 }
 
 void Game::renderAtari2600() {
@@ -388,7 +424,7 @@ void Game::renderVault() {
         if (it->flags & engine::kSprFront) renderer_.drawSprite(*it, view);
     renderer_.drawWrappedLayer(level_->bg, snap_.parX, snap_.parY, fine, fine, nullptr);
     renderHud();
-    if (mode_ == Mode::Paused) renderer_.drawText(assets_->font, 0x82, 0x60, "PAUSED", snap_.scrollX);
+    if (mode_ == Mode::Paused && (timerTicks_ & 0x60) != 0) renderer_.drawText(assets_->font, 0x82, 0x60, "PAUSED", snap_.scrollX);   // TextOutA in the original
 }
 
 void Game::completeLevel() {
