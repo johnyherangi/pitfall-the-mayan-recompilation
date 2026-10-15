@@ -300,6 +300,14 @@ extern const uint8_t kData_glyphWidths[];
 // numbers, the sound opcodes 0xfc / 0xfd / 0xfb, any other negative byte ends one); 0x45bd28,
 // {behind, flags} words for each body part.
 extern const uint8_t kData_spiritPoses[], kData_spiritScripts[], kData_spiritParts[];
+// The Atari 2600 level (atari2600.cpp): 0x40310c, the vine's tip by frame 0x1d .. 0x27 ({dx, dy}
+// words); 0x403138, the type 2 objects by their kind ({frame, frame, effect, value} bytes); 0x403168,
+// the pit's script; 0x403198, the vine's swing ({frame, facing} bytes, 0xff ending it); 0x403f0c,
+// Harry's run frames (0xff ending them); 0x403f22, the jump's dy words (0x8000 ending it); 0x4695a8,
+// the 256 screens' descriptors {trees, ground, object, vine}; 0x46aa18, the powers of ten
+// FUN_00431a3f counts in; 0x46b1fc, the map columns the renderer takes the screen's two strips from.
+extern const uint8_t kData_a26VineTips[], kData_a26Items[], kData_a26Pit[], kData_a26Vine[], kData_a26Run[],
+    kData_a26Jump[], kData_a26Rooms[], kData_a26Powers[], kData_a26Columns[];
 extern const uint8_t kAnim2_deathFade[], kAnim2_monkeyToss[], kAnim2_condorDive[], kAnim2_jaguarLeap[], kAnim2_jaguarCrouchA[],
     kAnim2_jaguarCrouchB[], kAnim2_jaguarCrouchRoar[], kAnim2_jaguarRoar[], kAnim2_bossCloud[],
     kAnim2_skullThrow[], kAnim2_skullChop[], kAnim2_boneTumble[], kAnim2_ballSwingA[], kAnim2_ballSwingB[], kAnim2_ballSwingC[],

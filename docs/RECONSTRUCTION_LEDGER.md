@@ -62,15 +62,15 @@ decompiled code by a test or a rendered image.
 | Weapons | the whip (box table `0x4612e0`), sling stones (type 5) with the power shot's sparkle trail, the big stone (type 4) and its screen-clearing blast (types 0x89 / 0x8a), and the boomerang (types 6 / 0x87: flight path, homing, bounce cells, the return, riding it), each from its handler. The blast's white flash (`DAT_0046b1b0`) is kept but not drawn, as the palette fades are not ported |
 | Triggers | start, exit, plane switch, water, priority 0x30/0x31, invisible walls, lever / door / chute / one-way door scripts, piston phases, pot contents; vaults and swing anchors ignored. The object template's byte 8 is a Genesis sound-channel class (`FUN_004263a6`, a stub in the PC build), not a spawn sound. Trigger id 2 is a wall for objects only (class 3 during each handler, cleared by thrown things) and id 3 a wall for Harry only while he is on the ground, as the original sets them per tick |
 | Death | falling out of the level, water, or the damage meter (enemy contact).  `FUN_00430eb6` as the original: every object goes, the `.als` working copy takes the level's entries back but for the treasures and letters (ids 0x58..0x5c, 0xf0..0xf6), the lever flags 0x466510..21 are cleared, and `*3` starts the logic again in place at the checkpoint (`FUN_00432615`, the level is not loaded again); a continue loads the level again from its start (the continue screen itself is skipped) |
-| Level flow | exit → next level in tour order (the map screen, level 19, is skipped); the vortices lead to the vaults and back (`*51`..`*53`, `*7`) with the level saved and restored as `FUN_004288ec` / `FUN_0043256f` do, and on level 3 to the 2600 level (`*50`, `*6`), whose game is not ported yet (it runs as the explorer) |
+| Level flow | exit → next level in tour order (the map screen, level 19, is skipped); the vortices lead to the vaults and back (`*51`..`*53`, `*7`) with the level saved and restored as `FUN_004288ec` / `FUN_0043256f` do, and on level 3 to the 2600 level (`*50`, `*6`) |
+| Atari 2600 level | level 20 as the original: its start, screens and their 255 descriptors, the object pass (crocodiles, rolling logs, the scorpion, the vine, pits, swamps, fires, cobras, the 32 treasures), Harry's running, jumping, ladders, walls, holes and the vine, the deaths and the pause after them (`*3`), the clock, the game over and `*6`, the HUD and the copyright line in `chrs2600`, and the screen drawn from the two strips of the map (`0x437078`).  `DAT_0046fb88` (the engine's own start key, which also leaves the game over) is not kept; the pits' palette flags (0x2000 / 0x4000) select Genesis palette lines, which the PC ignores as well |
 
 ## Not ported yet — the rest of the Genesis-derived game logic
 
 The machine-translated 68000 half of the binary (`0x401000–0x437fff`) is ported routine by routine: Harry's
 states, the object system and 138 of its behaviour types, the camera and spawner, the triggers and level
 scripts.  What is left: the map screen's
-set-up at the end of the restart (`0x431c99`), the 2600 level
-(level 20, `FUN_00401e00` / `FUN_00401f3c`), the logic ticks a level load and `*3` run before the first frame, the
+set-up at the end of the restart (`0x431c99`), the logic ticks a level load and `*3` run before the first frame, the
 palette fades (`DAT_0046b1b0`), CD music, and the MSVC build.
 
 ## Known gaps in the asset layer
@@ -78,4 +78,4 @@ palette fades (`DAT_0046b1b0`), CD music, and the MSVC build.
 * `.trg` ids other than those listed above; `kTriggerClass` semantics.
 * `.als` object *type* handlers for the types listed as not ported.
 * Level 14 (continue screen) has no `.bg`; the original draws it from sprites.
-* Level 20 (2600 level) and 19/22/23 have special renderers in `FUN_00436fb4`.
+* Levels 19/22/23 have special renderers in `FUN_00436fb4` (level 20's is ported: `Game::renderAtari2600`).

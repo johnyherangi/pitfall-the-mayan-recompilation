@@ -1,5 +1,6 @@
 #include "game/game.h"
 #include "game/play_logic.h"
+#include "game/objects.h"
 
 #include "ph/manifests.h"
 
@@ -115,8 +116,9 @@ void Game::startLevel(int level) {
         mode_ = Mode::Playing;
     }
     if (autoLogic_) {
-        // Levels with collision data get the playable logic, the rest the explorer.
-        if (!level_->collision.empty()) logic_ = std::make_unique<PlayLogic>();
+        // Levels with collision data get the playable logic, the rest the explorer; the 2600
+        // level has its own code in the game logic (FUN_00435fc0's 0x401e00).
+        if (!level_->collision.empty() || level == kAtari2600Level) logic_ = std::make_unique<PlayLogic>();
         else logic_ = std::make_unique<ExplorerLogic>();
     }
     if (logic_) logic_->enter(*this);
@@ -218,15 +220,17 @@ void Game::tickAttract() {
             return;
         }
         if (fs_.frame > kTitleAttractFrames) {
+            // 0x4447f1: the next demo (0: level 0, 1: level 1, 2: the 2600 level), each a new
+            // game (FUN_004324c6); after the third the intro again
             ++demoIndex_;
             if (demoIndex_ == 3) { demoIndex_ = -1; requestLevel(kIntro); return; }
             mode_ = Mode::Attract;
+            newGame();
             requestLevel(demoScript(demoIndex_).level);
         }
     } else if (mode_ == Mode::Attract && fs_.frame > kTitleAttractFrames) {
         requestLevel(kTitleScreen);
     } else if (levelNo_ == kIntro && fs_.frame > kTitleAttractFrames) {
-        demoIndex_ = 0;
         requestLevel(kTitleScreen);
     }
 }
@@ -250,7 +254,8 @@ void Game::render() {
         renderer_.clearView(snap_.scrollX);
     }
     // Main tile layer (FUN_00436fb4).
-    if (level_->hasBg) renderer_.drawTileLayer(level_->bg, view, deferred_);
+    if (levelNo_ == kAtari2600Level && level_->hasBg) renderAtari2600();
+    else if (level_->hasBg) renderer_.drawTileLayer(level_->bg, view, deferred_);
     // Sprites, back to front (FUN_004426e0 walks the list from the end).
     for (auto it = snap_.displayList.rbegin(); it != snap_.displayList.rend(); ++it)
         if (!(it->flags & engine::kSprFront)) renderer_.drawSprite(*it, view);
@@ -262,6 +267,19 @@ void Game::render() {
     if (levelNo_ == kTitleScreen) renderTitle();
     renderHud();                                                   // FUN_00442fa0
     if (mode_ == Mode::Paused) renderer_.drawText(assets_->font, 0x82, 0x60, "PAUSED", snap_.scrollX);
+}
+
+void Game::renderAtari2600() {
+    // FUN_00436fb4 (0x437078) on level 20: the screen is two strips of the map, 40 tiles wide,
+    // at the columns the screen's descriptor (0x4695a8 + screen * 4) picks through the engine's
+    // tables at 0x46b1fc / 0x46b20c (dwords, indexed by the byte * 2): 17 rows of jungle from row 1
+    // by its first byte, at buffer row 5, and 10 rows of ground from row 0x2e by its second (7:
+    // column 0x50), at buffer row 0x8d; the 12 lines below are cleared.  No high-priority list.
+    const uint8_t* r = kData_a26Rooms + (snap_.atariScreen & 0xff) * 4;
+    auto column = [&](int off) { uint32_t v; std::memcpy(&v, kData_a26Columns + off, 4); return int(v); };
+    renderer_.drawTileStrip(level_->bg, column(r[0] * 2), 1, 0x28, 0x11, 5);
+    renderer_.drawTileStrip(level_->bg, r[1] == 7 ? 0x50 : column(0x10 + r[1] * 2), 0x2e, 0x28, 0xa, 0x8d);
+    renderer_.clearRows(0xdd, 0xc);
 }
 
 void Game::renderVault() {

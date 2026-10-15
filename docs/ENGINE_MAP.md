@@ -38,7 +38,8 @@ function boundaries are unreliable there; the full decompilation is kept in
 | `0x43ce10`   | WAIL32 (Miles) init + sound bank load                  | `ph::loadInit` (sounds), `engine::Mixer` |
 | `0x43cc10`   | play sound id                                          | `Game::playSound`                     |
 | `0x436fb4`   | tile layer renderer (41×29 tiles, deferred hi-priority) | `Renderer::drawTileLayer`            |
-| `0x437128` / `0x436b2c` | deferred tile drain                         | `Renderer::drawDeferredTiles`         |
+| `0x436b00` / `0x436b2c` | deferred tile drain / one tile (flips, see-through) | `Renderer::drawDeferredTiles`, `Renderer::drawTile` |
+| `0x437078` / `0x437128` | `FUN_00436fb4` on level 20: the 2600 screen, two 40-tile strips of the map picked by the screen's descriptor | `Game::renderAtari2600`, `Renderer::drawTileStrip` |
 | `0x436534`   | parallax renderer (line-scrolled bitmap / tiles)       | `Renderer::drawParallaxLinear/Tiles`  |
 | `0x438140`   | RLE sprite blitter, 4 flip variants                    | `Renderer::drawSprite`                |
 | `0x4426e0`   | display-list walk (+ title animation)                  | `Game::render`, `Game::renderTitle`   |
@@ -88,7 +89,8 @@ draw their room as the parallax layer at the main scroll (rounded to 8 px, `FUN_
 sprites) and their ceiling as the main layer over everything at the parallax scroll (`0x4371a5`).  A level load runs one logic tick in `FUN_00435fc0` and one engine tick (thirteen more on levels
 0, 2, 5, 8 and 16, the table `0x46ffa0`) before its first frame; `*3` runs the one logic tick and the thirteen.
 Title → attract: after 0x5a0 ticks play demo 0 (level 0), demo 1 (level 1),
-demo 2 (level 20 — the Atari 2600 easter-egg level), then the intro (21).
+demo 2 (level 20 — the Atari 2600 easter-egg level), then the intro (21); `DAT_0046fbbc` (the demo index) is -1 in
+the data section, so the first demo is demo 0, and each demo starts a new game (`FUN_004324c6`, 0x44484d).
 
 ## Genesis half — symbols decoded so far
 
@@ -121,6 +123,32 @@ demo 2 (level 20 — the Atari 2600 easter-egg level), then the intro (21).
 | `0x4658ac` | level width in 16-px columns | `LevelData::columns` |
 | `0x4668c4` | collision shape heights | `ph::kCollisionHeights` |
 | `0x461f8e` | trigger class table | `ph::kTriggerClass` |
+
+## The Atari 2600 level (level 20, `src/game/atari2600.cpp`)
+
+A game of its own in the Genesis half (0x401e00 .. 0x403f92): `FUN_00435fc0` runs `FUN_00401e00` for it, `FUN_004360e9`
+(`*3`) `0x401f3c` and `FUN_0043628c` the joypad and `0x4020d1`; the first two run on into the third.  It keeps Harry's
+record (the sprite `als2600`), its own object pass and display, and leaves through `*3` (a life lost) and `*6`.
+
+| address | role | port |
+|---------|------|------|
+| `FUN_00401e00` | the level's start: 20:00, two lives, 2000 points, screen 0, waiting for the first input | `PlayLogic::a26Start` |
+| `0x401f3c` | a screen starts (an edge crossed, or `*3`): the box object, the camera (0x108, 0xf6), the screen's objects | `PlayLogic::a26Screen` |
+| `0x4020d1` | the tick: the end countdown (`DAT_00457410`), the pause after a death (`DAT_00457408` / `0c`), the start wait, the objects, Harry, the deaths, the clock | `PlayLogic::a26Tick`, `a26Deferred` |
+| `FUN_0040218b` | the copyright line's rise behind the bars of the logo | `PlayLogic::a26Copyright` |
+| `FUN_004024ee` / `FUN_00435174` | display: the rolling logs first, then Harry and the objects from the tail of the list | `PlayLogic::a26Show` |
+| `FUN_0040254e` / `FUN_00402526` | the vine's swing (`[DAT_004504e4] + 0x12c .. 0x137`), score, lives, clock, logo, copyright, the holes (glyphs of `chrs2600` through `FUN_00434e8a`) | `PlayLogic::a26Hud`, `a26Glyph` |
+| `FUN_0040291c` | its object pass: crocodiles (7), rolling logs (6), the scorpion (5), the vine (4), pits / swamps / the pond (3), things on the ground (2: logs, fire, cobra, treasures; table `0x403138`) | `PlayLogic::a26Objects` |
+| `FUN_004031f7` | a screen's objects from its descriptor (`0x4695a8` + screen * 4: trees, ground, object, vine) | `PlayLogic::a26Populate` |
+| `FUN_004036fc` / `FUN_00403b0d` | Harry: the edges (a screen on, three underground; screen 0xff skipped), ladders, walls, holes; the vine's flight, dropping in, climbing, falling, the jump (`0x403f22`), running (`0x403f0c`) | `PlayLogic::a26Harry`, `a26Move` |
+| `FUN_00403f68` | the trip sound, every fourth tick | `PlayLogic::a26Trip` |
+
+Its variables live at 0x465e76 .. 0x46627c (listed at the top of `atari2600.cpp`); the screen is the low word of Harry's
+vy (`DAT_00465ba8`), the jump step and dx the two words of his vx.  Two control-flow tricks are kept: crossing an edge
+pops the return address and jumps to `0x401f3c`, so the next screen starts and runs a whole tick in the same frame (the
+old screen's display entries stay first in the list for that frame); and a jump's start jumps back to `0x4036fc`, so
+Harry's code runs twice that tick.  `DAT_00465b02` is 0x10 throughout, which `FUN_00434eef` takes off the y: the
+sprites sit at their y.
 
 ## Object system (ported in `src/game/objects.*`, `src/game/handlers.cpp`)
 

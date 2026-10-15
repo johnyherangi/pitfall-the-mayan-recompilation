@@ -53,6 +53,13 @@ public:
     void drawWrappedLayer(const ph::Background& bg, int x, int y, int shift, int mainFineX,
                           std::vector<DeferredTile>* deferred);
 
+    // FUN_00437128: `rows` x `cols` tiles of `bg` from (col, row), drawn from the left edge of the
+    // buffer at buffer row `bufRow` (the 2600 level's screen), every tile as it is (no list of
+    // high-priority tiles).
+    void drawTileStrip(const ph::Background& bg, int col, int row, int cols, int rows, int bufRow);
+    // `rows` lines of the buffer from `bufRow`, 320 px wide, to colour 0.
+    void clearRows(int bufRow, int rows);
+
     // FUN_00436534 (levels 0/5 branch): line-scrolled, horizontally wrapping bitmap.
     // lineOffsets (optional) holds one signed byte per screen line (DAT_00450fd0).
     void drawParallaxLinear(const ph::LinearBitmap& bmp, int scrollX, int scrollY,

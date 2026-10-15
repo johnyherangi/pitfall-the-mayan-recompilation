@@ -157,7 +157,8 @@ private:
     void leanShadow();                          // FUN_00426f67
     void harryLevelStart();                     // FUN_00427e30
     void levelStart();                          // FUN_0043256f
-    void levelSetup();                          // FUN_0043305f (with FUN_00433116)
+    void levelSetup();                          // FUN_0043305f
+    void levelVars();                           // FUN_00433116
     void startPosition();                       // FUN_004331d8
     void restartAtCheckpoint();                 // FUN_00432615
     void levelRestart();                        // FUN_00432713
@@ -195,6 +196,30 @@ private:
     void runStrayReturns();                     // the code at the return addresses left by strayReturn
     void timers();                              // FUN_00433a09
     void displayList(Game& g);                  // FUN_00434f6c
+    // FUN_00434eef: a display entry at (x + 0x10, y + 0x10 - DAT_00465b02); none for a frame of
+    // 0x80 or more, without a sprite, or with the 80 entries of the list taken.
+    void displayEntry(int16_t x, int16_t y, uint8_t frame, uint8_t facing, uint8_t vflip, uint16_t flags, const ph::Sprite* spr);
+    void displayEntry(const Obj& o) { displayEntry(o.x, o.y, o.frame, o.facing, o.vflip, o.flags, o.sprite); }
+    void digits(int32_t v);                     // FUN_00431a3f: v in decimal, a digit a byte at 0x466556 ..
+
+    // ---- atari2600.cpp: level 20, the Atari 2600 Pitfall! (0x401e00 .. 0x403f92) ----
+    void a26Start();                            // FUN_00401e00, on into 0x401f3c
+    void a26Screen();                           // 0x401f3c: a screen starts, on into 0x4020d1
+    void a26Tick();                             // 0x4020d1
+    void a26Deferred(uint32_t addr);            // `jmp [DAT_00457408]`
+    void a26Show();                             // FUN_004024ee, FUN_0040254e and FUN_00435174
+    void a26Copyright();                        // FUN_0040218b
+    void a26Hud();                              // FUN_0040254e
+    void a26Glyph(uint32_t frame, int d6, int d7);   // FUN_00402526 (FUN_00434e8a)
+    void a26Objects();                          // FUN_0040291c
+    void a26Populate();                         // FUN_004031f7
+    bool a26Harry();                            // FUN_004036fc
+    bool a26Move();                             // FUN_00403b0d
+    void a26Trip();                             // FUN_00403f68
+    void a26Exit(const char* cmd);              // engineExit (0x4361d6)
+    const uint8_t* a26Room() const;             // [DAT_00465e9e]: the screen's descriptor
+    void a26ClearButtons();
+    void a26Frame(Game& g, int entry);          // level 20 in FUN_0043628c (0) / FUN_004360e9 (1) / FUN_00435fc0 (2)
 
     Game* game_ = nullptr;
     int level_ = 0;                  // DAT_00466535
@@ -216,6 +241,11 @@ private:
     uint32_t fadeCmd_ = 0;           // DAT_0046b1b0
     uint8_t trgRam_[0x200] = {};     // [DAT_00450510] + 0x1f4 ..
     std::vector<uint32_t> strayReturns_;   // return addresses left on the stack during the object pass
+    // The 2600 level's own globals outside Harry's memory.
+    uint32_t a26Deferred_ = 0;       // DAT_00457408: 1 = waiting for the first input, else the code to run when ...
+    int32_t a26Wait_ = 0;            // DAT_0045740c: ... this countdown runs out
+    int32_t a26End_ = 0;             // DAT_00457410: the game is over; the ticks before a button can leave
+    bool a26Exited_ = false;         // engineExit was taken this tick
 };
 
 // Item handler (type 2, 0x405328) effect table at 0x45a8d4: sprite -> effect.

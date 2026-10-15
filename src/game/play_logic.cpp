@@ -48,6 +48,7 @@ void PlayLogic::enter(Game& g) {
     boss_ = nullptr;
     std::memset(trgRam_, 0, sizeof trgRam_);
     h_.l(0x466535) = level_;
+    if (level_ == kAtari2600Level) { a26Frame(g, 2); return; }   // FUN_00435fc0: 0x401e00
     if (g.warp().fromAtari) h_.b(0x465b39) = 0xff;            // (before the level start: the checkpoint stays)
     levelStart();                                              // FUN_0043256f
     g.warp().fromAtari = g.warp().fromVault = false;           // DAT_004601c4 / DAT_004504cc
@@ -61,6 +62,7 @@ void PlayLogic::restart(Game& g) {
     // FUN_004360e9 ("*3"): the level logic starts again at the checkpoint; the level is not
     // loaded again, so the .als working copy keeps what FUN_00430eb6 left in it.
     game_ = &g;
+    if (g.levelNumber() == kAtari2600Level) { a26Frame(g, 1); return; }   // 0x401f3c
     deathTimer_ = 0;
     restartAtCheckpoint();                                     // FUN_00432615
     g.warp().fromAtari = g.warp().fromVault = false;
@@ -89,7 +91,19 @@ void PlayLogic::levelSetup() {
     h_.w(0x465bae) = int16_t((h_.w(0x4658ac) << 4) - 0x20);         // and in pixels
     h_.w(0x465bb0) = int16_t((h_.w(0x4658ae) << 4) - 0x20);
     h_.w(0x466539) = 0xfa;
-    // FUN_00433116
+    levelVars();                                               // FUN_00433116
+    startPosition();                                           // FUN_004331d8
+    h_.uw(0x465b1b) = 0x6000;
+    h_.setSprite("hyirun");
+    h_.frame() = 1;
+    h_.w(0x465b35) = 0;
+    h_.b(0x465b17) = 0xff;
+    resetObjects();                                            // FUN_00435274
+    h_.b(0x466555) = 0;
+}
+
+void PlayLogic::levelVars() {
+    // FUN_00433116: the sounds stop, the killed-enemy list, the objects and the HUD list start afresh.
     h_.b(0x465b72) = 0;
     h_.w(0x46652b) = 0;
     h_.w(0x46652f) = 0;
@@ -100,19 +114,13 @@ void PlayLogic::levelSetup() {
     h_.b(0x465e64) = 0;
     for (Killed& k : killed_) k = Killed{};                    // 0x465a40 .. 0x465ad8
     h_.uw(0x465e6c) = 0xffff;
+    h_.setUl(0x465e68, 0x465e6c);
     resetObjects();                                            // FUN_00435274
     h_.b(0x466552) = 0;
     h_.b(0x466553) = 0;
     h_.w(0x465b02) = 0;
     hud_.clear();                                              // DAT_00466870 = 0x466874
-    startPosition();                                           // FUN_004331d8
-    h_.uw(0x465b1b) = 0x6000;
-    h_.setSprite("hyirun");
-    h_.frame() = 1;
-    h_.w(0x465b35) = 0;
-    h_.b(0x465b17) = 0xff;
-    resetObjects();                                            // FUN_00435274
-    h_.b(0x466555) = 0;
+    h_.w(0x466874) = 0;
 }
 
 void PlayLogic::startPosition() {
@@ -307,6 +315,7 @@ void PlayLogic::restartBody() {
 void PlayLogic::tick(Game& g) {
     game_ = &g;
     level_ = g.levelNumber();
+    if (level_ == kAtari2600Level) { a26Frame(g, 0); return; }   // 0x436224: FUN_004263f3, 0x4020d1
     FrameState& fs = g.state();
     const bool debug = (fs.joypad & 0x100) != 0;
     readPad();                                             // FUN_004263f3
@@ -762,23 +771,13 @@ void PlayLogic::displayList(Game& g) {
     // last object pass, then Harry (flickering while invulnerable), then the ones in front.
     FrameState& fs = g.state();
     fs.displayList.clear();
-    auto entry = [&](int16_t x, int16_t y, uint8_t frame, uint8_t facing, uint8_t vflip, uint16_t flags, const ph::Sprite* spr) {
-        if (int8_t(frame) < 0 || !spr || fs.displayList.size() >= 0x50) return;
-        engine::SpriteInstance s;
-        s.x = x + 0x10; s.y = y + 0x10 - h_.w(0x465b02); s.sprite = spr;
-        s.frame = uint32_t(frame % std::max(1, spr->frameCount()));
-        s.flags = engine::kSprVisible | (facing ? engine::kSprHFlip : 0u) | (vflip ? engine::kSprVFlip : 0u)
-                | ((flags & 0x8000) ? engine::kSprFront : 0u);
-        fs.displayList.push_back(s);
-    };
     auto objs = [&](size_t from) {
         // the records as they are now (an object freed since keeps its fields), up to the -1;
         // -2 is a cancelled entry
         const auto& d = objects_.displayArray();
         for (size_t k = from; k < d.size() && d[k] != -1; ++k) {
             if (d[k] < 0) continue;
-            const Obj& o = objects_.record(d[k]);
-            entry(o.x, o.y, o.frame, o.facing, o.vflip, o.flags, o.sprite);
+            displayEntry(objects_.record(d[k]));
         }
     };
     objs(0);
@@ -797,9 +796,36 @@ void PlayLogic::displayList(Game& g) {
             if (!neg(h_.w(0x4658a6) - 0x40)) h_.w(0x4658a6) = 0x40;
         }
         if ((h_.spriteIs("hyihang") || c == 0x42dd10 || c == 0x42ddc8) && h_.facing()) x += 3;
-        entry(x, y, h_.frame(), h_.facing(), h_.b(0x465b38), h_.flags(), g.findSprite(h_.sprite()));
+        displayEntry(x, y, h_.frame(), h_.facing(), h_.b(0x465b38), h_.flags(), g.findSprite(h_.sprite()));
     }
     objs(ObjectSystem::kFront);
+}
+
+void PlayLogic::displayEntry(int16_t x, int16_t y, uint8_t frame, uint8_t facing, uint8_t vflip, uint16_t flags, const ph::Sprite* spr) {
+    // FUN_00434eef.  (The entry also carries the type byte, which only the engine's error
+    // message for a bad sprite reads.)
+    FrameState& fs = game_->state();
+    if (int8_t(frame) < 0 || !spr || fs.displayList.size() >= 0x50) return;
+    engine::SpriteInstance s;
+    s.x = x + 0x10; s.y = y + 0x10 - h_.w(0x465b02); s.sprite = spr;
+    s.frame = uint32_t(frame % std::max(1, spr->frameCount()));
+    s.flags = engine::kSprVisible | (facing ? engine::kSprHFlip : 0u) | (vflip ? engine::kSprVFlip : 0u)
+            | ((flags & 0x8000) ? engine::kSprFront : 0u);
+    fs.displayList.push_back(s);
+}
+
+void PlayLogic::digits(int32_t v) {
+    // FUN_00431a3f: each power of ten of the table at 0x46aa18 (100000 .. 1, 0 ending it) is
+    // taken away until the value goes negative; a negative value gives zeros throughout.
+    uint32_t a = 0x466556;
+    for (const uint8_t* p = kData_a26Powers; ; p += 4, ++a) {
+        int32_t pw; std::memcpy(&pw, p, 4);
+        if (pw == 0) break;
+        uint8_t n = 0;
+        do { ++n; v -= pw; } while (v >= 0);
+        h_.b(a) = uint8_t(n - 1);
+        v += pw;
+    }
 }
 
 } // namespace game

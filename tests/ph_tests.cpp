@@ -92,7 +92,7 @@ int main(int argc, char** argv) {
 namespace { int jaguarTest(const std::string& dir); int bungeeTest(const std::string& dir); int stoneTest(const std::string& dir);
             int vortexTest(const std::string& dir); int deathTest(const std::string& dir); int vaultTest(const std::string& dir);
             int stoneJaguarTest(const std::string& dir); int jaguarManTest(const std::string& dir);
-            int warriorSpiritTest(const std::string& dir); }
+            int warriorSpiritTest(const std::string& dir); int atari2600Test(const std::string& dir); }
 namespace {
 int gameplayTests(const std::string& dir) {
     int fails = 0;
@@ -128,6 +128,7 @@ int gameplayTests(const std::string& dir) {
     fails += stoneJaguarTest(dir);
     fails += jaguarManTest(dir);
     fails += warriorSpiritTest(dir);
+    fails += atari2600Test(dir);
     return fails;
 }
 }
@@ -649,6 +650,141 @@ int warriorSpiritTest(const std::string& dir) {
     }
     std::printf("warrior spirit: %zu states, thrown %d; dead: parts gone after %d ticks, letter down at %d, game over at %d\n",
                 states.size(), int(thrown), burstAt, landedAt, endAt);
+    return fails;
+}
+}
+
+// The Atari 2600 level (20).  The attract mode's third demo, recorded on the original, must play
+// as it was recorded: through the vine over the tar pit of screen 2 to the crocodile pond of
+// screen 3, where the input stops 1 px short of the water.  Then scripted runs: the hole over
+// the ladder of screen 0 and the ladder; screen 6's tar pit opening under Harry (a life, and he
+// drops back in); its ring (+4000, gone for good); a crocodile's head (safe while the mouth is
+// shut); the scorpion below screen 3 until the game is over; and a button out of it ("*6", which
+// starts the level again when it was not entered from the Lost City); the clock running out.
+namespace {
+engine::HostInput a26Pad(uint32_t pad) {
+    engine::HostInput in;
+    if (pad & 1) in.keyDown[0x26] = true;
+    if (pad & 2) in.keyDown[0x28] = true;
+    if (pad & 4) in.keyDown[0x25] = true;
+    if (pad & 8) in.keyDown[0x27] = true;
+    if (pad & 0x40) in.keyDown['E'] = true;
+    return in;
+}
+
+int atari2600Test(const std::string& dir) {
+    int fails = 0;
+    auto fail = [&](const char* what) { std::printf("FAIL: 2600: %s\n", what); ++fails; };
+    // --- the attract demo
+    struct Sample { int screen = -1, x = 0, y = 0, score = 0, lives = 0; } last;
+    bool vine = false, flew = false;
+    int demoTicks = 0;
+    {
+        engine::Options opts;
+        game::Game g(dir, opts);
+        engine::HostInput idle;
+        int t = 0;
+        while (!(g.levelNumber() == 20 && g.mode() == game::Mode::Attract) && t < 9000) { g.tick(idle); ++t; }
+        if (g.levelNumber() != 20) { fail("the attract mode never reached the 2600 demo"); return fails; }
+        while (g.levelNumber() == 20 && demoTicks < 3000) {
+            const game::Harry& h = game::g_debugLogic->harry();
+            last = Sample{h.uw(0x465ba8), h.x(), h.y(), h.l(0x466172), h.b(0x465e85)};
+            vine |= h.b(0x465ea4) != 0 && h.uw(0x465ba8) == 2;
+            flew |= h.b(0x465ea5) != 0;
+            g.tick(idle);
+            ++demoTicks;
+        }
+    }
+    if (!vine || !flew) fail("the demo never swung on the vine of screen 2");
+    if (last.screen != 3 || last.x != 343 || last.y != 0x18a || last.score != 1993 || last.lives != 2) {
+        std::printf("FAIL: 2600: the demo ended at screen %d (%d, %d), score %d, lives %d\n", last.screen, last.x, last.y, last.score, last.lives);
+        ++fails;
+    }
+    // --- scripted runs
+    engine::Options opts;
+    game::Game g(dir, opts);
+    g.setMode(game::Mode::Playing);
+    g.startLevel(20);
+    game::PlayLogic* pl = game::g_debugLogic;
+    game::Harry& h = pl->harry();
+    auto objects = [&](uint8_t type) { int n = 0; for (const game::Obj* o : pl->objectSystem().list()) n += o->type == type; return n; };
+    auto run = [&](int ticks, uint32_t pad, auto until) {
+        for (int i = 0; i < ticks; ++i) { if (until()) return i; g.tick(a26Pad(pad)); }
+        return -1;
+    };
+    run(20, 0, [] { return false; });
+    if (h.x() != 0x118 || h.b(0x465e83) != 0 || h.b(0x465e82) != 0x14 || g.state().displayList.empty()) fail("the screen did not wait for the first input");
+    // the hole over the ladder: 100 points, down to the tunnel; up the ladder and off it
+    const int holeAt = run(400, 8, [&] { return h.b(0x465e97) != 0; });
+    if (holeAt < 0 || h.x() != 0x191 || h.l(0x466172) != 1900) { std::printf("FAIL: 2600: no fall into the ladder's hole (x %d, score %d)\n", int(h.x()), int(h.l(0x466172))); ++fails; }
+    run(100, 0, [&] { return h.y() == 0x1c1; });
+    const int climbAt = run(10, 1, [&] { return h.b(0x465e96) != 0; });
+    const int topAt = run(200, 1, [&] { return h.y() == 0x197; });
+    run(10, 8, [&] { return h.b(0x465e96) == 0; });
+    const int groundAt = run(100, 8, [&] { return h.onGround() && h.y() == 0x18a; });
+    const int tripAt = run(300, 8, [&] { return h.b(0x465e87) != 0; });
+    if (climbAt < 0 || topAt < 0 || groundAt < 0 || tripAt < 0 || h.l(0x466172) >= 1900) {
+        std::printf("FAIL: 2600: ladder %d, top %d, off it %d, the log %d (score %d)\n", climbAt, topAt, groundAt, tripAt, int(h.l(0x466172)));
+        ++fails;
+    }
+    // screen 6: in from screen 5; its tar pit opens under Harry
+    h.uw(0x465ba8) = 5; h.x() = 0x21f; h.y() = 0x18a;
+    const int sinkAt = run(400, 8, [&] { return h.b(0x465e8e) != 0; });
+    const int sinkX = h.x();
+    const int backAt = run(400, 0, [&] { return h.b(0x465ea2) != 0; });
+    const int backY = h.y();
+    const int landAt = run(100, 0, [&] { return h.b(0x465ea2) == 0; });
+    if (sinkAt < 0 || h.uw(0x465ba8) != 6 || backAt < 0 || backY != 0x168 + 1 || landAt < 0 || h.y() != 0x18a || h.x() != 0x116 || h.b(0x465e85) != 1) {
+        std::printf("FAIL: 2600: the tar pit (sank %d at x %d, back %d at y %d, landed %d, lives %d)\n", sinkAt, sinkX, backAt, backY, landAt, int(h.b(0x465e85)));
+        ++fails;
+    }
+    // its ring, past the pit
+    h.x() = 0x1e0;
+    const int score0 = h.l(0x466172);
+    const int ringAt = run(100, 8, [&] { return objects(2) == 0; });
+    if (ringAt < 0 || h.l(0x466172) != score0 + 4000 || h.b(0x46617c + 6) != 0xff) { std::printf("FAIL: 2600: the ring (score +%d)\n", int(h.l(0x466172)) - score0); ++fails; }
+    h.x() = 0x10c;                                           // out left and back in: no ring
+    run(10, 4, [&] { return h.uw(0x465ba8) == 5; });
+    run(10, 8, [&] { return h.uw(0x465ba8) == 6; });
+    if (h.uw(0x465ba8) != 6 || objects(2) != 0 || objects(3) != 1) fail("the ring came back");
+    // screen 3: onto the first crocodile while its mouth is shut
+    h.uw(0x465ba8) = 2; h.x() = 0x21f; h.y() = 0x18a;
+    run(200, 8, [&] { return h.uw(0x465ba8) == 3 && h.x() >= 338; });
+    auto croc = [&]() -> const game::Obj* { for (const game::Obj* o : pl->objectSystem().list()) if (o->type == 7) return o; return nullptr; };
+    run(300, 0, [&] { return croc() && croc()->frame == 4; });
+    g.tick(a26Pad(0x48));
+    const int onAt = run(60, 0, [&] { return h.onGround(); });
+    const int onX = h.x();
+    const int drownAt = run(300, 0, [&] { return h.b(0x465e8e) != 0; });
+    if (onAt < 0 || onX != 371 || drownAt < 30 || !croc() || croc()->frame != 3) {
+        std::printf("FAIL: 2600: the crocodile (on at %d, x %d, sank after %d)\n", onAt, onX, drownAt);
+        ++fails;
+    }
+    // the scorpion below screen 3 takes the last life; a button leaves the game over
+    run(400, 0, [&] { return h.b(0x465ea2) != 0; });
+    h.uw(0x465ba8) = 0; h.x() = 0x21f; h.y() = 0x1c1; h.b(0x465ea2) = 0;
+    const int stungAt = run(400, 8, [&] { return h.b(0x465e86) != 0; });
+    const int livesStung = h.b(0x465e85);
+    int exitAt = -1;
+    for (int i = 0; i < 600 && exitAt < 0; ++i) {
+        g.tick(a26Pad(i >= 300 && (i & 1) ? 0x40 : 0));
+        if (game::g_debugLogic != pl) exitAt = i;
+    }
+    if (stungAt < 0 || livesStung != 0 || h.uw(0x465ba8) != 3 || exitAt < 300) {
+        std::printf("FAIL: 2600: the scorpion (stung %d, lives %d, screen %d), out at %d\n", stungAt, livesStung, int(h.uw(0x465ba8)), exitAt);
+        ++fails;
+    }
+    pl = game::g_debugLogic;
+    if (g.levelNumber() != 20 || !pl || pl->harry().b(0x465e85) != 2 || pl->harry().l(0x466172) != 2000) fail("\"*6\" did not start the level again");
+    // the clock: from 0:01 it runs out in a second; the game is over
+    game::Harry& h2 = pl->harry();
+    g.tick(a26Pad(8));
+    h2.b(0x465e82) = 0; h2.b(0x465e83) = 1;
+    int upAt = -1;
+    for (int i = 0; i < 200 && upAt < 0; ++i) { g.tick(a26Pad(0)); if (h2.b(0x465e83) == 0 && h2.b(0x465e85) == 0) upAt = i; }
+    if (upAt < 0 || upAt > 120) { std::printf("FAIL: 2600: the clock did not run out (%d)\n", upAt); ++fails; }
+    std::printf("2600: demo %d ticks, at screen %d x %d score %d; hole at %d, top %d, log %d; pit %d, back %d; ring %d; on the crocodile at x %d for %d; stung %d, out at %d; time up %d\n",
+                demoTicks, last.screen, last.x, last.score, holeAt, topAt, tripAt, sinkAt, backAt, ringAt, onX, drownAt, stungAt, exitAt, upAt);
     return fails;
 }
 }

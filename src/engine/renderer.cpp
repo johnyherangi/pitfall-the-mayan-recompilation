@@ -81,6 +81,24 @@ void Renderer::drawWrappedLayer(const ph::Background& bg, int x, int y, int shif
     }
 }
 
+void Renderer::drawTileStrip(const ph::Background& bg, int col, int row, int cols, int rows, int bufRow) {
+    for (int r = 0; r < rows; ++r) {
+        if (row + r < 0 || row + r >= bg.hTiles || bufRow + r * 8 + 8 > kBufH) continue;
+        uint8_t* dst = fb_.px.data() + size_t(bufRow + r * 8) * kBufW;
+        for (int c = 0; c < cols; ++c, dst += 8) {
+            if (col + c < 0 || col + c >= bg.wTiles) continue;
+            const uint16_t e = bg.tilemap[size_t(row + r) * size_t(bg.wTiles) + size_t(col + c)];
+            const int t = e & 0xfff;
+            if (!(e & 0x1000) && t == 0) continue;            // FUN_00436b2c: a see-through tile 0 is nothing
+            if (t < bg.tileCount()) drawTile(dst, &bg.tiles[size_t(t) * 64], e);
+        }
+    }
+}
+
+void Renderer::clearRows(int bufRow, int rows) {
+    for (int y = bufRow; y < bufRow + rows && y < kBufH; ++y) std::memset(fb_.px.data() + size_t(y) * kBufW, 0, size_t(kViewW));
+}
+
 void Renderer::clearView(int scrollX) {
     uint8_t* dst = fb_.viewBase(scrollX);
     for (int y = 0; y < kViewH; ++y) std::memset(dst + size_t(y) * kBufW, 0, kViewW);

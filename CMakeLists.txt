@@ -69,7 +69,7 @@ add_library(pitfall_game STATIC
     src/game/hud.cpp
     src/game/demo.cpp
     src/game/camera.cpp
-    src/game/play_logic.cpp src/game/scroll.cpp src/game/harry.cpp src/game/harry_states.cpp src/game/harry_stubs.cpp src/game/harry_data.cpp src/game/objects.cpp src/game/handlers.cpp src/game/anim_scripts_data.cpp
+    src/game/play_logic.cpp src/game/scroll.cpp src/game/harry.cpp src/game/harry_states.cpp src/game/harry_stubs.cpp src/game/harry_data.cpp src/game/objects.cpp src/game/handlers.cpp src/game/atari2600.cpp src/game/anim_scripts_data.cpp
 )
 target_include_directories(pitfall_game PUBLIC src)
 target_link_libraries(pitfall_game PUBLIC pitfall_engine)

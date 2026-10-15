@@ -50,6 +50,7 @@ struct FrameState {
     std::vector<int8_t> lineScroll;      // DAT_004513e0 .. (per-line parallax offsets)
     std::vector<engine::SpriteInstance> displayList;   // 0x46aa94 (20-byte entries)
     uint32_t joypad = 0, joypadPrev = 0; // DAT_004517f8 / edge detection
+    int atariScreen = 0;                 // DAT_00465ba8: the 2600 level's screen (FUN_00436fb4 reads it as it draws)
     int frame = 0;                       // DAT_0045190c (ticks since level start)
     int globalFrame = 0;                 // DAT_0046fb74
 };
@@ -165,6 +166,7 @@ private:
     void renderHud();                  // FUN_00442fa0
     void renderTitle();                // FUN_004426e0 title animation
     void renderVault();                // FUN_00443c90's layer order on the Loltun vaults
+    void renderAtari2600();            // FUN_00436fb4 at 0x437078: the 2600 level's screen
 
     uint8_t levelFlags_[32] = {};
     uint8_t rng_[12] = {};             // DAT_00466772: three longs at +0 / +4 / +8 (+6 overlaps them)
@@ -187,7 +189,7 @@ private:
     int levelNo_ = kTitleScreen;
     int pendingLevel_ = -1;
     bool pendingRestart_ = false;
-    int demoIndex_ = 0;                // DAT_0046fbbc
+    int demoIndex_ = -1;               // DAT_0046fbbc (-1 in the data section: the first demo is demo 0)
     int demoPos_ = 0;                  // DAT_0046fb8c (0x800 == not in demo)
     int demoCountdown_ = 1;            // DAT_0046fb98
     uint32_t demoButtons_ = 0;         // DAT_0046fb94
