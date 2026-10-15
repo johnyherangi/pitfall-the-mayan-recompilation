@@ -232,7 +232,7 @@ void Game::startLevel(int level) {
         // a free camera, is left for a level without either; none of the shipped ones.)
         if (level == kTitleScreen) logic_.reset();          // (FUN_00442410 starts no logic on the title)
         else if (!level_->collision.empty() || level == kAtari2600Level || level == kMapScreen || (level >= kIntro && level <= kCredits))
-            logic_ = std::make_unique<PlayLogic>();
+            logic_ = std::make_unique<PlayLogic>(logicMem_);
         else logic_ = std::make_unique<ExplorerLogic>();
     }
     // The level's CD tracks (0x470470 / 0x4704d8; the intro after the demos plays track 5).
@@ -622,8 +622,12 @@ void Game::beginCommand() {
 }
 
 void Game::newGame() {
-    // FUN_004324c6 with the title's set-up: lives, ammo, score and the cross-level state.
+    // FUN_004324c6 with the title's set-up: lives, ammo, score and the cross-level state; in the
+    // logic's memory DAT_00465b39 and Harry's damage, and the cutscenes' script cursor.
     stats_ = PlayerStats{};
+    logicMem_.b(0x465b39) = 0;
+    logicMem_.b(0x465b19) = 0;
+    if (cutData_.size() >= 4) std::memset(cutData_.data(), 0, 4);   // DAT_00456000
     hudAnim_.oneUp = false;                              // DAT_0046fa38
     hudAnim_.prevMeter = 0;                              // DAT_0046b178
     std::memset(levelFlags_, 0, sizeof levelFlags_);

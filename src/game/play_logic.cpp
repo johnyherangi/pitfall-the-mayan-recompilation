@@ -36,7 +36,7 @@ void PlayLogic::enter(Game& g) {
     g_debugLogic = this;
     game_ = &g;
     level_ = g.levelNumber();
-    h_ = Harry{};
+    // (the logic's memory keeps what the last level, or the last game, left in it)
     // [DAT_004504e4]: the .als working copy (0x800 bytes, zero past the data) and the level's
     // own copy after it ([DAT_004504c4], what a lost life restores from).
     const std::vector<uint8_t>& als = g.level().als;

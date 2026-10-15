@@ -26,6 +26,8 @@ constexpr LevelScriptEntry kLevelScript[] = {
 
 class PlayLogic : public LevelLogic {
 public:
+    // mem: the logic's memory (0x465800 .. 0x4668ff), the Game's, kept from level to level.
+    explicit PlayLogic(Harry& mem) : h_(mem) {}
     void enter(Game& g) override;               // FUN_00435fc0 / FUN_0043256f: a level starts
     void tick(Game& g) override;
     void restart(Game& g) override;             // FUN_004360e9 / FUN_00432615: "*3", again at the checkpoint
@@ -258,7 +260,7 @@ private:
 
     Game* game_ = nullptr;
     int level_ = 0;                  // DAT_00466535
-    Harry h_;                        // 0x465800 .. 0x4668ff
+    Harry& h_;                       // 0x465800 .. 0x4668ff (Game::logicMemory)
     ObjectSystem objects_;
     std::vector<int> hud_;           // 0x466874: the records 0x4150a2 listed in the last object pass
     std::vector<uint8_t> alsMem_;    // [DAT_004504e4]: the level's .als data as the spawner works on it (an id is 0 while its object lives, or once collected or killed), then at +0x800 the level's own copy ([DAT_004504c4])

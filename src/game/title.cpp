@@ -72,16 +72,20 @@ void Game::titleTick() {
 
 void Game::titleAmbient() {
     // FUN_00431a67: every 0x80 .. 0xff ticks a jungle sound (0x9b .. 0xa1) on channel 1 when it is
-    // free (FUN_004261e2).  Its count is the logic's word DAT_00465b04, and FUN_004261e2 also stays
-    // quiet while the logic's DAT_00465b72 / DAT_0046652f / DAT_0046652b are set: the title runs
-    // no logic, so the port keeps the count here and plays.
-    if (--titleAmbientWait_ >= 0) return;
-    titleAmbientWait_ = int16_t((random() & 0x7f) + 0x80);
+    // free.  Its count is the logic's word DAT_00465b04, and FUN_004261e2 plays it only while the
+    // logic's DAT_00465b72 (Harry dead), DAT_0046652f (the stop-watch) and DAT_0046652b are clear:
+    // the title runs no logic, so they are what the last level left (after a game over, Harry
+    // dead: the title stays quiet).
+    Harry& m = logicMem_;
+    m.w(0x465b04) -= 1;
+    if (m.w(0x465b04) >= 0) return;
+    m.w(0x465b04) = int16_t((random() & 0x7f) + 0x80);
     for (;;) {
         if (mixer_.channelBusy(1)) return;               // FUN_004261d1
         const uint32_t d0 = random() & 7;
         if (d0 == 7) continue;
-        playChannel(1, int(d0 + 0x9b));
+        // FUN_004261e2 at priority 0: the channel is free, so it plays
+        if (m.b(0x465b72) == 0 && m.w(0x46652f) == 0 && m.w(0x46652b) == 0) playChannel(1, int(d0 + 0x9b));
         return;
     }
 }

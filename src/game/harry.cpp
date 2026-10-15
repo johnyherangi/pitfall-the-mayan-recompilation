@@ -190,8 +190,8 @@ void PlayLogic::padOverrides() {
         return;
     }
     if (lv == 0xe) {
-        // The map screen: Harry walks the way DAT_00465c58 / 59 say after 0x20 ticks; past
-        // x 0x1a6 or before 0x30 he has left it (DAT_00465b72 = 0x7f / 0x7e).
+        // The continue screen: Harry walks the way DAT_00465c58 / 59 say after 0x20 ticks; past
+        // x 0x1a6 ("yes") or before 0x30 ("no") he has left it (DAT_00465b72 = 0x7f / 0x7e).
         if (h_.w(0x465c58) == 0) return;
         if (h_.b(0x465d49) != 0x20) {
             h_.b(0x465d49) += 1;

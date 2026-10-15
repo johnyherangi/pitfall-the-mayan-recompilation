@@ -705,7 +705,7 @@ int warriorSpiritTest(const std::string& dir) {
 
 // The Atari 2600 level (20).  The attract mode's third demo, recorded on the original, must play
 // as it was recorded: through the vine over the tar pit of screen 2 to the crocodile pond of
-// screen 3, where the input stops 1 px short of the water.  Then scripted runs: the hole over
+// screen 3, where the input stops 2 px short of the water.  Then scripted runs: the hole over
 // the ladder of screen 0 and the ladder; screen 6's tar pit opening under Harry (a life, and he
 // drops back in); its ring (+4000, gone for good); a crocodile's head (safe while the mouth is
 // shut); the scorpion below screen 3 until the game is over; and a button out of it ("*6", which
@@ -745,7 +745,9 @@ int atari2600Test(const std::string& dir) {
         }
     }
     if (!vine || !flew) fail("the demo never swung on the vine of screen 2");
-    if (last.screen != 3 || last.x != 343 || last.y != 0x18a || last.score != 1993 || last.lives != 2) {
+    // (The level's start sets only the whole parts of Harry's x and y, 0x401f23: their fractions
+    // are what demo 1 left, which brings him to the pond 1 px earlier than from zero.)
+    if (last.screen != 3 || last.x != 342 || last.y != 0x18a || last.score != 1993 || last.lives != 2) {
         std::printf("FAIL: 2600: the demo ended at screen %d (%d, %d), score %d, lives %d\n", last.screen, last.x, last.y, last.score, last.lives);
         ++fails;
     }

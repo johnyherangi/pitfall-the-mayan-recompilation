@@ -15,6 +15,7 @@
 #include "engine/input.h"
 #include "engine/options.h"
 #include "engine/renderer.h"
+#include "game/harry.h"
 #include "ph/level.h"
 #include "ph/palette.h"
 
@@ -258,6 +259,10 @@ public:
     // 0x456000 .. 0x4569df and 0x4699a4 .. 0x46a859: the cutscenes' scripts, texts and state
     // (game/cutscene.cpp), kept across levels as the original's data section.
     std::vector<uint8_t>& cutsceneData() { return cutData_; }
+    // 0x465800 .. 0x4668ff: the game logic's memory (Harry and the globals around him), zero at
+    // the start as the original's data section and kept from level to level as it keeps it; each
+    // level's logic (PlayLogic) works in it.
+    Harry& logicMemory() { return logicMem_; }
 
 private:
     void computeParallax();            // FUN_00443370 per-level switch
@@ -335,7 +340,6 @@ private:
     bool titleShine_ = false;          // DAT_0046fa3c: the stones' last frame is up
     bool titleSoundA_ = false;         // DAT_0046fa40: the logo's sound 0x25 (later the jaguar's 0x10) played
     bool titleSoundB_ = false;         // DAT_0046fa44: ... 0x29 (later 0x2a)
-    int16_t titleAmbientWait_ = 0;     // DAT_00465b04, which FUN_00431a67 counts down
     uint32_t logicTicks_ = 0;          // DAT_004601d9
     uint32_t lastLandTick_ = 0;        // DAT_004601d5
     uint32_t timerTicks_ = 0;          // DAT_00450fa8: the 17 ms timer's callbacks (FUN_004448c0), paused or not
@@ -405,6 +409,7 @@ private:
     bool specialIdle_ = false;         // DAT_0046d04c: F10 / Alt+Y, Harry's next idle is the special one
     std::string statusText_ = " ";    // FUN_00440bc0's text
     bool hostText_ = false;
+    Harry logicMem_;
     std::vector<HostText> hostTexts_;
     int statusSerial_ = 0;
     uint8_t hatman_ = 0;               // DAT_0046d058

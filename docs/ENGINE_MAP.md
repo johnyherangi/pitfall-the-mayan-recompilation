@@ -160,26 +160,27 @@ the title's start key and attract (`0x44476e`), so the stones' clearing of the s
 
 | address / global | meaning | new home |
 |------------------|---------|----------|
-| `FUN_00435fc0` / `FUN_004360e9` | level logic init / restart (bridge from the engine) | `Game::startLevel` + `PlayLogic::enter` |
+| `0x465800 .. 0x4668ff` | Harry and the logic's globals: never cleared, so what one level leaves the next starts with (a new game, `FUN_004324c6`, clears only `DAT_00465b39`, Harry's damage `0x465b19` and the cutscenes' cursor `DAT_00456000`, with the stats); the title, which runs no logic, reads its countdown and flags for the jungle's sounds | `Game::logicMemory` (`Game::logicMem_`), the `Harry` each level's `PlayLogic` works on |
+| `FUN_00435fc0` / `FUN_004360e9` | level logic init / restart (bridge from the engine) | `Game::startLevel` + `PlayLogic::enter` / `restart` |
 | `FUN_0043628c` | per-tick logic dispatcher | `PlayLogic::tick` |
-| `FUN_004263f3` | joypad → direction/button bytes (`0x466765`, `0x466761`) | `FrameState::joypad` |
+| `FUN_004263f3` | joypad → direction/button bytes (`0x466765`, `0x466761`) | `PlayLogic::readPad` |
 | `FUN_0043256f` / `FUN_004331d8` | level init, start position from the `^` trigger | `PlayLogic::enter` |
 | `FUN_0042571f` / `FUN_00425d6f` | collision probes (`.det`), `FUN_004258a2` / `FUN_00425f88` (`.dt2`) | `ph::probeCell/probeNear` |
-| `FUN_00425455` / `69` / `7d` | Harry ground probes (centre / front foot) | `PlayLogic::probeFeet` |
-| `FUN_00428dfa`, `FUN_0042babc`, `FUN_00426810` | Harry state machine (run, jump, whip, …) | `PlayLogic::step*` (subset) |
-| `FUN_004300e0` | velocity decay helper | `stepHorizontal` |
-| `FUN_004237a5` | animation script interpreter (`0x46166b` run, …) | `PlayLogic::animate` |
+| `FUN_00425455` / `FUN_0042547d` | the floor under Harry / under a probe point (his y set from it) | `PlayLogic::feet` / `feetAt` |
+| `FUN_00426810` | Harry's state machine: the continuation in `DAT_00465b69` (103 of them between 0x426eaa and 0x4311a5: standing `FUN_00428dfa`, running, jumping, the whip `FUN_0042babc`, …) | `PlayLogic::harryUpdate`, `PlayLogic::hNNNNNN` (`harry_states.cpp`) |
+| `FUN_004300e0` | velocity decay helper | `PlayLogic::h4300e0` |
+| `FUN_004237a5` | animation script interpreter (`0x46166b` run, …) | `PlayLogic::hAnim*` (Harry), `anim2Step` (objects) |
 | `FUN_00404714` | the game-logic camera: lead `DAT_004658ba` (-0x44 .. 0x44), look offset `DAT_004658a6`, 1/8 (sideways) and 1/4 (up / down) of the distance a tick capped at 7 px, the locks `DAT_00465b09 / 0b / 0d` (the right one tested before the move), boss and swing leads, the Balankanche ride branch (`DAT_00465c56`) | `PlayLogic::camera` (`game/scroll.cpp`) |
 | `0x404dcb` / `0x404ea2` / `0x404f75` / `0x40503e` | scroll left / right / up / down; crossing into another 16-px cell flags that edge (`DAT_00465894 / 95 / 92 / 93`), the next tick that scrolls the same way without crossing spawns it | `scrollLeft / scrollRight / scrollUp / scrollDown` |
 | `FUN_00403fa0` / `FUN_00404016` / `FUN_00404269` / `FUN_004042fe` | spawn the `.als` column 0x40 px left / 0x160 px right of the camera (rows `camY/16 - 3 < row <= camY/16 + 16`), the row two above / sixteen below its top (29 columns) | `spawnLeftColumn / spawnRightColumn / spawnTopRow / spawnBottomRow` |
 | `FUN_0040454e` | object init from the `.als` template (`0x4678c4`; byte +9 picks the head or the tail of the list); the entry's id is cleared while the object lives | `PlayLogic::spawnEntry`, `ph::kObjectTemplates` |
 | `FUN_00405114` / `FUN_00433d0b` | the level start's 33-column spawn; the ids without templates placed by the level start (rope spawners 0x15 / 0x16, drifting platforms 0xc9, a pushed mine cart where it was left) | `spawnAll / preSpawn` |
 | `[DAT_004504e4]` | the level's `.als` data (4-byte header, a big-endian word per column with the offset of its `(row, id)` pairs, 0xff ending them), worked on in place; past the data the PC keeps Genesis variables (+0x384) | `PlayLogic::alsMem_` (padded to 4 KB), `alsLong / setAlsLong` |
-| `FUN_00435780` / `FUN_00435905` | object pool alloc / free | `std::vector<LevelObject>` |
-| `FUN_00434eef` | object → display-list entry (+0x10, flags 0x40 hflip / 0x80 vflip / 0x20 front) | `PlayLogic::emitSprites` |
-| `FUN_004251f9` | trigger lookup at `(x + 0x20, y)` | `PlayLogic::checkTriggers` |
-| `FUN_00430229` | trigger handlers (`_` exit, plane switch, …) | `checkTriggers` |
-| `FUN_00430a69` | death / respawn, `.als` + `.trg` restore, game over | `Game::loseLife` |
+| `FUN_00435780` / `FUN_00435905` / `FUN_0043598f` | object pool: a record at the list's tail / head, one freed | `ObjectSystem::allocTail` / `allocHead` / `release` |
+| `FUN_00434eef` | object → display-list entry (+0x10, flags 0x40 hflip / 0x80 vflip / 0x20 front) | `PlayLogic::displayEntry` |
+| `FUN_004251f9` | trigger lookup at `(x + 0x20, y)` | `PlayLogic::trg`, `ObjCtx::trigger` |
+| `FUN_00430229` | trigger handlers (`_` exit, plane switch, …) | `PlayLogic::h430229` |
+| `FUN_00430a69` / `FUN_00430eb6` | death / respawn, `.als` + `.trg` restore, game over / a life lost | `PlayLogic::harryDeath` / `h430eb6` |
 | `0x465b0f` / `0x465b13` | Harry x / y | `Harry::x / y` |
 | `0x465ba4` / `0x465ba8` | Harry vx / vy (16.16) | `Harry::vx / vy` |
 | `0x465b70` / `0x465bb3` / `0x465aff` | on ground / collision plane / jump hold | `Harry` fields |
@@ -236,7 +237,7 @@ names.  The tour this gives: 0, 1, 2, 3, 4, 5, 6, 16, 17, 7, 18, 8, 9, 10.
 | `0x431c99` | the set-up: the pegs of up to three paths before, the camera at the path's first point (0x15a / 0x196 to its left / above, kept +0x200 at `0x4661e0` / `0x4661e4` as 16.16), 0x28 ticks to the first step | `PlayLogic::mapSetup` |
 | `FUN_00432038` | a peg every 16 ticks (sounds 9 / 0xa by turns), the camera a sixteenth of the way to it each tick; the buttons count after `DAT_0046a88a` (30) ticks | `PlayLogic::mapTick` |
 | `0x4323b4` | the path's end: the name (`FUN_00431ad5`) rises 3 px a tick to the camera's y + 0xb4; `DAT_004601c0` (180) ticks or a button: `*1` | `PlayLogic::mapArrived` |
-| `FUN_00431a67` | the jungle sounds 0x9b .. 0xa1 every 0x80 .. 0xff ticks on channel 1 | `PlayLogic::mapAmbient` |
+| `FUN_00431a67` | the jungle sounds 0x9b .. 0xa1 every 0x80 .. 0xff ticks on channel 1 (the countdown the logic's `DAT_00465b04`; through `FUN_004261e2`, so none while `DAT_00465b72` / `DAT_0046652f` / `DAT_0046652b` are set — on the title, which runs no logic, as the last level left them: none after a game over) | `PlayLogic::mapAmbient`, `Game::titleAmbient` |
 | `FUN_00431ad5` / `FUN_00431b73` | a string in `ltr_lg` letters (type 2 objects) centred on the screen; the glyph and its width by character | `PlayLogic::mapText`, `mapGlyph` |
 | `FUN_00435174` | the display: Harry, then every object from the tail of the list | `PlayLogic::listAll` |
 
@@ -374,7 +375,7 @@ which `FUN_0043628c` counts down to `*6` (back to the Lost City of Copan).
 | `DAT_00450fc8` / `DAT_004504cc` / `DAT_004601c4` / `DAT_0046d05c` | the level `*7` returns to (1: none, 0xb: back from the 2600 level), "coming out of a vault", "coming out of the 2600 level" (Harry at 0x6e5, 0x587 on level 3), the cheat that sends `*50` to level 24 | `Game::Warp::returnLevel / fromVault / fromAtari / cheat` |
 | `0x466507` / `trg+0x1f4` | boss fight on / the boss record (heart beat script, exit trigger ignored, meter source) | `PlayLogic::setBoss / bossObject / bossActive` |
 | `0x465b09` | camera left lock (the jaguar arena: `0x9fa`) read by `0x404e17` | `PlayLogic::lockCameraLeft` |
-| `0x465d49` + `FUN_0043426d` | boss outro: controls dropped for 0x50 ticks, then `DAT_00466767` (left) held until the exit | `PlayLogic::startBossOutro`, `outroTicks_` |
+| `0x465d49` + `FUN_0043426d` | the pads played for Harry while `DAT_00465d49` counts: the Ceiba Jungle's walk-out after the jaguar (controls dropped for 0x50 ticks, then `DAT_00466767` (left) held until the exit), levels 5, 8 and 10, the continue screen's walk to "yes" or "no", Balankanche's walk to the cart with its GO sign | `PlayLogic::padOverrides`, `startBossOutro` |
 | `0x427167` / `0x427207` | Harry shoved by a boss: 7 px/tick (2 with `DAT_00465b59 = 0xc00`), slowing by `DAT_00465b59` per tick | `PlayLogic::knockBack`, `Harry::knockDecel` |
 | `0x41018c` + `0x4335ce` | boss health meter: three `scoline` digits + `mi_prcnt` at `camX + 0x82`, `camY + 0xde + slide`, `(hp - hits) * 100 / hp` through `FUN_00431a3f` | `h_bossMeter` (type 0x30) |
 | `0x415b92` / `0x415d15` | boss death: score, `fx_deat2` cloud with the pointer script `0x45b323`, then type 0x51 bursts 22 `fx_stone` sparkles | `jaguar::bossDeath`, `h_bossDeathBurst` |
