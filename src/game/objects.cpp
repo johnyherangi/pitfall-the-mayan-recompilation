@@ -28,6 +28,7 @@ bool ObjCtx::sound0(int id, int pri) { return pl.sound0(id, pri); }
 bool ObjCtx::sound1(int id, int pri) { return pl.sound1(id, pri); }
 void ObjCtx::soundNow(int id) { pl.sound1Now(id); }
 bool ObjCtx::channel0Busy() { return g.channelBusy(0); }
+bool ObjCtx::channel1Busy() { return g.channelBusy(1); }
 
 const ph::ColumnTable& ObjCtx::det() const { return lv.collision; }
 const ph::ColumnTable& ObjCtx::dt2() const { return lv.collision2.empty() ? lv.collision : lv.collision2; }
@@ -281,13 +282,23 @@ void ObjectSystem::tick(ObjCtx& ctx) {
 namespace {
 
 // FUN_00423134 control bytes.
+// Harry within the sound range of the object (0x423310: dx -0x80..0x7f, dy from dyMin to 0x7f).
+bool soundRange(ObjCtx& ctx, const Obj& o, int dyMin) {
+    const int16_t dx = int16_t(o.x - ctx.harry.x()), dy = int16_t(o.y - ctx.harry.y());
+    return int16_t(dx + 0x80) >= 0 && int16_t(dx - 0x80) < 0 && int16_t(dy - dyMin) >= 0 && int16_t(dy - 0x80) < 0;
+}
+
 void animControl(ObjCtx& ctx, Obj& o, uint8_t op, const uint8_t* p) {
     switch (op) {
-    case 0xfc: ctx.sound(p[1]); break;                      // FUN_004262d9
-    case 0xfd: ctx.sound(p[1]); break;                      // FUN_004261e2
-    case 0xee: case 0xef: ctx.soundNear(o, p[1]); break;
-    case 0xfb: ctx.rnd(); ctx.sound(p[1]); break;          // FUN_0042633d: the random part only varies the pitch
-    case 0xed: ctx.rnd(); ctx.soundNear(o, p[1]); break;
+    case 0xfe:                                              // stop the channel-1 sound `ev` if it is the last one
+        if (p[1] == ctx.pl.scriptEvent()) { ctx.soundNow(0x89); ctx.pl.scriptEvent() = 0; }
+        break;
+    case 0xfc: ctx.sound0(p[1], p[2]); break;               // FUN_004262d9
+    case 0xfd: ctx.sound1(p[1], p[2]); break;               // FUN_004261e2
+    case 0xee: if (soundRange(ctx, o, -0x60)) ctx.sound0(p[1], p[2]); break;
+    case 0xef: if (soundRange(ctx, o, -0x60)) ctx.sound1(p[1], p[2]); break;
+    case 0xfb: ctx.rnd(); ctx.sound0(p[1], p[5]); break;     // FUN_0042633d: the random part only varies the pitch
+    case 0xed: if (soundRange(ctx, o, -0x80)) { ctx.rnd(); ctx.sound0(p[1], p[5]); } break;
     case 0xf7: o.facing ^= 1; break;
     case 0xf9: o.vflip = 0; break;
     default: break;
@@ -337,11 +348,6 @@ bool animStep(ObjCtx& ctx, Obj& o, AnimCursor& cur, const uint8_t* script, int t
             animPeek(ctx, o, cur, script);
             return true;
         }
-        if (b == 0xfe) {
-            // Level-script event: not ported (the only user is the Loltun vault lever).
-            cur.pos = uint8_t(cur.pos + 2); cur.tick = 0;
-            continue;
-        }
         if (!isAnimControl(b)) { o.frame = b; return false; }   // e.g. 0xff: hidden frame
         animControl(ctx, o, b, script + cur.pos);
         cur.pos = uint8_t(cur.pos + animOpLen(b));
@@ -369,12 +375,21 @@ bool anim2Step(ObjCtx& ctx, Obj& o, const uint8_t* script, int pcOff, int ticksP
         if (b < 0x80) { o.frame = b; return false; }
         switch (b) {
         case 0xf0: return true;
-        case 0xfc: case 0xfd: ctx.sound(p[1]); pc += 3; break;
-        case 0xfb: ctx.rnd(); ctx.sound(p[1]); pc += 6; break;
-        case 0xed: ctx.rnd(); ctx.soundNear(o, p[1]); pc += 6; break;
+        case 0xfc:                                             // FUN_004262d9 (0xb9 with the big stones: 0x17)
+            if (p[1] == 0xb9 && ctx.harry.b(0x4667af)) ctx.sound0(0x17, 0x1d);
+            else ctx.sound0(p[1], p[2]);
+            pc += 3; break;
+        case 0xfd: ctx.sound1(p[1], p[2]); pc += 3; break;     // FUN_004261e2
+        case 0xfb: ctx.rnd(); ctx.sound0(p[1], p[5]); pc += 6; break;   // FUN_0042633d
+        case 0xed: if (soundRange(ctx, o, -0x60)) { ctx.rnd(); ctx.sound0(p[1], p[5]); } pc += 6; break;
+        // (the original also swaps the joypad's left / right bytes while a left-facing object's
+        // script runs; they are swapped back before it returns, so nothing comes of it here)
         case 0xf7: o.facing = o.facing ? 0 : 0xff; pc += 1; break;
         case 0xf9: o.vflip ^= 1; pc += 1; break;
-        case 0xf8: return false;                               // waits for DAT_00465b96 (Harry only)
+        case 0xf8:                                             // waits for DAT_00465b96
+            if (ctx.harry.b(0x465b96) == 0) return false;
+            ctx.harry.b(0x465b96) = 0;
+            pc += 1; break;
         case 0xf3: { int32_t t; std::memcpy(&t, p + 1, 4); pc = t; break; }   // jump (relocated to an offset)
         case 0xf1: {                                           // set sprite (relocated to a name index)
             int32_t idx; std::memcpy(&idx, p + 1, 4);
@@ -480,6 +495,26 @@ bool weaponHits(ObjCtx& ctx, Obj& o, int hitPoints, bool* killed) {
     ctx.sound0(0x19, 9);                                        // FUN_0042633d(0x19, 0x60)
     o.hits = uint8_t(o.hits + (ctx.hard ? 9 : 0xa));
     return killTest();
+}
+
+bool deflectStones(ObjCtx& ctx, Obj& o) {
+    // 0x42401c: a sling stone in flight (not the big stone, not one that bounced already, b6a)
+    // that touches the object bounces back at a random angle.
+    Harry& h = ctx.harry;
+    for (uint32_t a = 0x466808; a <= 0x466818; a += 4) {
+        Obj* st = ctx.pl.objAt(h.ul(a));
+        if (!st || st->type == 4 || st->b(0x6a) != 0 || !ctx.boxesOverlap(*st, o)) continue;
+        ctx.sound1(0xce, 0xc);
+        st->l(0x32) = st->l(0x32) >> 1;
+        st->l(0x32) += int32_t(ctx.rnd() & 0xffff) - 0x7fff;
+        st->l(0x36) = st->l(0x36) >> 2;
+        st->l(0x36) += int32_t(ctx.rnd() & 0x3ffff) - 0x24000;
+        st->l(0x32) = -st->l(0x32);
+        st->l(0x4a) = 0x6000;
+        st->b(0x6a) = 0xff;
+        return true;
+    }
+    return false;
 }
 
 bool webHit(ObjCtx& ctx, Obj& o, bool* cut) {

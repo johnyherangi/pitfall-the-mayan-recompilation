@@ -197,6 +197,16 @@ void PlayLogic::tick(Game& g) {
     if (h_.damage() >= limit && h_.cont() != 0x428dce && h_.cont() != 0x428cdb) h_.b(0x465b72) = 0xff;
     g.stats().damage = h_.damage();
     g.stats().harryDead = h_.b(0x465b72) != 0;
+    // 0x436435: the stats for the HUD: 50 treasures make a continue (max 9), ammo stops at 99
+    PlayerStats& st = g.stats();
+    while ((st.treasures & 0xff) >= 0x32) {
+        st.treasures = uint8_t(st.treasures - 0x32);
+        st.continues += 1;
+        if (st.continues >= 0xa) st.continues = 9;
+        sound1Now(0x22);
+    }
+    if (st.lives > 0xa) st.lives = 0xa;                    // (the original also turns 0 into 10; 0 is handled at the death)
+    for (int& a : st.ammoCount) if ((a & 0xff) >= 0x64) a = 0x63;
     ++tickCount_;                                          // DAT_004601d9
 }
 
@@ -403,42 +413,6 @@ void PlayLogic::standOn(int y, bool flagFirst) {
 
 void PlayLogic::carryHarry(int32_t vx16) { addX(vx16); }
 
-void PlayLogic::launch(int32_t vx, int32_t vy) {
-    // 0x415a41: state 0x42c518 with the given velocity.
-    h_.onGround() = 0;
-    h_.vx() = vx; h_.vy() = vy;
-    h_.w(0x465b47) = 0;
-    h_.setCont(0x42c518);
-}
-
-void PlayLogic::knockBack(bool toLeft, bool strong) {
-    h_.b(0x465b55) = toLeft ? 0 : 0xff;
-    if (strong) h427167(); else h42715b();
-}
-
-void PlayLogic::sink(int y) { h_.y() = int16_t(y); h42a325(); }
-
-void PlayLogic::trip() {
-    // 0x41aaa0: FUN_0042e9b2 with the stumbling script
-    if (h_.cont() != 0x42e297 && h_.cont() != 0x42ea8b) return;
-    h_.setUl(0x465b4b, 0x46168e);
-    h_.w(0x465b4f) = 0;
-}
-
-void PlayLogic::somersault(int32_t vy) {
-    // 0x417c93
-    h_.onGround() = 0;
-    h_.vy() = vy;
-    h_.setSprite("hyisomr2");
-    h_.frame() = 0;
-    h_.w(0x465b47) = 0;
-    h_.setCont(0x42cdb6);
-}
-
-bool PlayLogic::running() const {
-    return h_.ul(0x465ba0) == spriteSlotOf("hyirun") && !(h_.w(0x465b9a) < 0x14);
-}
-
 void PlayLogic::pullLever(Obj& lever) {
     // 0x40c45e: Harry takes the lever (a6) and pulls (state 0x42a6e7)
     h_.setUl(0x465b41, addrOf(&lever));
@@ -532,7 +506,7 @@ void PlayLogic::runObjects(Game& g) {
     h_.b(0x4658c3) = 0;        // 0x4051ab: trigger id 3 (a wall for Harry on the ground) never stops objects
     ObjCtx ctx{g, *this, g.level(), h_};
     ctx.levelNo = level_;
-    ctx.camX = fs.scrollX; ctx.camY = fs.scrollY;
+    ctx.camX = h_.w(0x4658b4); ctx.camY = h_.w(0x4658b6);   // DAT_004658b4 / b6
     ctx.pad = fs.joypad;
     ctx.padPressed = fs.joypad & ~fs.joypadPrev;
     ctx.hard = g.stats().difficulty != 0;

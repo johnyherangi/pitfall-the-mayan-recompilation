@@ -118,6 +118,7 @@ struct ObjCtx {
     bool sound1(int id, int pri);                      // FUN_004261e2: channel 1 by priority
     void soundNow(int id);                             // FUN_004261b0: channel 1, no priority test
     bool channel0Busy();                               // FUN_004262c8
+    bool channel1Busy();                               // FUN_004261d1
     void hurtHarry(int amount);                        // FUN_00428233
     bool touchesHarry(Obj& o);                         // FUN_00424af1 with a5 = Harry
     bool boxesOverlap(const Obj& a, const Obj& b);     // FUN_00424af1
@@ -199,6 +200,8 @@ bool anim2Step(ObjCtx& ctx, Obj& o, const uint8_t* script, int pcOff, int ticksP
 // 0x424171: hits from Harry's stones, the boomerang or the whip accumulate in o.hits;
 // returns d1 (something hit this tick), *killed = d0 (hits + 1 > hitPoints; the callers' je).
 bool weaponHits(ObjCtx& ctx, Obj& o, int hitPoints, bool* killed);
+// 0x42401c: Harry's sling stones bounce off the object (the bosses while they cannot be hurt).
+bool deflectStones(ObjCtx& ctx, Obj& o);
 // 0x424733: the webs' reaction to the whip and to stones (see h_web / h_verticalWeb).
 bool webHit(ObjCtx& ctx, Obj& o, bool* cut);
 // 0x433725: a sparkle burst in one of two patterns (chosen at random).

@@ -71,41 +71,61 @@ void h_deathCloud(ObjCtx& ctx, Obj& o) {
 
 // ---------------------------------------------------------------- items
 
-const PickupEffect* pickupFor(const Obj& o) {
-    if (!o.sprite) return nullptr;
-    for (const PickupEffect& e : kPickupEffects)
-        if (o.sprite->name() == e.sprite) return &e;
-    return nullptr;
-}
-
-void applyPickup(ObjCtx& ctx, Obj& o, const PickupEffect& fx) {
-    // 0x4057c9 dispatch through the 0x45a8d4 table.
+// 0x4057c9: the effect of a pickup, by its sprite (and for some its frame 0) through the table
+// at 0x45a8d4.
+void applyPickup(ObjCtx& ctx, Obj& o) {
     PlayerStats& st = ctx.g.stats();
-    st.score += fx.score;
-    if (fx.treasure) {
-        st.treasures += fx.treasure;
-        while (st.treasures >= 50) { st.treasures -= 50; st.continues = std::min(9, st.continues + 1); ctx.sound(0x22); }
+    if (!o.sprite) return;
+    const std::string& n = o.sprite->name();
+    auto treasure = [&](int score, int add, int snd) {   // 0x40588c ..: DAT_00466526 counts towards a continue
+        st.score += score;
+        st.treasures = uint8_t(st.treasures + add);
+        ctx.sound1(snd, 9);
+    };
+    if (n == "mi_stone") {                              // 0x40598d
+        st.ammoCount[2] = uint8_t(st.ammoCount[2] + 2); st.score += 600; ctx.sound1(0x4b, 9);
+    } else if (n == "fxrbmrot") {                       // 0x4059b8
+        st.ammoCount[1] = uint8_t(st.ammoCount[1] + 1); st.score += 500; ctx.sound0(0x35, 7);
+    } else if (n == "mi_pouc2") {                       // 0x405a22
+        ctx.sound1(0xfc, 0xa); st.score += 50;
+        st.ammoCount[0] = uint8_t(st.ammoCount[0] + (st.difficulty == 1 ? 8 : 10));
+    } else if (n == "fx_hrtbt") {                       // 0x405935: heals 0x28
+        ctx.sound1(0xfb, 9); st.score += 500;
+        Harry& h = ctx.harry;
+        if (h.damage() != 0) h.damage() = int16_t(h.damage() - 0x28) < 0 ? 0 : uint8_t(h.damage() - 0x28);
+    } else if (n == "mi_ptfal") {                       // 0x405838: a letter of P-I-T-F-A-L-L
+        st.score += 10000;
+        int16_t bit = 1;
+        while (true) { o.frame = uint8_t(o.frame - 1); if (int8_t(o.frame) < 0) break; bit = int16_t(bit + bit); }
+        st.letters = uint8_t(st.letters + uint8_t(bit));
+        ctx.sound1(0x24, 9);
+    } else if (o.frame == 0) {
+        if (n == "mi_chili") { ctx.harry.w(0x46652b) = 0x380; st.score += 600; ctx.sound1(0xfe, 0xc); }   // 0x405a5b
+        else if (n == "mi_time") {                      // 0x405a88: the stop-watch
+            ctx.harry.w(0x46652f) = 0x300; st.score += 750; ctx.harry.b(0x465897) = 0;   // (and DAT_00450500 = 1)
+        } else if (n == "mi_1up") { ctx.sound0(0x33, 0x14); st.lives += 1; st.score += 2000; }   // 0x4059ed
+        else if (n == "mi_gold") treasure(500, 5, 0xfe);
+        else if (n == "mi_silvr") treasure(200, 2, 0xfe);
+        else if (n == "mi_ring") treasure(1000, 10, 0xfe);
+        else if (n == "mi_coin") treasure(100, 1, 0xfd);
     }
-    if (fx.ammoSlot >= 0) st.ammoCount[fx.ammoSlot] = std::min(99, st.ammoCount[fx.ammoSlot] + fx.ammo);
-    if (fx.heal) ctx.pl.healHarry();
-    if (fx.chili) ctx.pl.startChili();
-    if (fx.letter) st.letters |= 1 << (o.frame & 7);
-    if (fx.sound) ctx.sound(fx.sound);
 }
 
 void spawnItemSparkle(ObjCtx& ctx, Obj& o, const int16_t* off, bool big) {
-    // 0x405442 / 0x41d8d6: an fx_sprk2 at the item's sparkle point.
-    if (Obj* e = ctx.spawn()) {
-        e->x = int16_t(o.x + off[0]); e->y = int16_t(o.y + off[1]);
-        e->type = 0x10; e->flags = 0x6000; e->b(0x64) = big ? 0xff : 0;
+    // 0x405442 / 0x41d8d6: an fx_sprk2 at the item's sparkle point (FUN_004356bc(1)).
+    if (Obj* e = ctx.spawnFrom(o)) {
+        e->w(0x26) = 0x6663;
+        e->x = int16_t(e->x + off[0]); e->y = int16_t(e->y + off[1]);
+        e->type = 0x10; e->flags = 0x6000; if (big) e->b(0x64) = 0xff;
         e->sprite = ctx.spr("fx_sprk2");
     }
 }
 
+void h_oneUpFly(ObjCtx& ctx, Obj& o);
+
 // 0x405328: type 2, the pickups (treasure, hearts, ammo, chili, letters, 1-ups).
 void h_item(ObjCtx& ctx, Obj& o) {
-    if (!o.sprite) { ctx.release(o); return; }
-    const std::string& n = o.sprite->name();
+    const std::string n = o.sprite ? o.sprite->name() : std::string();
     // Occasional sparkle (every 0x20..0x9f ticks, not on the first timeout).
     o.w(0x5e) -= 1;
     if (o.w(0x5e) < 0) {
@@ -132,17 +152,22 @@ void h_item(ObjCtx& ctx, Obj& o) {
     } else if (n == "fx_hrtbt") {
         animStep(ctx, o, o.anim(0x42), ctx.boss ? kAnim_heartBoss : kAnim_heart, 6);   // 0x405589: faster beat during a boss fight
     } else {
-        o.b(0x2b) += 1;
-        if (o.b(0x2b) == 0x1e) { o.b(0x2b) = 0; o.b(0x2a) = 0xff; }
+        halfMinuteTick(o);                              // 0x4057b0
         if (o.b(0x50) == 0) {
             o.b(0x50) = 0xff;
-            if (n == "mi_ptfal" && (ctx.g.stats().letters & (1 << (o.frame & 7)))) { ctx.release(o); return; }
+            if (n == "mi_ptfal") {
+                int16_t bit = 1;
+                for (int8_t f = int8_t(o.frame); --f >= 0;) bit = int16_t(bit + bit);
+                if (ctx.g.stats().letters & uint8_t(bit)) { ctx.release(o); return; }   // that letter is had
+            }
             if (n != "mi_ring") {
                 // Settle on the floor of either collision plane.
                 int y = o.y + 0x10;
-                if (ctx.floorSnap(o.x, y)) o.y = int16_t(y - 0x10);
+                ctx.floorSnap(o.x, y);
+                o.y = int16_t(y - 0x10);
                 y = o.y + 0x10;
-                if (ctx.floorSnap(o.x, y, true)) o.y = int16_t(y - 0x10);
+                ctx.floorSnap(o.x, y, true);
+                o.y = int16_t(y - 0x10);
             }
         }
     }
@@ -153,23 +178,28 @@ void h_item(ObjCtx& ctx, Obj& o) {
             // The icon flies to the HUD (type 0xaa) and awards the life on arrival.
             o.type = 0xaa; o.b(0x32) = 0;
             ctx.g.stats().score += 2000;
-            ctx.rnd(); ctx.sound(0x33);
+            ctx.sound0(0x33, 0xa);                    // FUN_0042633d(0x33, 0x60)
             o.flags = uint16_t((o.flags & 0x7000) + 0x8000);
             o.behind = 0xff;
+            h_oneUpFly(ctx, o);                       // 0x41fd26 in the same tick
             return;
         }
-        if (const PickupEffect* fx = pickupFor(o)) applyPickup(ctx, o, *fx);
+        applyPickup(ctx, o);
         ctx.pl.markCollected(o);
         o.y -= 3;
         ctx.sparkleBurst(o, ctx.levelNo == 7 ? kSparkleOffsetsC : kSparkleOffsetsB);   // 0x433706
-        ctx.release(o);
+        ctx.release(o);                               // (its display entry was cancelled first, 0x40572f)
         return;
     }
-    if (o.b(0x6a) == 0) exitDespawnFar(ctx, o);
-    else {
-        // Dropped by a pouch: only vanish far away, then put the pouch's entry back.
-        const int dx = o.x - ctx.camX, dy = o.y - ctx.camY;
-        if (dx < -0x1ea || dx >= 0x32a || dy < -0x1ae || dy >= 0x28a) { ctx.pl.restoreEntry(o); ctx.release(o); }
+    if (o.b(0x6a) == 0) {
+        if (ctx.harry.b(0x465c56)) exitDespawnWide(ctx, o);
+        else exitDespawnFar(ctx, o);
+    } else {
+        // Dropped by a pouch: only vanish far away (0x42517c), then put the pouch's entry back.
+        const int16_t dx = int16_t(o.x - ctx.camX), dy = int16_t(o.y - ctx.camY);
+        if (int16_t(dx + 0x1ea) < 0 || int16_t(dx - 0x32a) >= 0 || int16_t(dy + 0x1ae) < 0 || int16_t(dy - 0x28a) >= 0) {
+            ctx.pl.restoreEntry(o); ctx.release(o);
+        }
     }
 }
 
@@ -197,7 +227,7 @@ void h_hidden1up(ObjCtx& ctx, Obj& o) {
         if (o.w(0x32) >= 0x258) {
             o.w(0x32) = 0;
             o.type = 2; o.b(0x6a) = 0xff; o.frame = 0;   // kept far from the view, like a pouch's drop
-            ctx.sound(0xed);                               // FUN_004261e2, priority 0x14
+            ctx.sound1(0xed, 0x14);                        // FUN_004261e2
             o.y -= 10; ctx.sparkleBurst(o, kSparkleOffsetsA); o.y += 10;   // 0x4336fa
             ctx.g.stats().secret1up = true;
         }
@@ -225,7 +255,7 @@ void h_leanLever(ObjCtx& ctx, Obj& o) {
         if (!u) { exitDespawnFar(ctx, o); return; }
         u->x += 0x58; u->y += 0xb;
         u->y -= 10; ctx.sparkleBurst(*u, kSparkleOffsetsA); u->y += 10;
-        ctx.sound(0xed);                                   // FUN_004261e2, priority 0x14
+        ctx.sound1(0xed, 0x14);                            // FUN_004261e2
         return;
     }
     if (ctx.harry.spriteIs("hyilean") && int16_t(ctx.harry.x() - o.x) >= 0) {
@@ -246,8 +276,8 @@ void h_coin(ObjCtx& ctx, Obj& o) {
     if (ctx.touchesHarry(o)) {
         PlayerStats& st = ctx.g.stats();
         st.score += 100;
-        if (++st.treasures >= 50) { st.treasures -= 50; st.continues = std::min(9, st.continues + 1); ctx.sound(0x22); }
-        ctx.sound(0xfd);
+        st.treasures = uint8_t(st.treasures + 1);     // (50 make a continue at the end of the tick)
+        ctx.sound1(0xfd, 9);
         ctx.pl.markCollected(o);
         o.y -= 3;
         ctx.sparkleBurst(o, ctx.levelNo == 7 ? kSparkleOffsetsC : kSparkleOffsetsB);
@@ -271,7 +301,7 @@ void h_heart(ObjCtx& ctx, Obj& o) {
         }
     }
     if (ctx.touchesHarry(o)) {
-        ctx.sound(0xfb);
+        ctx.sound0(0xfb, 0xe);                        // FUN_0042633d(0xfb, 0x40)
         ctx.g.stats().score += 500;
         ctx.pl.healHarry();
         ctx.pl.markCollected(o);
@@ -297,7 +327,7 @@ void h_hangingPouch(ObjCtx& ctx, Obj& o) {
         o.type = 2;                           // becomes an ordinary pickup
         o.w(0x68) = 8;
         o.b(0x6a) = 0xff;
-        ctx.sound(0x5b);
+        ctx.sound1(0x5b, 9);
         return;
     }
     if (o.b(0x6c) == 0) {
@@ -331,7 +361,7 @@ void h_oneUpFly(ObjCtx& ctx, Obj& o) {
     o.w(0x50) -= 1;
     if (o.w(0x50) < 0) {
         PlayerStats& st = ctx.g.stats();
-        st.lives = std::min(10, st.lives + 1);
+        st.lives += 1;                                // (capped at 10 at the end of the tick)
         st.score += 5000;
         ctx.pl.markCollected(o);
         ctx.release(o);
@@ -471,7 +501,7 @@ void h_snake(ObjCtx& ctx, Obj& o) {
 void monkeyChatter(ObjCtx& ctx, Obj& o) {
     if (o.w(0x5a) == 0) o.w(0x5a) = int16_t((ctx.rnd() & 0x7f) + 0xa0);
     o.w(0x5a) -= 1;
-    if (o.w(0x5a) == 0) ctx.sound((ctx.rnd() & 0x80) ? 0xbd : 0x43);
+    if (o.w(0x5a) == 0) ctx.sound1((ctx.rnd() & 0x80) ? 0xbd : 0x43, 4);
 }
 
 void monkeyThrowCactus(ObjCtx& ctx, Obj& o) {
@@ -587,7 +617,7 @@ void h_monkey(ObjCtx& ctx, Obj& o) {
         o.w(0x64) = int16_t((ctx.rnd() & 0x3f) + 8);
         o.script = kAnim2_monkeyToss; o.l(0x3e) = 0; o.b(0x42) = 0;
         o.b(0x5e) = 0;
-        if (dy >= 0x48) { o.b(0x5e) = 0xff; ctx.sound((ctx.rnd() & 0x80) ? 0x12 : 0x2b); }
+        if (dy >= 0x48) { o.b(0x5e) = 0xff; ctx.sound1((ctx.rnd() & 0x80) ? 0x12 : 0x2b, 4); }
     }
     exitDespawnWide(ctx, o);
 }
@@ -1459,7 +1489,7 @@ void h_checkpoint(ObjCtx& ctx, Obj& o) {
     }
     animStep(ctx, o, o.anim(0x40), kAnim_marker, 4);
     if (ctx.harry.onGround() && ctx.touchesHarry(o)) {
-        ctx.sound(0xeb);
+        ctx.sound0(0xeb, 0x12);                       // FUN_004262d9
         Game::Checkpoint& cp = ctx.g.checkpoint();
         cp.valid = true;
         cp.x = o.x + 4 + 0x18 - (o.facing == 0 ? 0x30 : 0);
@@ -1492,10 +1522,16 @@ void h_vineMonkey(ObjCtx& ctx, Obj& o) {
     bool killed = false;
     if (weaponHits(ctx, o, 10, &killed) && killed) { killObject(ctx, o); return; }
     if (ctx.freeze) { freezeSparkle(ctx, o); return; }
-    harryContact(ctx, o, 10);
+    if (harryContact(ctx, o, 10)) {                    // 0x414e00: knocked down off his vine or rope
+        Harry& h = ctx.harry;
+        h.setCont(0x42f88c);
+        h.w(0x465b47) = 0;
+        h.b(0x465b77) = 0x1e;
+        h.w(0x4658bc) = h.x();
+    }
     if (o.b(0x36) == 0) {
         o.b(0x36) = 0xff;
-        if (ctx.harry.x() - o.x >= 0) { o.x -= 1; o.facing = 0xff; }
+        if (int16_t(ctx.harry.x() - o.x) >= 0) { o.x -= 1; o.facing = 0xff; }
     }
     bool animate = true;
     if (o.frame == 6) {
@@ -1508,8 +1544,10 @@ void h_vineMonkey(ObjCtx& ctx, Obj& o) {
     if (animate) animStep(ctx, o, o.anim(0x32), kAnim_vineMonkey, 4);
     if (o.anim(0x32).tick == 0 && o.anim(0x32).pos == 0xb) {
         // Release the cactus at the top of the swing.
-        if (Obj* c = ctx.spawn()) {
-            c->x = int16_t(o.x + 0x14); c->y = int16_t(o.y + 0xb);
+        if (Obj* c = ctx.spawnFrom(o)) {                     // FUN_004356bc(1)
+            c->w(0x26) = 0x6663;
+            c->x = int16_t(o.x + 0x14);
+            c->y = int16_t(c->y + 0xb); c->y = o.y;          // (sic: the + 0xb is overwritten)
             c->sprite = ctx.spr("obrcactu");
             c->behind = 0xff; c->frame = 0; c->b(0x5a) = 0xc; c->type = 0x1d; c->b(0x46) = 0xff;
             o.w(0x60) = int16_t((ctx.rnd() & 0x1f) + 0x10);
@@ -1651,7 +1689,7 @@ void h_explodingPlant(ObjCtx& ctx, Obj& o) {
     }
     if (checkBurst && o.anim(0x34).tick == 0 && o.anim(0x34).pos == 0xd) {
         // Fully open: spikes fly out in six directions.
-        ctx.sound(0x40);
+        ctx.sound1(0x40, 8);
         for (const SpikeShot& sp : kPlantSpikes) {
             Obj* k = ctx.spawn();
             if (!k) break;
@@ -1786,11 +1824,22 @@ void h_climbingRat(ObjCtx& ctx, Obj& o) {
         o.x -= 0x14;
         if (o.frame == 0xfe) { o.l(0x3c) = 0x11000; o.vflip = 1; }
         else o.l(0x3c) = -0x11000;
-        if (o.frame >= 0xfe) o.frame = 0;
     }
     bool killed = false;
-    if (weaponHits(ctx, o, 9, &killed) && killed) { killObject(ctx, o); return; }
-    if (ctx.touchesHarry(o)) ctx.hurtHarry(10);
+    weaponHits(ctx, o, 9, &killed);
+    if (killed) { killObject(ctx, o); return; }
+    if (ctx.touchesHarry(o)) {                         // 0x414b0f: every tick
+        ctx.hurtHarry(10);
+        Harry& h = ctx.harry;
+        const uint32_t c = h.cont();
+        if (c == 0x42d781 || c == 0x42cc7a || c == 0x42de4f || c == 0x42dd7e) {
+            // on a rope or a vine: knocked off it
+            h.setCont(0x42f88c);
+            h.w(0x465b47) = 0;
+            h.b(0x465b77) = 0x1e;
+            h.w(0x4658bc) = h.x();
+        }
+    }
     animStep(ctx, o, o.anim(0x40), kAnim_turn4, 4);
     moveY(o, o.l(0x3c));
     uint8_t id = 0;
@@ -1857,7 +1906,7 @@ void h_ceilingDripper(ObjCtx& ctx, Obj& o) {
     o.w(0x32) -= 1;
     if (o.w(0x32) == 0) {
         if (Obj* r = ctx.spawn()) {
-            ctx.sound((ctx.rnd() & 0x80) ? 0x29 : 0x2c);
+            ctx.sound0((ctx.rnd() & 0x80) ? 0x29 : 0x2c, 3);   // FUN_0042633d
             r->type = 0x96; r->x = o.x; r->y = int16_t(o.y - 8);
             r->sprite = ctx.spr("ob_ceil"); r->frame = 0; r->flags = 0;
             r->x = int16_t(r->x + int(ctx.rnd() & 0x3f) - 0x20);
@@ -2043,11 +2092,17 @@ void h_pit(ObjCtx& ctx, Obj& o) {
 
 // ---------------------------------------------------------------- thrown things (type 0x1d, 0x40d3b0)
 
+void projectileSound(ObjCtx& ctx, Obj& o) {
+    // 0x40d6b7: the crack of a thrown thing (in level 10 its own; a bone only on a free channel)
+    if (ctx.levelNo == 10) { ctx.sound0(0x50, 0xb); return; }      // FUN_0042633d(0x50, 0x60)
+    if (o.sprite && o.sprite->name() == "skzbone" && !ctx.channel1Busy()) ctx.sound1(0x8c, 4);
+}
+
 void projectileShatter(ObjCtx& ctx, Obj& o) {
-    // 0x40d676
-    if (o.sprite && o.sprite->name() == "skzbone") ctx.sound(0x8c);
-    ctx.spawnEffect(o, ctx.spr("fx_stone"), kAnim_turn7, 3);
+    // 0x40d676: freed, then the stone puff from its record (FUN_004356bc hands the same one back)
     ctx.release(o);
+    projectileSound(ctx, o);
+    ctx.spawnEffect(o, ctx.spr("fx_stone"), kAnim_turn7, 3);       // 0x433914, script 0x4619c7
 }
 
 void h_projectile(ObjCtx& ctx, Obj& o) {
@@ -2055,14 +2110,15 @@ void h_projectile(ObjCtx& ctx, Obj& o) {
     if (o.script) {
         anim2Step(ctx, o, 0x50, 3);
         bool killed = false;
-        if (weaponHits(ctx, o, 0, &killed)) { ctx.sound(0xcd); projectileShatter(ctx, o); return; }
+        weaponHits(ctx, o, 0, &killed);
+        if (killed) { ctx.sound1(0xcd, 9); projectileShatter(ctx, o); return; }
     }
     uint8_t id = 0;
     ctx.triggerClass(o.x, o.y, &id);
     if (id == 0xd0) {                         // into water: becomes a splash drip
         o.sprite = ctx.spr("fx_drip1"); o.flags = 0xa000; o.behind = 0xff;
         o.w(0x40) = 1; o.type = 0x53;
-        ctx.sound(0xbb);
+        ctx.sound1(0xbb, 5);
         return;
     }
     if (o.b(0x68) == 0 && harryContactNow(ctx, o, 0xe)) {
@@ -2105,7 +2161,7 @@ void h_drip(ObjCtx& ctx, Obj& o) {
             moveY(o, 0x5000);
             o.b(0x5a) += 1;
             if (o.b(0x5a) == 0x12) o.frame = 1;
-            if (int8_t(o.b(0x5a)) < 0x10) { exitDespawnFar(ctx, o); return; }
+            if (int8_t(o.b(0x5a) - 0x10) < 0) { exitDespawnFar(ctx, o); return; }
         }
         if (o.w(0x38) != 6) o.l(0x36) += 0x3800;
         moveY(o, o.l(0x36));
@@ -2116,7 +2172,7 @@ void h_drip(ObjCtx& ctx, Obj& o) {
         if (!hit) { y = o.y - 6; hit = ctx.floorSnap(o.x, y, true); }
         if (!hit) { exitDespawnFar(ctx, o); return; }
         o.w(0x40) = 0x100;                                               // the splash from its first frame
-        ctx.sound(0xbb);
+        ctx.sound1(0xbb, 3);
     }
     if (animStep(ctx, o, o.anim(0x40), kAnim_splash, 3)) { ctx.release(o); return; }
     exitDespawnFar(ctx, o);
@@ -2235,7 +2291,7 @@ void h_door(ObjCtx& ctx, Obj& o) {
     }
     if (o.w(0x34)) {
         if (o.b(0x67)) {
-            if (o.w(0x34) == 0x40) { ctx.rnd(); ctx.sound(0x16); }
+            if (o.w(0x34) == 0x40) ctx.sound0(0x16, 0x40);   // FUN_0042633d(0x16, 0x60)
             o.w(0x34) -= 2;
             if (o.facing == 0) o.x -= 1; else o.x += 1;
             moveY(o, 0x4000);
@@ -2336,7 +2392,7 @@ void h_oneWayDoor(ObjCtx& ctx, Obj& o) {
         o.x -= 0x28;
         if (o.b(0x33)) o.x += 0x50;
         o.w(0x34) = 0x28;
-        ctx.rnd(); ctx.sound(0x16);
+        ctx.sound0(0x16, 9);                          // FUN_0042633d(0x16, 0x60)
         return;
     }
     if (o.w(0x34)) {
@@ -2364,7 +2420,7 @@ void h_axe(ObjCtx& ctx, Obj& o) {
     else if (ph::probeCell(ctx.det(), o.x, o.y).hit || (ctx.triggerClass(o.x, o.y) & 1)) shatter = true;   // 0x40d715
     else if (harryContact(ctx, o, 0xf)) shatter = true;
     if (!shatter) { exitDespawnFar(ctx, o); return; }
-    ctx.sound(0xcd);
+    ctx.sound1(0xcd, 9);
     ctx.spawnEffect(o, ctx.spr("fx_stone"), kAnim_turn7, 3);
     ctx.release(o);
 }
@@ -2471,7 +2527,10 @@ void h_pitCreature(ObjCtx& ctx, Obj& o) {
         return;
     }
     if (o.b(0x33)) { o.b(0x33) -= 1; exitDespawnFar(ctx, o); return; }
-    if (o.frame == 0xff) { const uint32_t r = ctx.rnd(); if ((r & 2) == 0) { ctx.rnd(); ctx.sound(0x14 + int(r & 1)); } }   // FUN_0042633d
+    if (o.frame == 0xff && !ctx.channel0Busy()) {     // 0x41248b: now and then a bubble
+        const uint32_t r = ctx.rnd();
+        if ((r & 2) == 0) ctx.sound0(0x14 + int(r & 1), 0);   // FUN_0042633d
+    }
     if (animStep(ctx, o, o.anim(0x36), o.script, o.script == kAnim_run10 ? 4 : 3)) {
         o.frame = 0xff;
         reposition();
@@ -2501,7 +2560,7 @@ void h_ceilingSpikes(ObjCtx& ctx, Obj& o) {
         }
     }
     if (extend && o.b(0x3c) != 3) {
-        if (o.b(0x3c) == 0) ctx.sound(0xc6);                  // (0x4184fd tests b33, always 0 here, and a free channel)
+        if (o.b(0x3c) == 0) ctx.sound1(0xc6, 8);              // (0x4184fd tests b33, always 0 here)
         o.b(0x3c) += 1;
         if (o.b(0x3c) == 3) {
             if (Obj* s = ctx.spawn()) {                       // FUN_004356bc(1): a sparkle at the tips
@@ -2553,7 +2612,7 @@ void h_floorSpikes(ObjCtx& ctx, Obj& o) {
         }
         if (extend) {
             if (o.b(0x33) != 3) {
-                if (o.b(0x33) == 0) ctx.sound(0xc6);
+                if (o.b(0x33) == 0) ctx.sound1(0xc6, 8);
                 o.b(0x33) += 1;
                 if (o.b(0x33) == 3) {
                     if (Obj* s = ctx.spawn()) {
@@ -2580,7 +2639,7 @@ void h_fireJet(ObjCtx& ctx, Obj& o) {
     animStep(ctx, o, o.anim(0x32), kAnim_fireJet, 5);
     if (o.anim(0x32).tick == 0 && o.frame == 3) {
         o.b(0x46) += 1;
-        if (o.b(0x46) >= 6) { o.b(0x46) = 0; ctx.rnd(); ctx.sound(0x27); }   // FUN_0042633d(0x27, 0x60, 5)
+        if (o.b(0x46) >= 6) { o.b(0x46) = 0; ctx.sound0(0x27, 5); }   // FUN_0042633d(0x27, 0x60)
     }
     if (o.frame >= 6 && o.frame < 10) harryContact(ctx, o, 0x19);          // (DAT_0046676d, the mine-cart burn signal, is not ported)
     exitDespawnFar(ctx, o);
@@ -2641,7 +2700,7 @@ void h_pot(ObjCtx& ctx, Obj& o) {
     switch (kind) {
     case 1: popOut(0x40, false); break;                                       // fx_hrtbt item
     case 2: {                                                                 // 0x40ef07: a bomb
-        ctx.rnd(); ctx.sound(0x26);
+        ctx.sound0(0x26, 0xf);                        // FUN_0042633d(0x26, 0x60)
         o.type = 0x32; o.l(0x56) = 0; o.flags = 0x6000; o.sprite = ctx.spr("fxzexpl2");
         o.frame = 0xff; o.l(0x3c) = 0; o.facing = 0; o.b(0x32) = 0;
         if (Obj* h = ctx.spawn()) {
@@ -2667,7 +2726,7 @@ void h_pot(ObjCtx& ctx, Obj& o) {
     default: break;
     }
     // 0x40f211: the pot itself breaks
-    ctx.sound(0xba);
+    ctx.sound1(0xba, 0xa);
     if (o.sprite && o.sprite->name() == "fxzpots3") o.vflip = 0xff;
     o.facing = uint8_t(ctx.rnd() & 1);
     o.vflip = o.b(0x59);
@@ -2717,7 +2776,14 @@ void h_floorSkull(ObjCtx& ctx, Obj& o) {
     { int y = o.y + 4; ctx.floorSnap(o.x, y, true); o.y = int16_t(y - 4); }   // FUN_00425f88 (.dt2)
     o.facing = uint8_t((o.x >> 4) & 1);
     animStep(ctx, o, o.anim(0x34), kAnim_boneIdle, 4);
-    if (ctx.pl.running() && ctx.touchesHarry(o)) ctx.pl.trip();
+    // 0x41aa79: running at full speed (the run script 0x46166b, DAT_00465b9a >= 0x14) into it
+    Harry& h = ctx.harry;
+    if (h.ul(0x465ba0) == 0x46166b && int16_t(h.w(0x465b9a) - 0x14) >= 0 && ctx.touchesHarry(o)) {
+        h.w(0x465b47) = 0;
+        h.setSprite("hyitrip1");
+        h.setUl(0x465ba0, 0x46168e);                  // the stumbling script
+        ctx.pl.harryCall(0x42e9b2);
+    }
     exitDespawnFar(ctx, o);
 }
 
@@ -2742,7 +2808,7 @@ void h_hoppingSkull(ObjCtx& ctx, Obj& o) {
         o.l(0x3c) += 0x4000;
         moveY(o, o.l(0x3c));
         if (o.y >= o.w(0x40)) {                   // landed
-            ctx.rnd(); ctx.sound(0x1e);           // FUN_0042633d(0x1e, 0x60, 3)
+            ctx.sound0(0x1e, 3);                  // FUN_0042633d(0x1e, 0x60)
             o.y = o.w(0x40);
             o.b(0x46) = 0;
             driftHome();
@@ -2750,7 +2816,7 @@ void h_hoppingSkull(ObjCtx& ctx, Obj& o) {
             o.script = kAnim_skullChatter; o.w(0x34) = 0;
             o.b(0x64) -= 1;
             if (int8_t(o.b(0x64)) < 0) { o.b(0x64) = 2; o.w(0x32) = 6; o.script = kAnim_skullQuiet; }
-            else ctx.sound(0xcf);
+            else ctx.sound1(0xcf, 2);
         }
     } else {                                      // 0x41acb7: on the ground
         o.sprite = ctx.spr("skijaw");
@@ -2760,7 +2826,7 @@ void h_hoppingSkull(ObjCtx& ctx, Obj& o) {
         if (o.w(0x32) < 0) {                      // spring
             o.b(0x46) = 0xff;
             o.l(0x3c) = -0x3e000;
-            ctx.sound(0x45);
+            ctx.sound1(0x45, 2);
             const uint32_t r = ctx.rnd();
             o.w(0x3e) -= int16_t(r & 3);          // a little higher at random
             o.w(0x40) = o.y;
@@ -3263,22 +3329,28 @@ void h_jaguar(ObjCtx& ctx, Obj& o) {
             o.facing = 1;
             o.l(0x38) = -0x10000;
         }
-        // 0x410dbe: weapon hits count outside the intro and only inside the arena.
+        // 0x410dbe: weapon hits count outside the intro and only inside the arena (in the intro
+        // stones bounce off).  DAT_00466782 marks a hit for this tick.
         bool hitNow = false;
-        if (o.b(0x32) != kIntro && o.x >= 0xa30 && o.x < 0xbd0) {
+        ctx.harry.b(0x466782) = 0;
+        if (o.b(0x32) == kIntro) {
+            deflectStones(ctx, o);
+        } else if (int16_t(o.x - 0xbd0) < 0 && int16_t(o.x - 0xa30) >= 0) {
             o.hits = 0;
-            if (weaponHits(ctx, o, kHitPoints, nullptr)) { hitNow = true; o.w(0x6a) += o.hits; }
+            if (weaponHits(ctx, o, kHitPoints, nullptr)) { hitNow = true; ctx.harry.b(0x466782) = 0xff; o.w(0x6a) += o.hits; }
         }
-        o.hits = uint8_t(o.w(0x6a) >> 3);
-        if (o.hits >= kHitPoints) {
+        o.hits = uint8_t(uint16_t(o.w(0x6a)) >> 3);
+        if (int16_t((uint16_t(o.w(0x6a)) >> 3) - 0x1e) >= 0) {
             ctx.pl.setBoss(nullptr);
             bossDeath(ctx, o);
             ctx.pl.startBossOutro();                // DAT_00465d49 = 1
             h_bossDeathBurst(ctx, o);               // 0x415b92 runs straight into the 0x51 handler
             return;
         }
-        if (ctx.harry.invulnerable() == 0 && harryContact(ctx, o, 0xf) && o.b(0x32) == kPounce)
-            ctx.pl.knockBack(o.facing == 0, true);  // 0x427167: shoved the way the jaguar is going
+        if (ctx.harry.invulnerable() == 0 && harryContact(ctx, o, 0xf) && o.b(0x32) == kPounce) {
+            ctx.harry.b(0x465b55) = o.facing;       // shoved the way the jaguar is going
+            ctx.pl.harryCall(0x427167);
+        }
         if (o.b(0x32) != kPounce) { int y = o.y + 0xd; ctx.floorSnap(o.x, y); o.y = int16_t(y - 0xd); }
 
         switch (o.b(0x32)) {
@@ -3425,7 +3497,7 @@ void h_jaguar(ObjCtx& ctx, Obj& o) {
         case kStop: {                               // 0x41156b: at a wall, then a leap at Harry
             animStep(ctx, o, o.anim(0x36), kAnim_run8, 2);
             o.w(0x50) += 1;
-            if (o.w(0x50) == 0x18) { ctx.rnd(); ctx.sound(0xf); }       // FUN_0042633d(0xf, 0x60, 9)
+            if (o.w(0x50) == 0x18) ctx.sound0(0xf, 9);                   // FUN_0042633d(0xf, 0x60)
             if (o.w(0x50) < 0x30) return;
             moveX(o, o.l(0x38));
             if (between(ctx.harry.x() - o.x, -0xc0, 0xc0) || o.w(0x50) == 0x50) {
@@ -3833,12 +3905,14 @@ void h_swingBall(ObjCtx& ctx, Obj& o) {
         o.x = int16_t(o.w(0x50) + 3 + (o.facing ? -kSwing[i][0] : kSwing[i][0]));
         o.y = int16_t(o.w(0x52) + kSwing[i][1]);
         if (ctx.harry.invulnerable() == 0 && (o.frame == 4 || o.frame == 5)) {
-            ctx.rnd(); ctx.sound(0xc3);                                  // FUN_0042633d(0xc3, 0x60, 8)
+            if (!ctx.channel0Busy()) ctx.sound0(0xc3, 8);                // FUN_0042633d(0xc3, 0x60)
             if (ctx.touchesHarry(o)) {
-                bool pushRight = o.b(0x5a) != 0;                        // DAT_00465b55
-                if (o.b(0x5a) == 2) pushRight = o.l(0x32) >= 0x1f;      // pattern A: by the half of the swing
+                // 0x414a10: shoved by the swing's direction (b5a; pattern A by its half: pc >= 0x45b0b5)
+                Harry& h = ctx.harry;
+                h.b(0x465b55) = o.b(0x5a);
+                if (o.b(0x5a) == 2) h.b(0x465b55) = o.l(0x32) >= 0x1f ? 1 : 0;
                 ctx.hurtHarry(0x28);
-                ctx.pl.knockBack(!pushRight, true);                      // 0x427167
+                ctx.pl.harryCall(0x427167);
             }
         }
     }
@@ -3853,15 +3927,21 @@ void h_swingBall(ObjCtx& ctx, Obj& o) {
 // 0x4079c8: a ring of ripples on the water at (x + dx, y + dy): the type 0x81 half plays the
 // script, its type 0x4f twin (l50, drawn H-flipped) mirrors the frame.
 void spawnRipple(ObjCtx& ctx, Obj& at, int dx, int dy, uint16_t flagAdd = 0) {
-    Obj* a = ctx.spawn();                                                 // FUN_0043546e(3)
+    Obj* a = ctx.spawnFrom(at, true);                                     // FUN_0043546e(3)
     if (!a) return;
+    a->w(0x26) = 0x6663;
     a->type = 0x81; a->sprite = ctx.spr("fx_rippl"); a->flags = uint16_t(0x2000 + flagAdd);
-    a->x = int16_t(at.x + dx); a->y = int16_t(at.y + dy); a->w(0x26) = 0x6663;
-    Obj* b = ctx.spawn();                                                 // FUN_0043546e(1)
+    a->x = int16_t(at.x + dx); a->y = int16_t(at.y + dy);
+    Obj* b = ctx.spawnFrom(at, true);                                     // FUN_0043546e(1)
     if (!b) { ctx.release(*a); return; }
-    b->type = 0x4f; b->sprite = a->sprite; b->flags = a->flags;
-    b->x = a->x; b->y = a->y; b->facing = 0xff; b->w(0x26) = 0x6663;
-    a->link = b; b->link = a;
+    a->link = b;
+    b->type = 0x4f;
+    std::memcpy(b->s + 0x12, a->s + 0x12, 2);
+    b->w(0x26) = 0x6663;
+    b->sprite = ctx.spr("fx_rippl"); b->link = a;
+    b->flags = uint16_t(0x2000 + flagAdd);
+    b->x = int16_t(at.x + dx); b->y = int16_t(at.y + dy);
+    b->facing = 0xff;
 }
 
 // 0x41b92e: the ripple ring (fx_rippl, 17 frames; fxisplsh, 12) at 4 ticks; the twin copies
@@ -3883,10 +3963,14 @@ void h_turtle(ObjCtx& ctx, Obj& o) {
     if (o.b(0x34) == 0) o.b(0x34) = 0xff;
     static const uint8_t kSink[9] = {0, 0, 0, 0, 1, 1, 1, 1, 1};           // 0x45b7e4
     o.frame = kSink[std::min<int>(o.w(0x32), 8)];
-    if (!ctx.pl.harryOnPlatform() && !ctx.pl.harryBusy() && ctx.harry.vy() >= 0 && harryOnBox(ctx, o, -20, 20, -12, 10)) {
-        ctx.pl.standOn(o.y);                                              // 0x465b73 = 0xff, vy = 0
+    Harry& h = ctx.harry;
+    if (!ctx.pl.harryOnPlatform() && !ctx.pl.harryBusy() && h.w(0x465baa) >= 0 && harryOnBox(ctx, o, -20, 20, -12, 10)) {
+        // 0x40793b: Harry stands on it (box 0x45b7ed); no landing
+        h.y() = o.y;
+        h.vy() = 0;
+        h.b(0x465b73) = 0xff;
         if (o.w(0x32) != 8) {
-            if (o.w(0x32) == 0) { spawnRipple(ctx, o, -1, -1); ctx.sound(0xbb); }
+            if (o.w(0x32) == 0) { spawnRipple(ctx, o, -1, -1); ctx.sound1(0xbb, 6); }
             o.w(0x32) += 1;
         }
     } else if (o.w(0x32) != 0) {
@@ -3994,8 +4078,10 @@ void h_wheel(ObjCtx& ctx, Obj& o) {
         o.b(0x6c) = 0xff; o.l(0x54) = 0;
         if (o.b(0x39) == 0) o.l(0x4c) = 0x40000;
     }
-    if (ctx.harry.invulnerable() == 0 && harryContact(ctx, o, 0xa0))
-        ctx.pl.knockBack(o.l(0x50) < 0, false);                           // 0x42715b
+    if (ctx.harry.invulnerable() == 0 && harryContact(ctx, o, 0xa0)) {
+        ctx.harry.b(0x465b55) = o.l(0x50) < 0 ? 0 : 0xff;                 // shoved the way it rolls
+        ctx.pl.harryCall(0x42715b);
+    }
     bool grounded = false;
     if (o.w(0x38) < 0xc8) {                                              // not yet fallen 200 px (l36)
         int y = o.y + 0x36;
@@ -4010,7 +4096,7 @@ void h_wheel(ObjCtx& ctx, Obj& o) {
         if (o.w(0x52) != 0) o.l(0x50) += (o.w(0x52) < 0) ? 0x1800 : -0x1800;
         moveX(o, o.l(0x50));
     } else {                                                             // 0x414264: rolling
-        if (o.b(0x6c) == 0) { ctx.sound(0xbc); o.b(0x6c) = 0xff; }
+        if (o.b(0x6c) == 0) { ctx.sound0(0xbc, 0xb); o.b(0x6c) = 0xff; }
         o.l(0x4c) = 0;
         ctx.pl.setShake(int(ctx.rnd() & 3));
         if (o.b(0x39)) { if (o.l(0x50) >= -0x33000) o.l(0x50) -= 0x1300; }
@@ -4045,8 +4131,10 @@ void h_pitWheel(ObjCtx& ctx, Obj& o) {
     const int first = wheel::init(ctx, o);
     if (first < 0) return;
     if (first) { o.l(0x50) = 0x40000; o.l(0x54) = 0x40000; o.b(0x4f) = 0xff; }
-    if (ctx.harry.invulnerable() == 0 && harryContact(ctx, o, 0xa0))
-        ctx.pl.knockBack(o.l(0x50) < 0, false);                           // 0x42715b
+    if (ctx.harry.invulnerable() == 0 && harryContact(ctx, o, 0xa0)) {
+        ctx.harry.b(0x465b55) = o.l(0x50) < 0 ? 0 : 0xff;                 // shoved the way it rolls
+        ctx.pl.harryCall(0x42715b);
+    }
     const ph::FloorHit f = ph::probeNear(ctx.det(), o.x, o.y + 0x3c);    // FUN_00425d6f
     if (f.hit) {
         o.y = int16_t(f.surfaceY - 0x3c);
@@ -4084,9 +4172,11 @@ void h_wheelSpawner(ObjCtx& ctx, Obj& o) {
 // A stone block (obfbston) that cracks when Harry lands on it: 0x1f ticks of crumbling frames
 // (turn7 script, held on frame 6), then it drops under 0x8000 gravity.
 void h_stoneBlock(ObjCtx& ctx, Obj& o) {
-    // (0x41094c: every 0x10 ticks FUN_00435532 refreshes the Genesis sound channel - a stub here)
+    // 0x410946
+    o.b(0x6d) -= 1;                                    // every 16 ticks to the end of the object list
+    if (int8_t(o.b(0x6d)) < 0) { o.b(0x6d) = 0x10; if (!ctx.pl.objectSystem().moveToTail(o)) return; }   // 0x435532
     if (o.frame == 0xff) { o.b(0x32) = 0x20; o.frame = 0; }
-    if (int8_t(o.b(0x32)) < 0x1f) {
+    if (int8_t(o.b(0x32) - 0x1f) < 0) {
         if (animStep(ctx, o, o.anim(0x50), kAnim_turn7, 4)) { o.w(0x50) = 6; o.frame = 6; }
     }
     if (o.b(0x32) != 0x20) {
@@ -4098,9 +4188,9 @@ void h_stoneBlock(ObjCtx& ctx, Obj& o) {
         }
         o.b(0x32) -= 1;
     }
-    if (!ctx.pl.harryOnPlatform() && !ctx.pl.harryBusy() && ctx.harry.vy() >= 0 && harryOnBox(ctx, o, -6, 64, -7, 9)) {
-        ctx.pl.standOn(o.y + 7);                                          // (FUN_00428dfa on landing: the landing routine)
-        if (o.b(0x32) == 0x20) { o.b(0x32) = 0x1f; ctx.rnd(); ctx.sound(0xe); }
+    if (!ctx.pl.harryOnPlatform() && !ctx.pl.harryBusy() && ctx.harry.w(0x465baa) >= 0 && harryOnBox(ctx, o, -6, 64, -7, 9)) {
+        ctx.pl.standOn(o.y + 7, true);                                    // 0x410a31 (box 0x45bad0)
+        if (o.b(0x32) == 0x20) { o.b(0x32) = 0x1f; ctx.sound0(0xe, 0xb); }   // FUN_0042633d(0xe, 0x60)
     }
     exitDespawnFar(ctx, o);
 }
@@ -4148,7 +4238,7 @@ void h_firePit(ObjCtx& ctx, Obj& o) {
         if (o.l(0x5a) < 0) {
             o.l(0x5a) += 0x10000;
             o.w(0x36) += 1;
-            if (o.w(0x36) == 15) { ctx.rnd(); ctx.sound(8); }            // 0x45ae48: the roar (FUN_0042633d(8, 0x60, 5))
+            if (o.w(0x36) == 15) ctx.sound0(8, 5);                       // 0x45ae48: the roar (FUN_0042633d(8, 0x60))
         }
     }
     if (o.w(0x36) >= kFrames) o.w(0x36) = 0;
@@ -4355,50 +4445,57 @@ void h_roamingSnake(ObjCtx& ctx, Obj& o) {
 // moves from 0x16 to 0x79), w44 the hidden time (0x20 / 0x30 ticks).
 void h_crocSwimmer(ObjCtx& ctx, Obj& o) {
     o.behind = 0xff;
-    auto surface = [&] {                                                 // 0x11d554
+    Harry& h = ctx.harry;
+    auto surface = [&] {                                                 // 0x408663
         o.w(0x32) = 0x90;
-        o.script = kAnim2_crocSwim; o.l(0x3c) = 0; o.b(0x40) = 0;
-        o.l(0x48) = 0;                                                   // the sink script's pc (kAnim2_crocSink)
+        o.script = kAnim2_crocSwim; o.l(0x3c) = 0;                       // 0x45a9e2 (its tick, b40, is kept)
+        o.l(0x48) = 0;                                                   // the sink script's pc (0x45a9ef)
         o.w(0x44) = o.b(0x56) ? 0x20 : 0x30;
         o.frame = 0xff;
     };
-    if (o.frame == 0xfc) { o.b(0x56) = 0xff; o.l(0x36) = 0x12000; o.facing = 1; surface(); }
-    else if (o.frame == 0xfd) { o.w(0x46) = int16_t(o.x + 0x30); o.l(0x36) = -0x1e000; surface(); }
-    else if (o.frame == 0xfe) { o.facing = 0xff; o.w(0x46) = int16_t(o.x - 0x30); o.l(0x36) = 0x12000; surface(); }
-    const bool moving = between(o.w(0x32), 0x16, 0x7a);
-    auto carry = [&] {                                                   // 0x11d654: Harry rides it
-        if (ctx.pl.harryOnPlatform() || ctx.pl.harryBusy() || ctx.harry.vy() < 0) return;
+    auto carry = [&] {                                                   // 0x40880a: Harry rides it (box 0x45a9da)
+        if (ctx.pl.harryOnPlatform() || ctx.pl.harryBusy() || h.w(0x465baa) < 0) return;
         if (!harryOnBox(ctx, o, -26, 43, -5, 5)) return;
-        if (moving) ctx.pl.carryHarry(o.l(0x36));
-        int y = o.y - 1;
-        if (o.sprite && o.sprite->name() == "crzrippl") y += 2;
-        ctx.pl.standOn(y);
+        if (int16_t(o.w(0x32) - 0x7a) < 0 && int16_t(o.w(0x32) - 0x16) >= 0) ctx.pl.carryHarry(o.l(0x36));
+        h.y() = int16_t(o.y - 1);
+        if (o.sprite && o.sprite->name() == "crzrippl") h.y() += 2;
+        h.vy() = 0;
+        h.b(0x465b73) = 0xff;
     };
-    if (o.w(0x44)) {                                                     // under water
-        o.w(0x44) -= 1;
-        if (o.w(0x44) == 0) { o.script = kAnim2_crocSwim; o.l(0x3c) = 0; spawnRipple(ctx, o, 0, 0); }
-        if (o.b(0x56)) carry();
-        exitDespawnWide(ctx, o);
-        return;
-    }
-    if (moving) moveX(o, o.l(0x36));
-    if (o.w(0x32)) {
-        o.w(0x32) -= 1;
-        if (o.w(0x32) == 0) spawnRipple(ctx, o, 0, 0);
-        anim2Step(ctx, o, 0x3c, 6);                                      // (o.script = kAnim2_crocSwim)
-        carry();
-        exitDespawnWide(ctx, o);
-        return;
-    }
-    o.script = kAnim2_crocSink;                                          // sinking (pc at l48, tick b4c)
-    anim2Step(ctx, o, 0x48, 6);
-    if (o.frame == 0xff) {
+    if (o.frame == 0xfc) { o.b(0x56) = 0xff; o.l(0x36) = 0x12000; o.facing = 1; surface(); }
+    else if (o.frame == 0xfd) { o.w(0x46) = int16_t(o.x + 0x30); o.l(0x36) = -0x12000; surface(); }
+    else if (o.frame == 0xfe) { o.facing = 0xff; o.w(0x46) = int16_t(o.x - 0x30); o.l(0x36) = 0x12000; surface(); }
+    for (int guard = 0; guard < 4; ++guard) {
+        if (o.w(0x44)) {                                                 // 0x40869f: under water
+            o.w(0x44) -= 1;
+            if (o.w(0x44) == 0) {
+                o.script = kAnim2_crocSwim; o.l(0x3c) = 0;
+                spawnRipple(ctx, o, 0, 0);
+                if (!ctx.channel1Busy()) ctx.sound1(0xbb, 6);
+            }
+            if (o.b(0x56)) carry();
+            exitDespawnWide(ctx, o);
+            return;
+        }
+        if (int16_t(o.w(0x32) - 0x7a) < 0 && int16_t(o.w(0x32) - 0x16) >= 0) moveX(o, o.l(0x36));
+        if (o.w(0x32)) {
+            o.w(0x32) -= 1;
+            if (o.w(0x32) == 0) {
+                spawnRipple(ctx, o, 0, 0);
+                if (!ctx.channel1Busy()) ctx.sound1(0x41, 6);
+            }
+            anim2Step(ctx, o, 0x3c, 6);                                  // (o.script = kAnim2_crocSwim)
+            carry();
+            exitDespawnWide(ctx, o);
+            return;
+        }
+        o.script = kAnim2_crocSink;                                      // sinking (pc at l48, tick b4c)
+        anim2Step(ctx, o, 0x48, 6);
+        if (o.frame != 0xff) { exitDespawnWide(ctx, o); return; }
         if (o.b(0x56)) { o.l(0x36) = -o.l(0x36); o.facing ^= 1; }
         else o.x = o.w(0x46);
-        surface();
-        return;
+        surface();                                                       // and on from 0x40869f
     }
-    exitDespawnWide(ctx, o);
 }
 
 // 0x40b08a: a crocodile lying in the water (type 20, crzopen) that Harry can stand on.
@@ -4557,7 +4654,7 @@ void h_firePriest(ObjCtx& ctx, Obj& o) {
         if (Obj* f = ctx.spawn()) {                                      // FUN_004356bc(3)
             f->w(0x26) = 0x6663;
             o.link2 = f;
-            ctx.rnd(); ctx.sound(0x28);                                  // FUN_0042633d(0x28, 0x60, 8)
+            ctx.sound0(0x28, 8);                                         // FUN_0042633d(0x28, 0x60)
             f->type = 0x2c; f->facing = o.facing;
             f->x = int16_t(o.x - 0x1a); f->y = int16_t(o.y - 0x38);
             f->sprite = ctx.spr("fxzfireb"); f->flags = 0x2000;

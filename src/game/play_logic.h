@@ -51,6 +51,9 @@ public:
     bool sound0(int id, int pri);              // FUN_004262d9 / FUN_0042633d: channel 0, by priority
     bool sound1(int id, int pri);              // FUN_004261e2: channel 1
     void sound1Now(int id);                    // FUN_004261b0
+    uint8_t& scriptEvent() { return ch1Id_; } // DAT_004627c1: the last channel-1 sound (script op 0xfe)
+    bool channel0Busy() const;                 // FUN_004262c8
+    bool channel1Busy() const;                 // FUN_004261d1
     void healHarry() { h_.damage() = 0; }      // fx_hrtbt
     void startChili() { h_.w(0x46652b) = 0x380; }   // mi_chili (0x405a5b)
     void markCollected(const Obj& o);          // the .als entry stays cleared (it comes back after a death unless special)
@@ -61,13 +64,6 @@ public:
     bool harryOnPlatform() const { return h_.b(0x465b73) != 0; }        // DAT_00465b73: standing on an object
     void standOn(int y, bool flagFirst = false);   // a platform holds Harry up (see play_logic.cpp)
     void carryHarry(int32_t vx16);             // add.l to Harry's x.frac (a moving platform)
-    void launch(int32_t vx, int32_t vy);        // thrown into the air (boar toss, 0x415a41)
-    void knockBack(bool toLeft, bool strong);   // shoved back (0x427167 / 0x42715b)
-    void sink(int y);                           // swallowed by a pit (FUN_0042a325)
-    void releaseHarry() {}
-    void trip();                                // 0x41aaa0: stumble (FUN_0042e9b2 with the hyitrip1 script)
-    void somersault(int32_t vy);                // 0x417c93: thrown up tumbling (state 0x42cdb6)
-    bool running() const;                       // DAT_00465ba0 == hyirun && DAT_00465b9a >= 0x14
     void pullLever(Obj& lever);                // 0x40c42d: Harry pulls (state 0x42a6e7)
     Trg trg(int x, int y) const;               // FUN_004251f9: the trigger at (x + 0x20, y)
     uint8_t triggerClassOf(uint8_t id) const { return h_.trgClass()[id]; }
@@ -94,8 +90,6 @@ private:
     void addX(int32_t v);                       // 16.16 add to x.frac / x
     void addY(int32_t v);
     void stopSound0();                          // FUN_0042624a
-    bool channel0Busy() const;                  // FUN_004262c8
-    bool channel1Busy() const;                  // FUN_004261d1
     void readPad();                             // FUN_004263f3
     void scriptedPad();                         // FUN_004346a7
     void padOverrides();                        // FUN_0043426d
@@ -158,31 +152,5 @@ private:
 };
 
 // Item handler (type 2, 0x405328) effect table at 0x45a8d4: sprite -> effect.
-struct PickupEffect {
-    const char* sprite;
-    int score;
-    int treasure;      // DAT_00466526 increment (50 = an extra continue)
-    int sound;         // 0 = none
-    int ammoSlot;      // -1 none, 0 sling stones, 1 boomerang, 2 stone
-    int ammo;
-    bool heal;         // fx_hrtbt: damage = 0
-    bool chili;        // mi_chili: DAT_0046652b = 0x380
-    bool life;         // mi_1up (awarded by the fly-to-HUD object, type 0xaa)
-    bool letter;       // mi_ptfal: DAT_00465896 |= 1 << frame
-};
-constexpr PickupEffect kPickupEffects[] = {
-    {"mi_stone", 600,   0, 75,  2, 2,  false, false, false, false},   // 0x40598d
-    {"fxrbmrot", 500,   0, 0,   1, 1,  false, false, false, false},   // 0x4059b8
-    {"mi_pouc2", 50,    0, 252, 0, 10, false, false, false, false},   // 0x405a22
-    {"mi_chili", 600,   0, 254, -1, 0, false, true,  false, false},   // 0x405a5b
-    {"mi_time",  750,   0, 0,   -1, 0, false, false, false, false},   // 0x405a88
-    {"mi_1up",   2000,  0, 0x33, -1, 0, false, false, true, false},   // 0x4059ed
-    {"mi_gold",  500,   5, 254, -1, 0, false, false, false, false},   // 0x4058b7
-    {"mi_silvr", 200,   2, 254, -1, 0, false, false, false, false},   // 0x4058e2
-    {"mi_ring",  1000, 10, 254, -1, 0, false, false, false, false},   // 0x40588c
-    {"mi_coin",  100,   1, 253, -1, 0, false, false, false, false},   // 0x40590d
-    {"fx_hrtbt", 500,   0, 251, -1, 0, true,  false, false, false},   // 0x405935
-    {"mi_ptfal", 10000, 0, 36,  -1, 0, false, false, false, true},    // 0x405838
-};
 
 } // namespace game
