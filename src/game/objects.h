@@ -277,7 +277,8 @@ extern const uint8_t kAnim_snakeEmerge[], kAnim_snakeMiss[], kAnim_snakeLunge[],
     kAnim_skullMorph[], kAnim_skullWalk[], kAnim_skullDie[], kAnim_ballDrop[], kAnim_splashRing[], kAnim_rippleRing[], kAnim_spearThrust[],
     kAnim_snakeLunge2[], kAnim_spitFly[], kAnim_spitSplat[], kAnim_crocBite[], kAnim_crocDive[], kAnim_priestTurn[], kAnim_fireballDie[],
     kAnim_guardShotLow[], kAnim_guardShotHigh[], kAnim_guardTurn[], kAnim_guardPeel[], kAnim_guardWalk[],
-    kAnim_hawkGlide[], kAnim_crocLeap[], kAnim_splashRing2[], kAnim_treeSnakeLimp[], kAnim_cartSpark[], kAnim_floatBob[], kAnim_harrySplash[], kAnim_vaporSpin[];
+    kAnim_hawkGlide[], kAnim_crocLeap[], kAnim_splashRing2[], kAnim_treeSnakeLimp[], kAnim_cartSpark[], kAnim_floatBob[], kAnim_harrySplash[], kAnim_vaporSpin[],
+    kAnim_leverBack[];
 extern const uint8_t kData_bungeeScripts[];      // 0x45aaa4: Harry's bungee animation triples (see h_bungee)
 extern const uint8_t kData_firePath[];           // 0x45ad94: the fire pit's 59 keyframes {frame, dx, dy, tailFrame, tailDx, tailDy} (int16)
 extern const uint8_t kData_priestDeath[];        // 0x45a849: the fire priest's collapse (a byte script; its cursor jumps past the first 0xf0)
@@ -288,6 +289,8 @@ extern const uint8_t kData_ropeSwing[], kData_ropeSwingHarry[];
 // 0x45fdc4: the Balankanche ride's script, {distance in 0xa0 px, lane, kind} words (kind 9 adds the
 // target speed as a fourth word; kind 10 ends it).
 extern const uint8_t kData_rideScript[];
+// 0x46b0d8: the widths of the letter glyphs, {ltr_lg, ltr_md, ltr_sm} a glyph (FUN_00434a30).
+extern const uint8_t kData_glyphWidths[];
 extern const uint8_t kAnim2_deathFade[], kAnim2_monkeyToss[], kAnim2_condorDive[], kAnim2_jaguarLeap[], kAnim2_jaguarCrouchA[],
     kAnim2_jaguarCrouchB[], kAnim2_jaguarCrouchRoar[], kAnim2_jaguarRoar[], kAnim2_bossCloud[],
     kAnim2_skullThrow[], kAnim2_skullChop[], kAnim2_boneTumble[], kAnim2_ballSwingA[], kAnim2_ballSwingB[], kAnim2_ballSwingC[],

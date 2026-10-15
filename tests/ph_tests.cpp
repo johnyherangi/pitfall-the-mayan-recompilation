@@ -88,7 +88,7 @@ int main(int argc, char** argv) {
 
 // ---- gameplay smoke tests (appended) --------------------------------------
 namespace { int jaguarTest(const std::string& dir); int bungeeTest(const std::string& dir); int stoneTest(const std::string& dir);
-            int vortexTest(const std::string& dir); int deathTest(const std::string& dir); }
+            int vortexTest(const std::string& dir); int deathTest(const std::string& dir); int vaultTest(const std::string& dir); }
 namespace {
 int gameplayTests(const std::string& dir) {
     int fails = 0;
@@ -120,6 +120,7 @@ int gameplayTests(const std::string& dir) {
     fails += stoneTest(dir);
     fails += vortexTest(dir);
     fails += deathTest(dir);
+    fails += vaultTest(dir);
     return fails;
 }
 }
@@ -380,6 +381,45 @@ int deathTest(const std::string& dir) {
     if (id(silver) != 0) { std::printf("FAIL: the silver came back after the death\n"); ++fails; }
     if (h.x() != h.w(0x46679e)) { std::printf("FAIL: Harry at x %d, not at the checkpoint %d\n", int(h.x()), int(h.w(0x46679e))); ++fails; }
     std::printf("death: score %d kept, lives %d, Harry at (%d, %d)\n", g.stats().score, g.stats().lives, int(h.x()), int(h.y()));
+    return fails;
+}
+}
+
+// The third Loltun vault (level 12): pressing the keys of the combination on the player's
+// turn must win the ten rounds (a coin, silver, gold and a ring fall on the way, then a 1-up),
+// the ceiling must go back up and Harry walk out, which ends the vault ("*7").
+namespace {
+int vaultTest(const std::string& dir) {
+    int fails = 0;
+    engine::Options opts;
+    game::Game g(dir, opts);
+    g.newGame();
+    g.startLevel(12); g.setMode(game::Mode::Playing);
+    game::PlayLogic* pl = game::g_debugLogic;
+    if (!pl) return 1;
+    const int score0 = g.stats().score, lives0 = g.stats().lives;
+    int nextKey = 0, solvedAt = -1, outAt = -1, lowest = 1000;
+    for (int t = 0; t < 6000; ++t) {
+        game::Harry& h = pl->harry();
+        game::Obj* lead = pl->objAt(h.ul(0x46617c));
+        engine::HostInput in;
+        if (lead && h.b(0x46617f) == 0 && uint32_t(lead->l(0x52)) == 0x40be92 && lead->b(0x6a) == 0 && t >= nextKey &&
+            h.w(0x465b41) == 0 && h.b(0x465b53) == 0 && h.b(0x465b45) == 0 && h.b(h.ul(0x4661a0)) == 0) {
+            in.keyDown['1' + h.b(uint32_t(lead->l(0x58)))] = true;
+            nextKey = t + 12;
+        }
+        lowest = std::min(lowest, int(int16_t(pl->tw(0x1f4))));
+        g.tick(in);
+        if (game::g_debugLogic != pl) { outAt = t; break; }
+        if (solvedAt < 0 && pl->tb(0x215)) solvedAt = t;
+        if (pl->tb(0x214)) { std::printf("FAIL: the vault's ceiling fell at tick %d\n", t); return fails + 1; }
+    }
+    if (solvedAt < 0) { std::printf("FAIL: the vault was not solved\n"); ++fails; }
+    if (outAt < 0) { std::printf("FAIL: Harry did not leave the vault\n"); ++fails; }
+    if (g.stats().score - score0 != 1800 + 7000 || g.stats().lives != lives0 + 1) {
+        std::printf("FAIL: vault rewards: score +%d, lives %d -> %d\n", g.stats().score - score0, lives0, g.stats().lives); ++fails;
+    }
+    std::printf("vault: solved at tick %d, out at %d, ceiling down to %d, score +%d\n", solvedAt, outAt, lowest, g.stats().score - score0);
     return fails;
 }
 }

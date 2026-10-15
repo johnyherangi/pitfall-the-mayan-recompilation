@@ -46,6 +46,7 @@ void PlayLogic::enter(Game& g) {
     exiting_ = false;
     deathTimer_ = 0;
     boss_ = nullptr;
+    std::memset(trgRam_, 0, sizeof trgRam_);
     h_.l(0x466535) = level_;
     if (g.warp().fromAtari) h_.b(0x465b39) = 0xff;            // (before the level start: the checkpoint stays)
     levelStart();                                              // FUN_0043256f
@@ -196,8 +197,8 @@ void PlayLogic::resetObjects() {
 }
 
 void PlayLogic::restartBody() {
-    // 0x432723: the part FUN_0043256f / FUN_00432615 and FUN_00432713 share (the vaults' and
-    // the map screen's set-up at its end are not ported yet).
+    // 0x432723: the part FUN_0043256f / FUN_00432615 and FUN_00432713 share (the map screen's
+    // set-up at its end, 0x431c99, is not ported).
     h_.b(0x466555) = 0xff;
     h_.b(0x465b38) = 0;
     h_.b(0x465bb3) = 0;
@@ -274,6 +275,26 @@ void PlayLogic::restartBody() {
     if (level_ == 10) h_.b(0x465d49) = 1;
     h_.b(0x466794) = 0x3c;
     spawnAll();                                            // FUN_00405114
+    if (level_ == 0xb || level_ == 0xc || level_ == 0xd) {
+        // 0x432bab: a Loltun vault.  Harry's state for the room, its RAM in the trigger buffer
+        // (the ceiling at 240), the key queue at 0x4661a8, the letters' count, Harry at x 0x34
+        // and the type 107 object that writes the instructions.
+        h_.setCont(0x42756d);
+        h_.b(0x465b39) = 0;
+        setTl(0x1f4, 0); setTl(0x1f8, 0); setTl(0x1fc, 0); setTl(0x212, 0);
+        setTw(0x21c, 0); setTw(0x2ee, 0); setTl(0x2f0, 0);
+        h_.l(0x465b41) = 0; h_.l(0x465b45) = 0; h_.l(0x465b49) = 0;
+        h_.setUl(0x4661a0, 0x4661a8); h_.setUl(0x4661a4, 0x4661a8); h_.b(0x4661a8) = 0;
+        h_.l(0x4661cc) = 0;
+        h_.b(0x4661d6) = 0;
+        h_.x() = 0x34;
+        if (Obj* a5 = newObjAtHarry(1, true)) a5->type = 0x6b;   // FUN_0043546e(1)
+        setTl(0x1f4, 0x00f00000);
+        setTl(0x1f8, 0);
+        h_.b(0x466788) = 0; h_.w(0x46678c) = 0;
+        h_.b(0x465d48) = 0x14;
+        setTl(0x1fc, 0);
+    }
     h_.b(0x465b39) = 0;
     h_.b(0x46650c) = 0;
     h_.l(0x466796) = 0;
@@ -311,6 +332,7 @@ void PlayLogic::tick(Game& g) {
     fs.scrollX = h_.w(0x4658b4);
     fs.scrollY = h_.w(0x4658b6);
     fs.bob = h_.w(0x465b02);
+    fs.vaultCeiling = int16_t(tw(0x1f4));
     // FUN_00435c4e (the damage meter, drawn every frame): a full meter kills
     const int limit = g.stats().difficulty ? 100 : 0x96;
     if (h_.damage() >= limit && h_.cont() != 0x428dce && h_.cont() != 0x428cdb) h_.b(0x465b72) = 0xff;
@@ -408,11 +430,17 @@ void PlayLogic::harryDeath() {
     if (b72 == 0) return;
     if (h_.cont() == 0x4311a5) { h4311a5(); return; }     // (runs as Harry's state)
     h_.uw(0x465b92) = 0x8000;
-    if (b72 == 0xfa || b72 == 0x80) { h430eb6(); return; }
+    if (b72 == 0xfa) { h430eb6(); return; }
     if (h_.spriteIs("hyislice")) { h43118d(); return; }
-    if (level_ == 0xe || b72 == 0x7f || b72 == 0x7e || b72 == 0x7c) {
-        notPorted(0x430ca8);                                // the continue screen, the vaults' exits
+    if (b72 == 0x80) { h430eb6(); return; }
+    if (level_ == 0xe || b72 == 0x7f) {
+        notPorted(0x430ca8);                                // the continue screen
         h430eb6();
+        return;
+    }
+    if (b72 == 0x7e || b72 == 0x7c) {
+        // 0x430b19 / 0x430b00 (after 0x30 vertical blanks, nothing on the PC): out of the vault
+        if (!exiting_) { exiting_ = true; game_->command("*7"); }
         return;
     }
     if (h_.cont() == 0x430e3a) return;
@@ -570,6 +598,93 @@ void PlayLogic::markKilled(const Obj& o) {
     if (!game_->stats().difficulty && o.type == 0x23) return;
     for (Killed& k : killed_)
         if (k.count == 0) { k.count = 0xf; k.id = o.id; k.als = o.als; return; }
+}
+
+// ---------------------------------------------------------------- FUN_00434a30: text in letter objects
+
+uint8_t PlayLogic::textGlyph(uint8_t d0, uint32_t& d3) {
+    // 0x434d2d: a character's glyph and its font, d3 the sprite slot and DAT_00466787 0 for the
+    // large font (capitals, a space after them), 0x80 for the medium one (texts of type 0x11),
+    // 0xff for the small one; the punctuation keeps the font before it.  0xff: a 6 px space.
+    switch (d0) {
+    case '.': return 0x24;
+    case ',': return 0x25;
+    case '@': return 0x26;
+    case '!': return 0x27;
+    case '\'': return 0x28;
+    case ' ':
+        if (h_.b(0x466787) != 0) return 0xff;
+        d0 = uint8_t((random() & 1) + 0x2c);               // one of two large spaces
+        d3 = 0x470238; h_.b(0x466787) = 0xff;
+        return d0;
+    case '[': d3 = 0x470238; h_.b(0x466787) = 0xff; return 0x2b;
+    case ']': d3 = 0x470238; h_.b(0x466787) = 0xff; return 0x2e;
+    default: break;
+    }
+    if (h_.b(0x465c58) == 0x11) { h_.b(0x466787) = 0x80; d3 = 0x47023c; return uint8_t(d0 - 0x41); }
+    if (int8_t(d0 - 0x3a) < 0) { d3 = 0x470240; h_.b(0x466787) = 0xff; return uint8_t(d0 - 0x16); }   // digits
+    if (int8_t(d0 - 0x5f) >= 0) { d3 = 0x470240; h_.b(0x466787) = 0xff; return uint8_t(d0 - 0x61); }  // small letters
+    d3 = 0x470238; h_.b(0x466787) = 0;
+    return uint8_t(d0 - 0x41);
+}
+
+void PlayLogic::spawnText(const char* text, int x, int y, uint8_t type) {
+    // FUN_00434a30 (DAT_00466782 / 84 the position, DAT_00465c58 the type, kept across it)
+    const uint8_t keepType = h_.b(0x465c58);
+    h_.b(0x465c58) = type;
+    h_.w(0x466782) = int16_t(x);
+    h_.w(0x466784) = int16_t(y);
+    h_.b(0x466786) = 0;
+    h_.w(0x466788) = h_.w(0x466782);
+    h_.w(0x46678c) = h_.w(0x466784);
+    const uint8_t* a0 = reinterpret_cast<const uint8_t*>(text);
+    uint32_t d3 = 0x470238;                                // (whatever the caller left in d3)
+    auto centre = [&](bool fresh) {                        // 0x434aac: the line's width, then x + 0xa0 - w / 2
+        if (fresh) h_.b(0x466787) = 0;
+        uint16_t d1 = 0;
+        for (const uint8_t* p = a0; *p != 0 && *p != 0xf0; ++p) {
+            uint8_t d0 = *p;
+            if (int8_t(d0 - 0x5f) >= 0) h_.b(0x466787) = 0xff;
+            d0 = textGlyph(d0, d3);
+            if (d0 == 0x2d || d0 == 0x2e || d0 == 0xff) { d1 = uint16_t(d1 + 6); continue; }
+            const int i = d0 * 3 + (h_.b(0x466787) == 0x80 ? 1 : h_.b(0x466787) != 0 ? 2 : 0);
+            d1 = uint16_t(d1 + kData_glyphWidths[i]);
+        }
+        d1 = uint16_t(d1 >> 1);
+        if (h_.b(0x466787) != 0) h_.w(0x466782) -= 8;
+        h_.w(0x466782) += int16_t(0xa0 - d1);
+    };
+    centre(true);
+    for (int guard = 0; guard < 0x400; ++guard) {
+        const uint8_t c = *a0++;
+        if (c == 0) break;
+        if (c == 0xf1) { centre(true); continue; }
+        if (c == 0xf0) {                                   // a new line
+            h_.w(0x46678c) += 0x19;
+            h_.w(0x466782) = h_.w(0x466788);
+            h_.w(0x466784) = h_.w(0x46678c);
+            if (h_.b(0x466786) != 0) centre(false);
+            continue;
+        }
+        const uint8_t g = textGlyph(c, d3);
+        if (g == 0xff) { h_.w(0x466782) += 6; continue; }
+        // FUN_00435905.  (The original then sets [DAT_004504e4] + 0x384 to the letter when the long
+        // 0x384 bytes past the new record is 0: that is the list link of the record 8 slots on,
+        // never 0, so it never does.)
+        Obj* a5 = objects_.allocHead();
+        if (!a5) continue;
+        a5->flags = 0xe000;
+        a5->x = h_.w(0x466782);
+        a5->y = h_.w(0x466784);
+        a5->frame = g;
+        a5->setSprite(game_->findSprite(spriteSlotName(d3)));
+        a5->type = h_.b(0x465c58);
+        int i = g * 3;
+        if (d3 == 0x47023c) { a5->flags = 0xe000; i += 1; }
+        else if (d3 == 0x470240) { a5->flags = 0xc000; i += 2; }
+        h_.w(0x466782) += kData_glyphWidths[i];
+    }
+    h_.b(0x465c58) = keepType;
 }
 
 // ---------------------------------------------------------------- camera, objects, display

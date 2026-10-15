@@ -363,25 +363,29 @@ bool PlayLogic::grabClimbable() {
 
 // ---------------------------------------------------------------- animation interpreters
 
-bool PlayLogic::hAnim(uint32_t cursor, uint32_t script, int ticks) {
+bool PlayLogic::hAnim(uint32_t cursor, uint32_t script, int ticks) { return hAnimAt(h_.at(cursor), script, ticks); }
+bool PlayLogic::hAnimPeek(uint32_t cursor, uint32_t script) { return hAnimPeekAt(h_.at(cursor), script); }
+bool PlayLogic::hAnim2(uint32_t cursor, int ticks) { return hAnim2At(h_.at(cursor), ticks); }
+
+bool PlayLogic::hAnimAt(uint8_t* c, uint32_t script, int ticks) {
     // FUN_00423134 with a6 = Harry: cursor = position byte, tick byte.
-    FieldRef<uint8_t> pos = h_.b(cursor), tick = h_.b(cursor + 1);
+    FieldRef<uint8_t> pos{c}, tick{c + 1};
     tick += 1;
     if (int8_t(uint8_t(ticks) - tick) < 0) { tick = 0; pos += 1; }
-    return hAnimPeek(cursor, script);
+    return hAnimPeekAt(c, script);
 }
 
-bool PlayLogic::hAnimPeek(uint32_t cursor, uint32_t script) {
+bool PlayLogic::hAnimPeekAt(uint8_t* c, uint32_t script) {
     // FUN_00423150
-    FieldRef<uint8_t> pos = h_.b(cursor), tick = h_.b(cursor + 1);
+    FieldRef<uint8_t> pos{c}, tick{c + 1};
     for (int guard = 0; guard < 64; ++guard) {
         const uint32_t p = script + pos;
         const uint8_t b = mb(p);
         if (b < 0x80) { h_.frame() = b; return false; }
         switch (b) {
         case 0xf0:
-            h_.w(cursor) = 0;
-            hAnimPeek(cursor, script);
+            FieldRef<int16_t>{c} = 0;
+            hAnimPeekAt(c, script);
             return true;
         case 0xfe:
             if (mb(p + 1) == ch1Id_) { sound1Now(0x89); ch1Id_ = 0; }   // stop my channel-1 sound
@@ -402,17 +406,18 @@ bool PlayLogic::hAnimPeek(uint32_t cursor, uint32_t script) {
     return false;
 }
 
-bool PlayLogic::hAnim2(uint32_t cursor, int ticks) {
-    // FUN_004237a5 with a6 = Harry: pc = the long at cursor, tick = the byte at cursor + 4.
+bool PlayLogic::hAnim2At(uint8_t* c, int ticks) {
+    // FUN_004237a5 with a6 = Harry: pc = the long at c, tick = the byte at c + 4.
     // Left and right are swapped while he faces left, so the scripts' pad tests mean
     // "forward" and "back".
     auto swapLR = [&] { const uint8_t l = h_.b(0x466767); h_.b(0x466767) = h_.b(0x466768); h_.b(0x466768) = l; };
     if (h_.b(0x465b1a)) swapLR();
-    FieldRef<uint8_t> tick = h_.b(cursor + 4);
+    FieldRef<uint8_t> tick{c + 4};
+    FieldRef<uint32_t> cur{c};
     tick += 1;
-    if (int8_t(uint8_t(ticks) - tick) < 0) { tick = 0; h_.setUl(cursor, h_.ul(cursor) + 1); }
+    if (int8_t(uint8_t(ticks) - tick) < 0) { tick = 0; cur = cur + 1; }
     for (int guard = 0; guard < 64; ++guard) {
-        const uint32_t pc = h_.ul(cursor);
+        const uint32_t pc = cur;
         const uint8_t b = mb(pc);
         if (b < 0x80) break;
         switch (b) {
@@ -422,20 +427,20 @@ bool PlayLogic::hAnim2(uint32_t cursor, int ticks) {
         case 0xfc:
             if (mb(pc + 1) == 0xb9 && h_.b(0x4667af)) sound0(0x17, 0x1d);
             else sound0(mb(pc + 1), mb(pc + 2));
-            h_.setUl(cursor, pc + 3); continue;
-        case 0xfd: sound1(mb(pc + 1), mb(pc + 2)); h_.setUl(cursor, pc + 3); continue;
+            cur = pc + 3; continue;
+        case 0xfd: sound1(mb(pc + 1), mb(pc + 2)); cur = pc + 3; continue;
         case 0xfb: case 0xed:
             random();
             sound0(mb(pc + 1), mb(pc + 5));
-            h_.setUl(cursor, pc + 6); continue;
+            cur = pc + 6; continue;
         case 0xf8:
             if (h_.b(0x465b96) == 0) return false;                 // (sic: the pad stays swapped)
             h_.b(0x465b96) = 0;
-            h_.setUl(cursor, pc + 1); continue;
-        case 0xf9: h_.b(0x465b38) ^= 1; h_.setUl(cursor, pc + 1); continue;
+            cur = pc + 1; continue;
+        case 0xf9: h_.b(0x465b38) ^= 1; cur = pc + 1; continue;
         case 0xf7:
             h_.b(0x465b1a) = h_.b(0x465b1a) ? 0 : 0xff;
-            h_.setUl(cursor, pc + 1);
+            cur = pc + 1;
             swapLR();
             continue;
         case 0xfa: case 0xf6: {
@@ -464,22 +469,22 @@ bool PlayLogic::hAnim2(uint32_t cursor, int ticks) {
                     a5->l(0x32) += h_.vx();
                 }
             }
-            h_.setUl(cursor, pc + 13);
+            cur = pc + 13;
             continue;
         }
         case 0xf4: case 0xf5: case 0xf2: {
             const uint8_t bits = padBits(), m = mb(pc + 1);
             const bool jump = b == 0xf4 ? (bits & m) != 0 : b == 0xf5 ? (bits & m) == 0 : bits == m;
-            h_.setUl(cursor, jump ? ml(pc + 2) : pc + 6);
+            cur = jump ? ml(pc + 2) : pc + 6;
             continue;
         }
-        case 0xf3: h_.setUl(cursor, ml(pc + 1)); continue;
-        case 0xf1: h_.setSpriteSlot(ml(pc + 1)); h_.setUl(cursor, pc + 5); continue;
+        case 0xf3: cur = ml(pc + 1); continue;
+        case 0xf1: h_.setSpriteSlot(ml(pc + 1)); cur = pc + 5; continue;
         default: goto frame;
         }
     }
 frame:
-    h_.frame() = mb(h_.ul(cursor));
+    h_.frame() = mb(cur);
     if (h_.b(0x465b1a)) swapLR();
     return false;
 }

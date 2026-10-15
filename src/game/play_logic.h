@@ -93,6 +93,20 @@ public:
     // saves (0x4288a2).
     uint32_t alsLong(size_t off) const;
     void setAlsLong(size_t off, uint32_t v);
+    // [DAT_00450510] + off, off 0x1f4 .. 0x3f3: Genesis RAM the PC keeps in the trigger buffer
+    // (the vaults' ceiling, timers and Harry's squash script; the boss pointer at +0x1f4 is
+    // boss_).  The 68000 code reads it big-endian; tln() is the native long FUN_004237a5 reads.
+    uint8_t& tb(int off) { return trgRam_[size_t(off - 0x1f4)]; }
+    uint16_t tw(int off) const { return uint16_t(trgRam_[size_t(off - 0x1f4)] << 8 | trgRam_[size_t(off - 0x1f3)]); }
+    void setTw(int off, uint16_t v) { trgRam_[size_t(off - 0x1f4)] = uint8_t(v >> 8); trgRam_[size_t(off - 0x1f3)] = uint8_t(v); }
+    uint32_t tl(int off) const { return uint32_t(tw(off)) << 16 | tw(off + 2); }
+    void setTl(int off, uint32_t v) { setTw(off, uint16_t(v >> 16)); setTw(off + 2, uint16_t(v)); }
+    uint32_t tln(int off) const { uint32_t v; std::memcpy(&v, &trgRam_[size_t(off - 0x1f4)], 4); return v; }
+    void setTln(int off, uint32_t v) { std::memcpy(&trgRam_[size_t(off - 0x1f4)], &v, 4); }
+    // FUN_00434a30: spell `text` out in letter objects of `type` (ltr_lg / ltr_md / ltr_sm, one
+    // object a glyph), each line centred on x + 0xa0; 0xf0 starts a line 0x19 lower, 0xf1 centres
+    // the next one.
+    void spawnText(const char* text, int x, int y, uint8_t type);
 
 private:
     friend struct HarryAccess;
@@ -118,6 +132,10 @@ private:
     bool hAnim(uint32_t cursor, uint32_t script, int ticks);   // FUN_00423134 on Harry
     bool hAnimPeek(uint32_t cursor, uint32_t script);          // FUN_00423150
     bool hAnim2(uint32_t cursor, int ticks);                   // FUN_004237a5 on Harry
+    bool hAnimAt(uint8_t* c, uint32_t script, int ticks);      // ... with the cursor anywhere
+    bool hAnimPeekAt(uint8_t* c, uint32_t script);
+    bool hAnim2At(uint8_t* c, int ticks);
+    uint8_t textGlyph(uint8_t ch, uint32_t& sprite);           // 0x434d2d
     uint8_t padBits() const;                    // FUN_00423f46
     Obj* newObjAtHarry(int d0, bool tail = false);   // FUN_004356bc (head of the list) / FUN_0043546e (tail)
     Obj* spawnTemplateAtHarry(uint32_t tmpl);   // FUN_004351c5 with a6 = Harry
@@ -187,6 +205,7 @@ private:
     uint32_t lastLandSound_ = 0;     // DAT_004601d5
     int altIdle_ = 0;                // DAT_0046d04c: F10 was pressed (the special idle animation)
     uint32_t fadeCmd_ = 0;           // DAT_0046b1b0
+    uint8_t trgRam_[0x200] = {};     // [DAT_00450510] + 0x1f4 ..
 };
 
 // Item handler (type 2, 0x405328) effect table at 0x45a8d4: sprite -> effect.

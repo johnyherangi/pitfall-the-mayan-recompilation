@@ -348,7 +348,172 @@ void PlayLogic::h427528() {
 // ---------------------------------------------------------------- 0x42756d: the Loltun vault (Simon game)
 
 void PlayLogic::h42756d() {
-    // The Simon room keeps its state in the level's trigger data area; not ported yet.
+    // A Loltun vault.  The keys 1..3, queued at 0x4661a8 on the player's turn, send Harry to a
+    // lever (x 0x54 / 0x84 / 0xb4, facing the right one) and DAT_00465b45 tells the levers he is
+    // there (they start the pull, 0x427d92).  He walks under a falling reward (DAT_00465b59) and
+    // back.  Once the combination is done (trg+0x215) he waits 80 ticks and walks out right
+    // ("*7").  The ceiling (trg+0x1f4, 16.16, the vault's parallax layer) keeps still for 128
+    // ticks, creeps down while a round is played (trg+0x1fc) and falls on a wrong lever
+    // (trg+0x214) or once below 0x8a: it squashes Harry (hyihwall), a message comes up, and
+    // after 84 ticks he is out too.
+    if (h_.b(0x465b59) == 0x28) {                          // a reward has been falling for 40 ticks
+        h_.w(0x465b41) = 0x44;
+        h_.w(0x465b5b) = h_.x();
+        h_.facing() = 0xff;
+        h_.b(0x465b43) = 0xff;
+        h_.b(0x465b59) = 0x29;
+    }
+    if (h_.b(0x465b59) == 0x4e) {
+        if (h_.w(0x465b41) == 0) {                         // under it: back to where he was
+            h_.facing() = 0;
+            h_.b(0x465b43) = 0;
+            h_.w(0x465b41) = h_.w(0x465b5b);
+            h_.b(0x465b59) = 0;
+        }
+    } else if (h_.b(0x465b59) != 0) {
+        h_.b(0x465b59) += 1;
+    }
+    if (tb(0x215) != 0) {                                  // the combination is done
+        h_.facing() = 0;
+        h_.b(0x465b43) = 0;
+        if (tw(0x21c) != 0x50) {
+            setTw(0x21c, uint16_t(tw(0x21c) + 1));
+            h_.setSprite("hyiready");
+            hAnimAt(&tb(0x21e), 0x4297d2, 4);
+        } else {
+            h_.setSprite("hyirun");
+            hAnim(0x4661ca, 0x46166b, 4);
+            h_.x() += 3;
+            if (!neg16(h_.x() - 0x1b5)) h_.b(0x465b72) = 0x7e;
+        }
+        if (neg16(int16_t(tw(0x1f4)) - 0xf0)) {            // the ceiling goes back up
+            setTl(0x1f4, tl(0x1f4) + 0x10000);
+            if (!channel1Busy()) sound1(0xd1, 3);
+        } else if (ch1Id_ == 0xd1) {
+            sound1Now(0x89);
+            ch1Id_ = 0;
+        }
+        return;
+    }
+    h_.w(0x4661ca) = 0;
+    bool falls = true;
+    if (tb(0x214) == 0) {
+        if (tw(0x1fe) != 0x80) {                           // the first 128 ticks
+            setTw(0x1fe, uint16_t(tw(0x1fe) + 1));
+            falls = false;
+        } else if (!neg16(int16_t(tw(0x1f4)) - 0x8a)) {    // still high (0x4279b2)
+            falls = false;
+            if (tw(0x1fc) == 0) {
+                if (ch1Id_ == 0xd1) { sound1Now(0x89); ch1Id_ = 0; }
+            } else {                                       // a round is on: it creeps down
+                setTl(0x1f4, tl(0x1f4) - 0xc00);
+                if (!channel1Busy()) sound1(0xd1, 3);
+            }
+        }
+    }
+    if (falls) {
+        if (!channel1Busy()) sound1(0xd1, 3);
+        if (tw(0x1f8) != 6) setTl(0x1f8, tl(0x1f8) + 0x2000);   // faster, up to 6 px a tick
+        setTl(0x1f4, tl(0x1f4) - tl(0x1f8));
+        if (neg16(int16_t(tw(0x1f4)) - 0x86)) {
+            if (tb(0x2ee) == 0) { tb(0x2ee) = 0xff; setTln(0x2f0, 0x427d82); }   // Harry squashed
+            if (neg16(int16_t(tw(0x1f4)) - 0x44)) {
+                setTw(0x1f4, 0x44);                        // down
+                if (tw(0x21c) != 0) {
+                    h_.w(0x465b02) = 0;
+                    setTw(0x21c, uint16_t(tw(0x21c) - 1));
+                    if (tw(0x21c) == 1) h_.b(0x465b72) = 0x7c;   // out ("*7")
+                    else if (!neg16(int16_t(tw(0x21c)) - 0x74)) h_.w(0x465b02) = int16_t((random() & 7) - 3);
+                    else if (tw(0x21c) == 0x42 && tb(0x239) == 0) { sound1(0x4e, 0x60); tb(0x239) = 0xff; }
+                } else {
+                    // it has just come down: a word of comfort (0x427d40 ..)
+                    static const uint32_t kMsg[4] = {0x427d40, 0x427d56, 0x427d6a, 0x427d71};
+                    const uint32_t m = kMsg[random() & 3];
+                    spawnText(reinterpret_cast<const char*>(harryMem(m)), 0, 0x17, 0x6c);
+                    sound1Now(0x89);
+                    sound0(0x4c, 0x11);                    // FUN_0042633d(0x4c, 0x60)
+                    setTw(0x21c, 0x54);
+                    tb(0x239) = 0;
+                }
+            }
+        }
+    }
+    // 0x427a1e: the keys, on the player's turn
+    if (h_.b(0x46617f) == 0) {
+        static const struct { uint32_t edge; uint8_t key; } kKeys[3] = {{0x466769, 1}, {0x46676a, 2}, {0x46676b, 3}};
+        for (const auto& k : kKeys) {
+            if (h_.b(k.edge) != 1) continue;
+            h_.b(k.edge) = 0x80;
+            const uint32_t a0 = h_.ul(0x4661a4);
+            if (a0 + 1 >= Harry::kBase + Harry::kSize) continue;   // (the original writes on into its memory)
+            h_.b(a0) = k.key;
+            h_.b(a0 + 1) = 0;
+            h_.setUl(0x4661a4, a0 + 1);
+        }
+    }
+    if (h_.b(0x465b53) != 0) { h427d92(); return; }       // pulling a lever
+    if (h_.w(0x465b41) != 0) {                             // walking to a place
+        h_.setSprite("hyirun");
+        hAnim(0x4661cc, 0x46166b, 4);
+        const int16_t d0 = h_.w(0x465b41);
+        if (!neg16(d0 - h_.x())) { h_.x() += 8; h_.facing() = 0; }
+        else { h_.x() -= 8; h_.facing() = 0xff; }
+        if (h_.x() == d0) {
+            h_.facing() = h_.b(0x465b43);
+            h_.w(0x465b41) = 0;
+            h_.b(0x465b45) = 0xff;
+        }
+        return;
+    }
+    if (tln(0x2f0) != 0) {                                 // squashed
+        h_.setSprite("hyihwall");
+        hAnim2At(&tb(0x2f0), 1);
+        return;
+    }
+    h_.setSprite("hyiready");
+    hAnim(0x4661ce, 0x4297d2, 4);
+    if (h_.b(0x465b45) != 0 || h_.b(0x46617f) != 0) return;
+    const uint32_t rp = h_.ul(0x4661a0);
+    if (rp >= Harry::kBase + Harry::kSize) return;
+    const uint8_t key = h_.b(rp);
+    if (key == 0) return;
+    h_.setUl(0x4661a0, rp + 1);
+    const int16_t x = h_.x();
+    auto at = [&](uint8_t facing) { h_.facing() = facing; h_.b(0x465b45) = 0xff; };
+    auto go = [&](int16_t to, uint8_t facing) { h_.w(0x465b41) = to; h_.b(0x465b43) = facing; };
+    switch (key) {
+    case 1:                                                // the left lever, between 0x54 and 0x84
+        if (x == 0x54) at(0);
+        else if (x == 0x84) at(0xff);
+        else if (neg16(x - 0x70)) go(0x54, 0);
+        else go(0x84, 0xff);
+        break;
+    case 2:                                                // the middle one, between 0x84 and 0xb4
+        if (x == 0xb4) at(0xff);
+        else if (x == 0x84) at(0);
+        else if (neg16(x - 0x9c)) go(0x84, 0);
+        else go(0xb4, 0xff);
+        break;
+    case 3:                                                // the right one, right of 0xb4
+        if (x == 0xb4) at(0);
+        else go(0xb4, 0);
+        break;
+    default: break;
+    }
+}
+
+void PlayLogic::h427d92() {
+    // Harry pulls a vault lever (DAT_00465b4f): hyipull with the script 0x427e1b, the lever's
+    // frame from the table 0x427e26.
+    h_.setSprite("hyipull");
+    const bool done = hAnim(0x465b4b, 0x427e1b, 1);
+    Obj* lever = objAt(h_.ul(0x465b4f));
+    if (lever) lever->frame = mb(0x427e26 + h_.b(0x465b4b));
+    if (done) {
+        if (lever) lever->frame = 4;
+        h_.b(0x4667ae) = 0xff;
+        h_.b(0x465b53) = 0;
+    }
 }
 
 // ---------------------------------------------------------------- FUN_00427e30: Harry at the level start

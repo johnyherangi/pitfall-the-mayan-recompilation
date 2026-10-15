@@ -13,6 +13,7 @@ void h427316();
 void h427368();
 void h427528();
 void h42756d();
+void h427d92();
 void h4281b5();
 void h428505();
 void h428588();

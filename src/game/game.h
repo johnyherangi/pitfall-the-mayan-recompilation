@@ -46,6 +46,7 @@ struct FrameState {
     int maxScrollX = 0, maxScrollY = 0;  // DAT_00450fb8 / DAT_00450fbc
     int parX = 0, parY = 0;              // DAT_00450f94 / DAT_00450f98 (parallax camera)
     int bob = 0;                         // DAT_004517ec (vertical shake offset)
+    int vaultCeiling = 0;                // [DAT_00450510] + 0x1f4 (big-endian word): the vaults' ceiling, their parallax layer's y
     std::vector<int8_t> lineScroll;      // DAT_004513e0 .. (per-line parallax offsets)
     std::vector<engine::SpriteInstance> displayList;   // 0x46aa94 (20-byte entries)
     uint32_t joypad = 0, joypadPrev = 0; // DAT_004517f8 / edge detection
@@ -163,6 +164,7 @@ private:
     void tickAttract();                // title / demo sequencing (FUN_00443c90 tail)
     void renderHud();                  // FUN_00442fa0
     void renderTitle();                // FUN_004426e0 title animation
+    void renderVault();                // FUN_00443c90's layer order on the Loltun vaults
 
     uint8_t levelFlags_[32] = {};
     uint8_t rng_[12] = {};             // DAT_00466772: three longs at +0 / +4 / +8 (+6 overlaps them)

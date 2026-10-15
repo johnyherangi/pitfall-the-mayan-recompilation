@@ -46,6 +46,12 @@ public:
     void drawTileLayer(const ph::Background& bg, View& view, std::vector<DeferredTile>& deferred);
     // FUN_00436b2c list drain: draw the deferred tiles over the sprites.
     void drawDeferredTiles(const ph::Background& bg, const std::vector<DeferredTile>& deferred);
+    // 0x4371a5 / FUN_0043731c: 41x29 tiles of `bg` from tile (x >> 3, y >> 3), wrapping both
+    // ways, drawn (y & 7) px up and `shift` px left of the view origin (mainFineX: the main
+    // layer's fine x the presentation applies).  With `deferred`, the high-priority entries
+    // (bit 15) are kept for drawDeferredTiles instead (FUN_0043731c).
+    void drawWrappedLayer(const ph::Background& bg, int x, int y, int shift, int mainFineX,
+                          std::vector<DeferredTile>* deferred);
 
     // FUN_00436534 (levels 0/5 branch): line-scrolled, horizontally wrapping bitmap.
     // lineOffsets (optional) holds one signed byte per screen line (DAT_00450fd0).

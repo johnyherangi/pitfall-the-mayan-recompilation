@@ -3809,11 +3809,304 @@ void levelScriptPull(ObjCtx& ctx, uint8_t leverId) {
     }
 }
 
+// ---------------------------------------------------------------- the Loltun vaults (levels 11..13)
+
+// The vaults' Simon game, run by their three levers (type 26, 0x40b9e0).  The first lever to
+// run leads (DAT_0046617c; its top byte DAT_0046617f doubles as "the combination is being
+// shown"): it collects the three letters (type 103) into 0x466186, then each round shows the
+// combination at 0x466194 (one more random lever 0..2 each round, a step every 0x18 ticks: the
+// lever's letter lit for 16 ticks, its palette line and its note) and waits for Harry to pull
+// the levers in that order (the keys 1..3 send him to them, Harry's state 0x42756d).  A wrong
+// lever drops the ceiling (trg+0x214) and spells "wrong" in type 0x6f letters (which run the
+// float platform's handler and so never show on the PC); ten rounds open the way out (trg+0x215)
+// and drop a 1-up; rounds 3 / 5 / 7 / 9 drop a coin, silver, gold and a ring (type 166).
+// Every lever runs its own pull: it springs back (0x45bab2) once Harry lets go.
+namespace {
+
+void vaultNote(ObjCtx& ctx, int lever) {
+    // 0x40b960 copies the lever's palette line (0x45b954 + lever * 0x20) into the Genesis colours
+    // at 0x462654 (DAT_0046654f: changed); the port does not keep those colours, so the flash
+    // is not shown.  Then the lever's note (0x45aa04).
+    static const uint8_t kNote[3] = {0xcc, 0xc5, 0xee};
+    ctx.sound1(kNote[lever], 0x12);
+}
+
+void vaultKeysReset(Harry& h) {
+    // the queue of the keys 1..3 (0x4661a8; read 0x4661a0, write 0x4661a4)
+    h.setUl(0x4661a0, 0x4661a8);
+    h.setUl(0x4661a4, 0x4661a8);
+    h.b(0x4661a8) = 0;
+}
+
+void vaultLight(ObjCtx& ctx, int lever) {
+    Harry& h = ctx.harry;
+    vaultNote(ctx, lever);
+    if (Obj* letter = ctx.pl.objAt(h.ul(0x466186 + uint32_t(lever) * 4))) letter->b(0x32) = 0x10;
+}
+
+// 0x40c597: Harry, facing a vault lever, has it within reach.
+bool vaultReach(ObjCtx& ctx, const Obj& o) {
+    Harry& h = ctx.harry;
+    int16_t d0 = int16_t(h.x() + 0x20);
+    if (h.facing()) d0 = int16_t(d0 - 0x40);
+    d0 = int16_t(d0 - o.x);
+    return int16_t(d0 + 0x20) >= 0 && int16_t(d0 - 0x20) < 0;
+}
+
+void vaultDrop(ObjCtx& ctx, Obj& o, int x, const char* sprite) {
+    // a reward falling from the top of the room (type 166)
+    if (Obj* a5 = ctx.spawnFrom(o, true, 2)) {           // FUN_0043546e(2)
+        a5->x = int16_t(x);
+        a5->y = -0x30;
+        a5->setSprite(ctx.spr(sprite));
+        a5->frame = 0;
+        a5->flags = 0x6000;
+        a5->behind = 0xff;
+        a5->type = 0xa6;
+        ctx.harry.b(0x465b59) = 1;
+    }
+}
+
+void vaultRound(ObjCtx& ctx, Obj& o) {
+    // 0x40bb1c: a round starts after 0x100 (first) or 0x60 ticks; its reward, if it has one.
+    Harry& h = ctx.harry;
+    o.l(0x52) = 0x40bc8d;
+    h.b(0x4661e0) = 0xff;
+    h.b(0x4661e1) = 0xff;
+    const int d0 = (o.w(0x5c) + 1) >> 1;
+    if (h.b(0x4661e0 + uint32_t(d0)) == 0) {
+        h.b(0x4661e0 + uint32_t(d0)) = 0xff;
+        static const char* const kReward[8] = {"mi_coin", "mi_coin", "mi_coin", "mi_silvr", "mi_gold", "mi_ring", "mi_1up", "mi_coin"};   // 0x45aa08
+        vaultDrop(ctx, o, 0x40, kReward[d0 & 7]);
+        ctx.sound1(0x22, 0xa);
+    }
+    h.b(0x46617f) = 0xff;                                 // the combination is shown
+}
+
+void vaultPull(ObjCtx& ctx, Obj& o) {
+    // 0x40c0c6: every lever.  Pulled (b34), it springs back once Harry lets go; otherwise Harry
+    // arriving next to it (DAT_00465b45) on the player's turn pulls it (0x427d92).
+    Harry& h = ctx.harry;
+    PlayLogic& pl = ctx.pl;
+    if (o.b(0x34) != 0) {
+        if (h.ul(0x465b4f) != pl.addrOf(&o) || h.b(0x465b53) == 0) {
+            if (animStep(ctx, o, o.anim(0x36), kAnim_leverBack, 1)) { o.frame = 0; o.b(0x34) = 0; }
+        }
+        return;
+    }
+    if (h.b(0x465b45) != 0 && h.b(0x46617f) == 0) {
+        if (o.frame == 4 || !vaultReach(ctx, o)) return;  // (another lever may be the one)
+        o.b(0x34) = 0xff;
+        if (Obj* lead = pl.objAt(h.ul(0x46617c)))
+            if (h.b(uint32_t(lead->l(0x58)) + 1) == 0xff) vaultKeysReset(h);   // the last of the combination
+        h.l(0x465b4b) = 0;
+        h.setUl(0x465b4f, pl.addrOf(&o));
+        h.b(0x465b53) = 0xff;
+        o.facing = h.facing();
+        h.setUl(0x466180, pl.addrOf(&o));                 // for the leading lever to check
+    }
+    h.b(0x465b45) = 0;
+}
+
+void leverVault(ObjCtx& ctx, Obj& o) {
+    Harry& h = ctx.harry;
+    PlayLogic& pl = ctx.pl;
+    if (pl.tb(0x215) != 0 || pl.tb(0x214) != 0) { vaultPull(ctx, o); return; }   // solved, or the ceiling falls
+    if (o.b(0x6a) != 0) {                                 // the pause after a round
+        o.b(0x6a) -= 1;
+        if (o.b(0x6a) != 0) { vaultPull(ctx, o); return; }
+        vaultRound(ctx, o);
+    } else if (o.b(0x35) == 0) {
+        // 0x40ba49: the first tick
+        h.b(0x465b59) = 0;
+        for (uint32_t a = 0x4661e0; a < 0x4661f0; a += 4) h.l(a) = 0;        // no reward given
+        o.b(0x35) = 0xff;
+        o.l(0x58) = 0x466194;
+        for (uint32_t a = 0x466194; a < 0x4661a0; a += 4) h.l(a) = -1;      // no combination yet
+        o.l(0x52) = 0x40c0c6;
+        if (h.l(0x46617c) != 0) { vaultPull(ctx, o); return; }              // another lever leads
+        h.setUl(0x46617c, pl.addrOf(&o));
+        uint32_t a0 = 0x466186;
+        for (Obj* p : pl.objectSystem().list())
+            if (p->type == 0x67) { h.setUl(a0, pl.addrOf(p)); a0 += 4; }
+        o.w(0x5c) = 1;                                    // the length of the combination
+        o.w(0x50) = 0x100;
+        vaultRound(ctx, o);
+    }
+    for (int pass = 0; pass < 2; ++pass) {                // (a wrong lever starts a round and runs its wait)
+    switch (uint32_t(o.l(0x52))) {                        // jmp [a6 + 0x52]
+    case 0x40bc8d:                                        // the wait before the round
+        o.w(0x50) -= 1;
+        if (o.w(0x50) != 0) break;
+        o.l(0x58) = 0x466194;
+        o.w(0x50) = 0x18;
+        o.l(0x52) = 0x40bd36;
+        o.w(0x56) = o.w(0x5c);
+        o.w(0x5c) += 1;
+        if (o.w(0x5c) == 0xb) {                           // ten rounds: the way out opens
+            pl.tb(0x215) = 0xff;
+            pl.setTl(0x21c, 0);
+            vaultDrop(ctx, o, 0x100, "mi_1up");
+            return;
+        }
+        for (Obj* p : pl.objectSystem().list()) if (p->type == 0x6c) ctx.release(*p);   // 0x40c295: the instructions go
+        break;
+    case 0x40bd36: {                                      // show a step of the combination
+        o.w(0x50) -= 1;
+        if (o.w(0x50) != 0) break;
+        const uint32_t a0 = uint32_t(o.l(0x58));
+        uint32_t d0 = h.b(a0);
+        if (d0 == 0xff) {                                 // a new step
+            do d0 = ctx.rnd() & 3; while (d0 == 3);
+            h.b(a0) = uint8_t(d0);
+            h.b(a0 + 1) = 0xff;
+            pl.tb(0x1fc) = 0xff;                          // the ceiling creeps down from now on
+        }
+        o.l(0x58) += 1;
+        vaultLight(ctx, int(d0));
+        o.w(0x50) = 0x18;
+        o.w(0x56) -= 1;
+        if (o.w(0x56) != 0) break;
+        vaultKeysReset(h);
+        o.l(0x52) = 0x40be67;
+        break;
+    }
+    case 0x40be67:                                        // then the player's turn
+        o.w(0x50) -= 1;
+        if (o.w(0x50) != 0) break;
+        h.b(0x46617f) = 0;
+        o.l(0x52) = 0x40be92;
+        o.l(0x58) = 0x466194;
+        break;
+    case 0x40be92: {                                      // a lever pulled: the right one?
+        if (h.l(0x466180) == 0) break;
+        const uint32_t pulled = h.ul(0x466180);
+        h.l(0x466180) = 0;
+        uint8_t d0 = 0;
+        for (Obj* p : pl.objectSystem().list()) {
+            if (pl.addrOf(p) == pulled) break;
+            if (p->type == 0x1a) d0 += 1;
+        }
+        const uint32_t a0 = uint32_t(o.l(0x58));
+        if (d0 != h.b(a0)) {                              // wrong
+            vaultKeysReset(h);
+            o.w(0x5c) = 1;
+            o.w(0x50) = 0x60;
+            pl.spawnText("wrong", 0, 0x50, 0x6f);         // 0x45a9fe
+            pl.tb(0x214) = 0xff;
+            ctx.sound0(0x17, 0x1d);                       // FUN_0042633d(0x17, 0x60)
+            o.l(0x58) = 0x466194;
+            for (uint32_t a = 0x466194; a < 0x4661a0; a += 4) h.l(a) = -1;
+            o.b(0x64) += 1;
+            if (o.b(0x64) == 8) h.b(0x465b72) = 0x7e;
+            vaultRound(ctx, o);                           // (0x40bb1c runs on into the wait)
+            continue;
+        }
+        vaultLight(ctx, d0);
+        o.w(0x50) = 0x40;
+        if (h.b(a0 + 1) == 0xff) {                        // the round is done
+            vaultKeysReset(h);
+            o.b(0x6a) = 0x1e;
+            pl.setTw(0x1fc, 0);
+            return;
+        }
+        o.l(0x58) += 1;
+        h.b(0x46617f) = 0;
+        break;
+    }
+    default: break;                                       // 0x40c0c6
+    }
+    break;
+    }
+    vaultPull(ctx, o);
+}
+
+} // namespace
+
+// 0x418e24: type 103, a vault lever's letter (abc, abc1 while lit: b32 counts the 16 ticks
+// down).  The first one also brings in the room's doors (type 21, the template 0x4684a4) at
+// x -0x25 and 0x12d.
+void h_vaultLetter(ObjCtx& ctx, Obj& o) {
+    Harry& h = ctx.harry;
+    if (o.b(0x3c) == 0) {
+        o.x += 8;
+        o.b(0x3c) = 0xff;
+        o.frame = h.b(0x4661d6);
+        h.b(0x4661d6) += 1;
+        if (h.b(0x4661d6) == 1) {
+            for (int i = 0; i < 2; ++i) {
+                Obj* a5 = ctx.spawnFrom(o, true, 6);      // FUN_004351c5: {0x15, 0, 0, ob_door3, 6}
+                if (!a5) continue;
+                a5->type = 0x15; a5->frame = 0; a5->flags = 0;
+                a5->setSprite(ctx.spr("ob_door3"));
+                a5->x = int16_t(i == 0 ? -0x25 : 0x12d);
+                a5->y = 0x99;
+                if (i == 1) a5->facing = 0xff;
+            }
+        }
+    }
+    if (o.b(0x32) != 0) {
+        o.b(0x32) -= 1;
+        if (o.b(0x32) != 0) { o.setSprite(ctx.spr("abc1")); exitDespawnFar(ctx, o); return; }
+    }
+    o.setSprite(ctx.spr("abc"));
+    exitDespawnFar(ctx, o);
+}
+
+// 0x40b390: type 21, a vault door.  The left one slides in behind Harry at the start (to x 1
+// on vault 3, 3 on the others: a clunk), the right one slides away once the combination is
+// done.  Vault 3 has the plain door 14 px left and 6 up; vault 1's doors are not drawn.
+void h_vaultDoor(ObjCtx& ctx, Obj& o) {
+    const int stop = ctx.levelNo == 0xc ? 1 : 3;
+    if (ctx.levelNo == 0xc) {
+        o.setSprite(ctx.spr("ob_door"));
+        if (o.b(0x64) == 0) { o.x -= 0xe; o.y -= 6; o.b(0x64) = 0xff; }
+    } else if (ctx.levelNo == 0xd) {
+        o.frame = 0xff;
+    }
+    if (int16_t(o.x - 0x50) < 0) {
+        if (o.x == stop) return;
+        o.x += 1;
+        if (o.x == stop && ctx.levelNo != 0xd) ctx.sound0(0xbc, 0xb);
+        return;
+    }
+    if (ctx.pl.tb(0x215) != 0) o.x += 2;
+}
+
+// 0x418f00: type 107, set up with the vault: 30 ticks in, the instructions (type 108 letters).
+void h_vaultIntro(ObjCtx& ctx, Obj& o) {
+    if (o.b(0x32) == 0x1e) return;
+    o.b(0x32) += 1;
+    if (o.b(0x32) != 0x1e) return;
+    ctx.pl.spawnText("watch the combination", -3, 0x10, 0x6c);   // 0x45bd6c
+    ctx.pl.spawnText("then repeat using the", -3, 0x1a, 0x6c);   // 0x45bd82
+    ctx.pl.spawnText("keyboard", -3, 0x24, 0x6c);                // 0x45bd98
+}
+
+// 0x418f98: type 108, a letter of a text (behind the others; in front on the continue screen).
+void h_textLetter(ObjCtx& ctx, Obj& o) {
+    o.behind = 0xff;
+    o.flags = 0x6000;
+    if (ctx.levelNo == 0xe) o.flags = 0x8000;            // (tests [DAT_004504e4] + 0x37a both ways)
+}
+
+// 0x41f6ae: type 166, a vault reward falling (up to 9 px a tick) onto the floor at y 0xa0;
+// Harry touching it takes it (a 1-up also scores 5000).
+void h_vaultReward(ObjCtx& ctx, Obj& o) {
+    if (o.w(0x34) != 9) o.l(0x32) += 0x3000;
+    moveY(o, o.l(0x32));
+    if (int16_t(o.y - 0xa0) >= 0) o.y = 0xa0;
+    if (ctx.touchesHarry(o)) {
+        if (o.sprite && o.sprite->name() == "mi_1up") ctx.g.stats().score += 5000;
+        applyPickup(ctx, o);                              // 0x4057c9
+        ctx.release(o);
+    }
+}
+
 // 0x40c2d6: a lever (type 26).  Standing in front of it with "up" pressed pulls it, which
-// runs the level script.  (The Loltun vault levers, levels 11..13, run the Simon game at
-// 0x40b9e0 and are not ported.)
+// runs the level script.  In the Loltun vaults (levels 11..13) it runs the Simon game above.
 void h_lever(ObjCtx& ctx, Obj& o) {
-    if (ctx.levelNo >= 11 && ctx.levelNo <= 13) { exitDespawnFar(ctx, o); return; }
+    if (ctx.levelNo >= 11 && ctx.levelNo <= 13) { leverVault(ctx, o); return; }
     if (o.b(0x32) == 0) {
         o.b(0x32) = 0xff;
         const uint8_t id = triggerIdAt(ctx, o.x - 0x18, o.y + 0x18);
@@ -6779,6 +7072,11 @@ Handler ObjectSystem::handler(uint8_t type) {
     case 174:  return h_leanLever;
     case 173:  return h_oneWayDoor;
     case 71:   return h_vortex;
+    case 103:  return h_vaultLetter;
+    case 21:   return h_vaultDoor;
+    case 107:  return h_vaultIntro;
+    case 108:  return h_textLetter;
+    case 166:  return h_vaultReward;
     case 0:    return nullptr;
     default:   return h_default;
     }

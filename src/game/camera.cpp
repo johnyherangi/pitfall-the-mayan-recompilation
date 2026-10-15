@@ -50,7 +50,7 @@ void Game::computeParallax() {
     case kTempleOfTikal:                             // 9
         s.parX = sx - ruinsCounter_;
         ++ruinsCounter_;
-        s.parY = sy & 0xff;
+        s.parY = (sy + bob) & 0xff;
         break;
     case kWarriorSpirit:                             // 10
         cloudDrift_ += 4;
@@ -58,17 +58,20 @@ void Game::computeParallax() {
         s.parY = bob;
         break;
     case kLoltunVault2: case kLoltunVault3: case kLoltunVault1:            // 0xb..0xd
+        // The ceiling of the vault is the parallax layer, at the height the game logic keeps
+        // in the trigger buffer; the room is drawn 0x20 (vault 1: 0x30) px higher.
+        s.scrollY = sy + bob - (levelNo_ == kLoltunVault1 ? 0x30 : 0x20);
+        s.parY = s.vaultCeiling + bob + (levelNo_ == kLoltunVault3 ? 0x20 : 0);
         s.parX = -0x10;
-        s.parY = bob;
         s.scrollX = 0;
-        break;
+        return;
     case kTitleScreen:                               // 0xf
         s.parX = sx >> 1;
         s.parY = (sy + bob) >> 1;
         break;
     case kAtari2600Level: case kEnding:              // 0x14, 0x18
         s.parX = 0; s.parY = 0;
-        break;
+        return;
     case kIntro:                                     // 0x15
         s.parX = (sx << 3) / 7;
         s.parY = bob;
@@ -77,12 +80,13 @@ void Game::computeParallax() {
         if ((s.globalFrame & 3) == 0) ++cloudDrift_;
         s.parX = cloudDrift_;
         s.parY = 0; s.scrollY = 0;
-        break;
+        return;
     default:
         s.parX = 0;
         s.parY = bob;
         break;
     }
+    s.scrollY = sy + bob;                            // the shake moves the main layer and the sprites too
     // Title screen: the camera pans right for the first 0xe6 ticks (FUN_00443370 tail).
     if (levelNo_ == kTitleScreen && s.frame < 0xe6) {
         titlePan_ += 4;

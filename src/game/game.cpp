@@ -237,6 +237,7 @@ void Game::render() {
     engine::View view{snap_.scrollX, snap_.scrollY};
     deferred_.clear();
 
+    if (levelNo_ >= kLoltunVault2 && levelNo_ <= kLoltunVault1) { renderVault(); return; }
     // Parallax layer first (FUN_00436534).
     if (level_->hasParallax) {
         if (levelNo_ == kCeibaJungle || levelNo_ == kLakamulRainForest)
@@ -260,6 +261,24 @@ void Game::render() {
 
     if (levelNo_ == kTitleScreen) renderTitle();
     renderHud();                                                   // FUN_00442fa0
+    if (mode_ == Mode::Paused) renderer_.drawText(assets_->font, 0x82, 0x60, "PAUSED", snap_.scrollX);
+}
+
+void Game::renderVault() {
+    // FUN_00443c90 on the Loltun vaults: the room is the parallax layer, drawn at the main scroll
+    // (rounded to 8 px) with its high-priority tiles kept for after the sprites (FUN_0043731c);
+    // the main layer is the ceiling, drawn over everything at the parallax scroll (0x4371a5,
+    // FUN_00436fb4 after FUN_00442dc0).
+    engine::View view{snap_.scrollX, snap_.scrollY};
+    const int fine = snap_.scrollX & 7;
+    renderer_.drawWrappedLayer(level_->parallax, snap_.scrollX, snap_.scrollY & ~7, snap_.parX & 7, fine, &deferred_);
+    for (auto it = snap_.displayList.rbegin(); it != snap_.displayList.rend(); ++it)
+        if (!(it->flags & engine::kSprFront)) renderer_.drawSprite(*it, view);
+    renderer_.drawDeferredTiles(level_->parallax, deferred_);
+    for (auto it = snap_.displayList.rbegin(); it != snap_.displayList.rend(); ++it)
+        if (it->flags & engine::kSprFront) renderer_.drawSprite(*it, view);
+    renderer_.drawWrappedLayer(level_->bg, snap_.parX, snap_.parY, fine, fine, nullptr);
+    renderHud();
     if (mode_ == Mode::Paused) renderer_.drawText(assets_->font, 0x82, 0x60, "PAUSED", snap_.scrollX);
 }
 

@@ -84,7 +84,8 @@
   "cartSpark": "0x45ba7b",
   "floatBob": "0x45bdc2",
   "harrySplash": "0x45be4a",
-  "vaporSpin": "0x45be78"
+  "vaporSpin": "0x45be78",
+  "leverBack": "0x45bab2"
  },
  "anim2": {
   "monkeyToss": "0x45ab81",
@@ -115,6 +116,7 @@
   "priestDeath": "0x45a849+0x69",
   "ropeSwing": "0x45dfd0+0x1d3a",
   "ropeSwingHarry": "0x45bfde+0x1f38",
-  "rideScript": "0x45fdc4+0x2a8"
+  "rideScript": "0x45fdc4+0x2a8",
+  "glyphWidths": "0x46b0d8+0x90"
  }
 }

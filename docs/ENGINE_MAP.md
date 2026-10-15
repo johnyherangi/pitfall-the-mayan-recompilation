@@ -83,7 +83,9 @@ The game logic requests a transition by setting a string `"*<digit>..."` and jum
 room 22 else map 19, `*50` the 2600 level 20 (level 24 with the `DAT_0046d05c` cheat) with `DAT_00450fc8` = 0xb,
 `*51`..`*53` the vaults 11..13 with `DAT_00450fc8` = the level left, `*6` out of the 2600 level (back to level 3 with
 `DAT_004601c4` when `DAT_00450fc8` is 0xb), `*7` out of a vault (back to `DAT_00450fc8` with `DAT_004504cc`), `*8`
-title, `*9` credits.  A level load runs one logic tick in `FUN_00435fc0` and one engine tick (thirteen more on levels
+title, `*9` credits.  The engine adds the shake (`DAT_004517ec`) to the main scroll on nearly every level; the vaults
+draw their room as the parallax layer at the main scroll (rounded to 8 px, `FUN_0043731c`, its priority tiles after the
+sprites) and their ceiling as the main layer over everything at the parallax scroll (`0x4371a5`).  A level load runs one logic tick in `FUN_00435fc0` and one engine tick (thirteen more on levels
 0, 2, 5, 8 and 16, the table `0x46ffa0`) before its first frame; `*3` runs the one logic tick and the thirteen.
 Title → attract: after 0x5a0 ticks play demo 0 (level 0), demo 1 (level 1),
 demo 2 (level 20 — the Atari 2600 easter-egg level), then the intro (21).
@@ -158,6 +160,8 @@ demo 2 (level 20 — the Atari 2600 easter-egg level), then the intro (21).
 | `FUN_00430229` + `FUN_004251f9` | Harry's trigger cell is `((x + 0x10) >> 4, max(4, y - 0x10) >> 4)`; `.trg` range entries `{0xfe, from, to, id}` cover `from <= row < to` | `PlayLogic::checkTriggers`, `ph::ColumnTable` |
 | `0x46679e..a4` | checkpoint: x, y, the lit marker's x, facing; set to the `^` start by `FUN_004331d8` at each level start (unless Harry comes out of a vortex), moved by the fx_mls markers, where `FUN_00432615` puts Harry back | Harry memory (`h_.w(0x46679e)` ..) |
 | `FUN_004288ec` / `0x4288a2`, `0x4601dd` / `0x4611dd`, `0x465af3..afd`, `0x46a860..66`, `0x46a884..88` | a vortex warp's save: the 4 KB `.als` buffer, the 256 runtime trigger classes, the level, Harry's x + 4 / y / facing, the checkpoint, and the x of each vault vortex taken (it stays shut; cleared by a new game) | `Game::Warp` (`warp()`) |
+| `[DAT_00450510] + 0x1f4 ..` | Genesis RAM the PC keeps in the trigger buffer, read big-endian: the boss pointer (+0x1f4, boss levels), the vaults' ceiling (+0x1f4, 16.16) and its speed (+0x1f8), "a round is on" (+0x1fc), a 128-tick timer (+0x1fe), failed / solved (+0x214 / +0x215), timers (+0x21c), Harry's squash script (+0x2f0, native) | `PlayLogic::tb / tw / tl / tln` (`trgRam_`), `boss_` |
+| `FUN_00434a30` / `0x434d2d` | text in letter objects of type `DAT_00465c58` (ltr_lg capitals, ltr_md for type 0x11, ltr_sm small letters and digits; widths `0x46b0d8`), each line centred on x + 0xa0; a space after a capital is one of two random large glyphs | `PlayLogic::spawnText / textGlyph` |
 | `DAT_00450fc8` / `DAT_004504cc` / `DAT_004601c4` / `DAT_0046d05c` | the level `*7` returns to (1: none, 0xb: back from the 2600 level), "coming out of a vault", "coming out of the 2600 level" (Harry at 0x6e5, 0x587 on level 3), the cheat that sends `*50` to level 24 | `Game::Warp::returnLevel / fromVault / fromAtari / cheat` |
 | `0x466507` / `trg+0x1f4` | boss fight on / the boss record (heart beat script, exit trigger ignored, meter source) | `PlayLogic::setBoss / bossObject / bossActive` |
 | `0x465b09` | camera left lock (the jaguar arena: `0x9fa`) read by `0x404e17` | `PlayLogic::lockCameraLeft` |
@@ -183,7 +187,8 @@ demo 2 (level 20 — the Atari 2600 easter-egg level), then the intro (21).
 1 static `0x405322`, 2 item `0x405328`, 3 checkpoint `0x405aae`, 4 bigStone `0x405c86`, 5 slingStone `0x40613c`, 6
 boomerang `0x406487`, 7 rideWarning `0x406b32`, 8 web `0x406bbc`, 9 dropBall `0x406ea6`, 10 condor `0x406f62`, 11
 turtle `0x4078b0`, 12 roamingSnake `0x407bfc`, 13 crocSwimmer `0x4085fe`, 14 rope `0x4088ba`, 15 mineCart `0x408f5a`,
-16 sparkle `0x40a2c8`, 18 bat `0x40a4be`, 19 pushCart `0x40ab62`, 20 crocLurker `0x40b08a`, 23 rat `0x40b5d2`, 26
+16 sparkle `0x40a2c8`, 18 bat `0x40a4be`, 19 pushCart `0x40ab62`, 20 crocLurker `0x40b08a`, 21 vaultDoor `0x40b390`, 23 rat
+`0x40b5d2`, 26
 lever `0x40b9e0`, 27 bungee `0x40c5fe`, 28 spear `0x40d322`, 29 projectile `0x40d3b0`, 30 piston `0x40d77a`, 31 door
 `0x40d9e6`, 32 verticalWeb `0x40dc2e`, 33 chute `0x40de86`, 34 tnt `0x40e18d`, 35 monkey `0x40e394`, 36 spit
 `0x40ebb0`, 37 cartSpark `0x40eca2`, 38 pot `0x40ed62`, 39 firePit `0x40f2ba`, 40 pit `0x40f620`, 41 hollow
@@ -196,8 +201,8 @@ vortex `0x414c58`, 72 vineMonkey `0x414dac`, 74 pouchRespawner `0x415028`, 76 fa
 `0x41562c`, 80 boar `0x415640`, 81 bossDeathBurst `0x415d15`, 82 dripper `0x415e92`, 83 drip `0x415f4a`, 84
 leapingCroc `0x4160b2`, 85 hawk `0x4165f2`, 87 explodingPlant `0x416be0`, 88 limpSnake `0x416f48`, 91 tonguePlant
 `0x417a54`, 92 pushLever `0x417d0e`, 96 ceilingDripper `0x41836e`, 97 ceilingSpikes `0x418474`, 98 cartSpawner
-`0x4185ce`, 99 runawayCart `0x4186c4`, 100 fireJet `0x418834`, 101 crocSplash `0x4188e0`, 102 fly `0x418992`, 104
-effect `0x418ec6`, 109 snake `0x418fd0`, 110 spider `0x419622`, 111 floatPlatform `0x419d00`, 112 rat2 `0x419ec8`, 113
+`0x4185ce`, 99 runawayCart `0x4186c4`, 100 fireJet `0x418834`, 101 crocSplash `0x4188e0`, 102 fly `0x418992`, 103
+vaultLetter `0x418e24`, 104 effect `0x418ec6`, 107 vaultIntro `0x418f00`, 108 textLetter `0x418f98`, 109 snake `0x418fd0`, 110 spider `0x419622`, 111 floatPlatform `0x419d00`, 112 rat2 `0x419ec8`, 113
 hidden1up `0x41a092`, 115 rideDirector `0x41a2ae`, 116 floorSkull `0x41a9fa`, 117 hoppingSkull `0x41aade`, 118
 markerFlame `0x41ae9a`, 119 whipLever `0x41aee0`, 121 rideMarker `0x41b208`, 122 harrySplash `0x41b24e`, 123 branch
 `0x41b2da`, 124 branchTip `0x41b424`, 125 branchPiece `0x41b5d8`, 126 rideLaneLight `0x41b628`, 127 rideCart
@@ -205,23 +210,29 @@ markerFlame `0x41ae9a`, 119 whipLever `0x41aee0`, 121 rideMarker `0x41b208`, 122
 135 boomerangBack `0x41bcb2`, 137 stonePiece `0x41bfe2`, 138 stoneSpark `0x41c420`, 142 heart `0x41d520`, 147 coin
 `0x41d876`, 148 pitWheel `0x41d9e6`, 149 wheelSpawner `0x41dbf2`, 150 ceilingRock `0x41dc50`, 151 hudText `0x41dd6e`,
 155 hudGo `0x41e110`, 156 hangingPouch `0x41e132`, 160 eyes `0x41f2c2`, 161 dot `0x41f320`, 164 snakeRespawner
-`0x41f5e6`, 169 ropeSpawner `0x41fc1a`, 170 oneUpFly `0x41fd26`, 172 treeSnake `0x420090`, 173 oneWayDoor `0x42068c`,
+`0x41f5e6`, 166 vaultReward `0x41f6ae`, 169 ropeSpawner `0x41fc1a`, 170 oneUpFly `0x41fd26`, 172 treeSnake `0x420090`, 173 oneWayDoor `0x42068c`,
 174 leanLever `0x4208f8`.
 
 Notes on some of them: the jaguar boss's states are INTRO `0x411391`, GO `0x41124d`, POUNCE `0x411054`, REVERSE
 `0x41190f`, RUN `0x411651`, CROUCH `0x410f1f`, ROAR `0x41119c`, STOP `0x41156b`; the bungee vine drives Harry's state
 `0x429fe2` with the triple-format scripts at `0x45aaa4` and releases through `0x42c3bc` / `0x42c2cc`; the condor and the
-hawk share the stun tumble `0x4073d3` / `0x407555`, the wall turn `0x40769b` and the climb `0x40775b`; the vault levers
-of levels 11..13 (the Simon game at `0x40b9e0`'s vault branch) are not ported.
+hawk share the stun tumble `0x4073d3` / `0x407555`, the wall turn `0x40769b` and the climb `0x40775b`.  On the vault levels
+11..13 the lever (26, `0x40b9e0`) runs the Simon game: the first lever to run leads (`DAT_0046617c`, whose top byte
+`DAT_0046617f` doubles as "showing the combination"), collects the three letters (103) into `0x466186`, and each round
+shows the combination at `0x466194` (one more random lever a round, a step every 0x18 ticks) through the code pointer
+at +0x52 (`0x40bc8d` wait, `0x40bd36` show, `0x40be67`, `0x40be92` check); Harry's state `0x42756d` walks him to the
+levers on the keys 1..3 (queued at `0x4661a8`) and pulls them (`0x427d92`); ten rounds open the right door (21) and
+drop a 1-up, rounds 3 / 5 / 7 / 9 a coin, silver, gold and a ring (166); a wrong lever or the timer brings the ceiling
+down (the vault's main layer) and a message (`FUN_00434a30`, type 108 letters), then `*7`.  "wrong" is spelt in type
+0x6f letters, which run the float platform's handler and are never shown on the PC.
 
 The vortex (71) catches Harry standing in its box `0x45bbce` and hands him to his state `0x428780` (spins away in the
 script `0x428a43`, 6 ticks a frame); the trigger under it then picks the exit: 0x89 the 2600 level (`*50`, level 3),
 0x8a / 0x8b / 0x8c the vaults (`*53` from level 2, `*51` from level 4, `*52` from level 8), anything else the
 checkpoint (`FUN_00432615`).
 
-Still `h_default` (drawn in the template frame, never act): 103 vault letters `0x418e24` (with the Simon game of the
-vault levers), 105 the Warrior Spirit `0x420bd0`, and the later jaguars 140 `0x41c4c2` / 158 `0x41e462`, with the
-objects only they spawn.  The
+Still `h_default` (drawn in the template frame, never act): 105 the Warrior Spirit `0x420bd0`, and the later jaguars
+140 `0x41c4c2` / 158 `0x41e462`, with the objects only they spawn.  The
 boss meter's branches for types 0x69 / 0x8c and the level-8 boss are not ported.
 
 Every ported handler has been checked against its disassembly, in address order.  Quirks of the original that

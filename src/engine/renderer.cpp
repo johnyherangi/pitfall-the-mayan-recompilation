@@ -62,6 +62,25 @@ void Renderer::drawDeferredTiles(const ph::Background& bg, const std::vector<Def
     }
 }
 
+void Renderer::drawWrappedLayer(const ph::Background& bg, int x, int y, int shift, int mainFineX,
+                                std::vector<DeferredTile>* deferred) {
+    if (bg.wTiles == 0 || bg.hTiles == 0) return;
+    int tx0 = (x >> 3) % bg.wTiles; if (tx0 < 0) tx0 += bg.wTiles;
+    int ty0 = (y >> 3) % bg.hTiles; if (ty0 < 0) ty0 += bg.hTiles;
+    uint8_t* dstRow = fb_.px.data() + kViewBaseOffset - (y & 7) * kBufW + mainFineX - shift;
+    for (int r = 0; r < kTileRows; ++r) {
+        const uint16_t* row = &bg.tilemap[size_t((ty0 + r) % bg.hTiles) * bg.wTiles];
+        uint8_t* dst = dstRow;
+        for (int c = 0; c < kTileCols; ++c, dst += 8) {
+            const uint16_t e = row[(tx0 + c) % bg.wTiles];
+            if (deferred && (e & 0x8000)) { deferred->push_back(DeferredTile{dst, e}); continue; }
+            const int t = e & 0xfff;
+            if (t < bg.tileCount()) drawTile(dst, &bg.tiles[size_t(t) * 64], e);
+        }
+        dstRow += kBufW * 8;
+    }
+}
+
 void Renderer::clearView(int scrollX) {
     uint8_t* dst = fb_.viewBase(scrollX);
     for (int y = 0; y < kViewH; ++y) std::memset(dst + size_t(y) * kBufW, 0, kViewW);
