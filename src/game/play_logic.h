@@ -82,6 +82,7 @@ public:
     bool bossActive() const { return h_.b(0x466507) != 0; }
     void startBossOutro() { h_.b(0x465d49) = 1; }   // DAT_00465d49 (FUN_0043426d)
     void hudAdd(const Obj& o) { hud_.push_back(objects_.indexOf(o)); }   // 0x4150a2: FUN_0043348e places it next tick
+    uint32_t& fadeCmd() { return fadeCmd_; }      // DAT_0046b1b0 (0xc0: the big stone's white flash)
 
 private:
     friend struct HarryAccess;

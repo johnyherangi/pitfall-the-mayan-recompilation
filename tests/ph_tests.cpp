@@ -87,7 +87,7 @@ int main(int argc, char** argv) {
 }
 
 // ---- gameplay smoke tests (appended) --------------------------------------
-namespace { int jaguarTest(const std::string& dir); int bungeeTest(const std::string& dir); }
+namespace { int jaguarTest(const std::string& dir); int bungeeTest(const std::string& dir); int stoneTest(const std::string& dir); }
 namespace {
 int gameplayTests(const std::string& dir) {
     int fails = 0;
@@ -116,6 +116,7 @@ int gameplayTests(const std::string& dir) {
                 dl.empty() ? -1 : dl.back().x, dl.empty() ? -1 : dl.back().y);
     fails += jaguarTest(dir);
     fails += bungeeTest(dir);
+    fails += stoneTest(dir);
     return fails;
 }
 }
@@ -203,3 +204,89 @@ int bungeeTest(const std::string& dir) {
 }
 }
 
+
+// A sling stone at the start of Ceiba Jungle: E throws one (type 5, held in one of the five
+// in-flight slots at DAT_00466808); it must fly off the way Harry faces, come down, and break
+// or leave the screen within 200 ticks, freeing its slot and costing one stone.
+namespace {
+int stoneTest(const std::string& dir) {
+    int fails = 0;
+    engine::Options opts;
+    game::Game g(dir, opts);
+    g.startLevel(0); g.setMode(game::Mode::Playing);
+    game::PlayLogic* pl = game::g_debugLogic;
+    if (!pl) return 1;
+    for (int i = 0; i < 60; ++i) g.tick(engine::HostInput{});
+    g.stats().ammoCount[0] = 10;                          // (Harry starts the game without stones)
+    const int ammo0 = g.stats().ammoCount[0];
+    int thrownAt = -1, x0 = 0, maxDx = 0, gone = -1, prevY = 0;
+    bool fell = false, broke = false, slotSet = false;
+    for (int i = 0; i < 200; ++i) {
+        engine::HostInput in;
+        if (i < 2) in.keyDown['E'] = true;
+        g.tick(in);
+        game::Obj* st = nullptr;
+        for (game::Obj* o : pl->objectSystem().list()) if (o->type == 5) st = o;
+        if (st && thrownAt < 0) { thrownAt = i; x0 = st->x; prevY = st->y; }
+        if (st) {
+            const int dx = pl->harry().facing() ? x0 - st->x : st->x - x0;
+            maxDx = std::max(maxDx, dx);
+            if (st->y > prevY) fell = true;
+            prevY = st->y;
+            if (st->w(0x40)) broke = true;
+            for (uint32_t a = 0x466808; a <= 0x466818; a += 4) if (pl->harry().ul(a) == pl->addrOf(st)) slotSet = true;
+        }
+        if (thrownAt >= 0 && !st && gone < 0) gone = i;
+    }
+    bool slotsFree = true;
+    for (uint32_t a = 0x466808; a <= 0x466818; a += 4) if (pl->harry().ul(a) != 0) slotsFree = false;
+    if (thrownAt < 0) { std::printf("FAIL: no sling stone was thrown\n"); ++fails; }
+    else {
+        if (!slotSet) { std::printf("FAIL: the stone was not in an in-flight slot\n"); ++fails; }
+        if (maxDx < 32) { std::printf("FAIL: the stone did not fly (%d px)\n", maxDx); ++fails; }
+        if (!fell) { std::printf("FAIL: the stone did not come down\n"); ++fails; }
+        if (gone < 0) { std::printf("FAIL: the stone was still there after 200 ticks\n"); ++fails; }
+        if (!slotsFree) { std::printf("FAIL: the stone's slot was not freed\n"); ++fails; }
+        if (g.stats().ammoCount[0] != ammo0 - 1) { std::printf("FAIL: stones %d -> %d\n", ammo0, g.stats().ammoCount[0]); ++fails; }
+    }
+    std::printf("stone: thrown at tick %d, flew %d px, %s, gone at %d\n", thrownAt, maxDx, broke ? "broke" : "left the screen", gone);
+
+    // The boomerang (type 6) flies its loop, turns into type 0x87 at the end of the path and
+    // comes back to Harry, who stands still and gets it back (a new game: nothing about to
+    // home in on).
+    g.startLevel(0); g.setMode(game::Mode::Playing);
+    pl = game::g_debugLogic;
+    for (int i = 0; i < 60; ++i) g.tick(engine::HostInput{});
+    g.stats().weapon = 1; g.stats().ammoCount[1] = 3;
+    int back = -1, caught = -1;
+    for (int i = 0; i < 300 && caught < 0; ++i) {
+        engine::HostInput in;
+        if (i < 2) in.keyDown['E'] = true;
+        g.tick(in);
+        bool out = false, ret = false;
+        for (game::Obj* o : pl->objectSystem().list()) { if (o->type == 6) out = true; if (o->type == 0x87) ret = true; }
+        if (ret && back < 0) back = i;
+        if (back >= 0 && !out && !ret) caught = i;
+    }
+    if (back < 0) { std::printf("FAIL: the boomerang did not turn back\n"); ++fails; }
+    if (caught < 0 || g.stats().ammoCount[1] != 3) { std::printf("FAIL: the boomerang was not caught (boomerangs %d)\n", g.stats().ammoCount[1]); ++fails; }
+
+    // The big stone (type 4) explodes into eight pieces (type 0x89), whose blast flashes the
+    // screen (DAT_0046b1b0).
+    g.stats().weapon = 2; g.stats().ammoCount[2] = 1;
+    int pieces = 0, flash = -1;
+    for (int i = 0; i < 120 && flash < 0; ++i) {
+        engine::HostInput in;
+        if (i < 2) in.keyDown['E'] = true;
+        g.tick(in);
+        int n = 0;
+        for (game::Obj* o : pl->objectSystem().list()) if (o->type == 0x89) ++n;
+        pieces = std::max(pieces, n);
+        if (pl->fadeCmd() != 0) flash = i;
+    }
+    if (pieces != 8) { std::printf("FAIL: the big stone made %d pieces\n", pieces); ++fails; }
+    if (flash < 0) { std::printf("FAIL: no blast from the big stone\n"); ++fails; }
+    std::printf("boomerang: back at tick %d, caught at %d; big stone: %d pieces, blast at %d\n", back, caught, pieces, flash);
+    return fails;
+}
+}

@@ -158,6 +158,10 @@ public:
     const Obj& record(int i) const { return recs_[size_t(i)]; }
     int indexOf(const Obj& o) const { return int(&o - recs_.data()); }
     std::vector<Obj*> list();                  // the objects in list order (DAT_00462848 ..)
+    // A walk of the list as the handlers do it (DAT_00462848, then +0x18 of each record, which a
+    // freed record keeps).
+    Obj* first() { return head_ < 0 ? nullptr : &recs_[size_t(head_)]; }
+    Obj* nextOf(const Obj& o) { return o.next < 0 ? nullptr : &recs_[size_t(o.next)]; }
     static Handler handler(uint8_t type);
 
     // The display lists the pass makes, one array as in RAM: from 0x464bfc the objects behind
@@ -218,6 +222,14 @@ bool webHit(ObjCtx& ctx, Obj& o, bool* cut);
 void debrisPuff(ObjCtx& ctx, Obj& at);
 // 0x4081ae: the score table 0x461aca by type.
 int scoreForType(uint8_t type);
+// 0x45b6c3: the class bits by type (1: killed by the big stone's blast, 2: comes back after a
+// kill, 4: the boomerang homes in on it).
+uint8_t typeClass(uint8_t type);
+// 0x40855e: the death-effect table moves y by type; returns its kind (1 for unlisted types).
+uint8_t deathFxAdjust(Obj& o);
+int deathFxYOff(uint8_t type);                  // the same table's y offset (0 for unlisted types)
+// 0x424f40: more than 0x20 px outside the screen.
+bool offScreen(const ObjCtx& ctx, const Obj& o);
 // 0x4081fc: an enemy dies: score, death effect, permanent-kill bookkeeping, release.
 void killObject(ObjCtx& ctx, Obj& o);
 // 0x407aff: every 6th call, harryContactNow.  `d1` as for ObjCtx::touchesHarry (0x60 after a
@@ -225,8 +237,9 @@ void killObject(ObjCtx& ctx, Obj& o);
 bool harryContact(ObjCtx& ctx, Obj& o, int damage, int16_t* d1 = nullptr);
 // 0x407b0f: hurt Harry by `damage` when the boxes overlap (on a vine his box swings with him).
 bool harryContactNow(ObjCtx& ctx, Obj& o, int damage, int16_t* d1 = nullptr);
-// 0x4301ce: triggers 0x30 / 0x31 at (x + dx, y) toggle the "in front" flag.
-void priorityTrigger(ObjCtx& ctx, Obj& o, int dx);
+// 0x4301ce: triggers 0x30 / 0x31 at (x + dx, y) toggle the "in front" flag; returns the lookup
+// (FUN_004251f9's d2 / d3, which some callers test next).
+Trg priorityTrigger(ObjCtx& ctx, Obj& o, int dx);
 // What FUN_00425d6f (the .det probe) leaves in d3, for the handlers that go on to use it:
 // shape * 16 + (x & 15) on a hit; on a miss the d3 it was given (y < 0x12), 0 (an empty
 // column) or the row byte of the column entry that ended the scan.

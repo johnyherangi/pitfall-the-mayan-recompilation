@@ -587,6 +587,27 @@ const uint8_t kTypeClass[180] = {
 } // namespace
 
 int scoreForType(uint8_t type) { return type < 180 ? kKillScore[type] : 0; }   // 0x4081ae
+uint8_t typeClass(uint8_t type) { return type < 180 ? kTypeClass[type] : 0; }  // 0x45b6c3
+
+uint8_t deathFxAdjust(Obj& o) {
+    // 0x40855e: the death-effect table 0x45b814 by type moves y; d0 = the kind (1 when the
+    // type is not listed).
+    for (const DeathFx& d : kDeathFx)
+        if (d.type == o.type) { o.y = int16_t(o.y + d.yOff); return d.kind; }
+    return 1;
+}
+
+int deathFxYOff(uint8_t type) {
+    for (const DeathFx& d : kDeathFx)
+        if (d.type == type) return d.yOff;
+    return 0;
+}
+
+bool offScreen(const ObjCtx& ctx, const Obj& o) {
+    // 0x424f40: d0 = 1 when the object is more than 0x20 px outside the screen.
+    const int16_t dx = int16_t(o.x - ctx.camX), dy = int16_t(o.y - ctx.camY);
+    return !(int16_t(dx + 0x20) >= 0 && int16_t(dx - 0x160) < 0 && int16_t(dy + 0x20) >= 0 && int16_t(dy - 0xe8) < 0);
+}
 
 void killObject(ObjCtx& ctx, Obj& o) {
     // 0x4081fc: the 0x465a40 list (class bit 1: it comes back 15 s later; on easy the monkeys
@@ -594,9 +615,7 @@ void killObject(ObjCtx& ctx, Obj& o) {
     // which also moves y; unlisted types get the debris puff) is made from it.
     if (o.type != 0 && o.type < 180 && (kTypeClass[o.type] & 2) && (ctx.hard || o.type != 0x23)) ctx.pl.markKilled(o);
     if (o.type < 180) ctx.g.stats().score += kKillScore[o.type];
-    int kind = 1;
-    for (const DeathFx& d : kDeathFx)
-        if (d.type == o.type) { kind = d.kind; o.y = int16_t(o.y + d.yOff); break; }
+    const int kind = deathFxAdjust(o);                          // 0x40855e
     ctx.release(o);
     if (kind == 0) return;
     ctx.sound0(6, 0xe);                                         // FUN_0042633d(6, 0x60)
@@ -663,13 +682,14 @@ bool harryContactNow(ObjCtx& ctx, Obj& o, int damage, int16_t* d1) {
     return hit;
 }
 
-void priorityTrigger(ObjCtx& ctx, Obj& o, int dx) {
+Trg priorityTrigger(ObjCtx& ctx, Obj& o, int dx) {
     // 0x4301ce: class 0xf2 triggers 0x30 / 0x31 at (x + dx, y) put the object in front of /
     // behind the high-priority scenery.
     const Trg t = ctx.trigger(o.x + dx, o.y);
-    if (t.raw != 0xf2) return;
+    if (t.raw != 0xf2) return t;
     if (t.id == 0x30) o.flags = uint16_t((o.flags & 0x7fff) + 0x8000);
     else if (t.id == 0x31) o.flags &= 0x7fff;
+    return t;
 }
 
 uint32_t floorProbeD3(const ObjCtx& ctx, int x, int y, uint32_t d3) {

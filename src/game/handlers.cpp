@@ -37,10 +37,7 @@ inline bool between(int v, int lo, int hi) { return v >= lo && v < hi; }   // [l
 
 // 0x40a2c8: type 0x10 sparkle (fx_sprk1 / fx_sprk2), optional drift and delay.
 void h_sparkle(ObjCtx& ctx, Obj& o) {
-    if (o.b(0x57)) {
-        uint8_t id = 0;
-        if (ctx.triggerClass(o.x, o.y, &id) & 1) { ctx.release(o); return; }
-    }
+    if (o.b(0x57) && (priorityTrigger(ctx, o, 0).cls & 1)) { ctx.release(o); return; }   // 0x4301ce
     if (o.w(0x60)) { o.w(0x60) -= 1; return; }
     if (o.link && o.link->type != 5) { ctx.release(o); return; }   // +0x5c: dies once that record is no longer a stone
     moveX(o, o.l(0x32));
@@ -955,6 +952,391 @@ void h_feather(ObjCtx& ctx, Obj& o) {
     if (o.w(0x64)) { o.w(0x64) -= 1; return; }
     if (o.w(0x46)) { o.w(0x46) -= 1; if (o.w(0x46) == 0) { ctx.release(o); return; } }
     exitDespawnFar(ctx, o);
+}
+
+// 0x412f14: type 65, a puff of dust from Harry's feet (his skids and landings): it drifts by
+// l32 and rises 0x6000 a tick, gone when turn7 has run once or at a wall cell.
+void h_dust(ObjCtx& ctx, Obj& o) {
+    ctx.pl.setTriggerClass(2, 0);             // trigger id 2 does not stop thrown things
+    o.flags = 0x6000;
+    moveY(o, -0x6000);
+    moveX(o, o.l(0x32));
+    if ((ctx.triggerClass(o.x + (o.l(0x32) < 0 ? -0x18 : 6), o.y) & 1) ||
+        animStep(ctx, o, o.anim(0x3a), kAnim_turn7, 4)) {      // 0x4619c7
+        ctx.release(o);
+        return;
+    }
+    exitDespawnFar(ctx, o);
+}
+
+
+// ---------------------------------------------------------------- Harry's stones (types 4 / 5 / 0x89 / 0x8a)
+
+// *(l3a) = 0: a thrown stone leaves its in-flight slot (DAT_00466808 .. 0x466818), where
+// weaponHit looks for it.
+void leaveSlot(ObjCtx& ctx, Obj& o) {
+    const uint32_t a = uint32_t(o.l(0x3a));
+    if (a >= 0x466808 && a <= 0x466818) ctx.harry.setUl(a, 0);   // (always one of the five)
+}
+
+// 0x40613c: type 5, a sling stone (obrston0).  It flies with gravity 0x300 a tick (plus l4a,
+// set by a bounce off a boss) and a pull of 0x50 on l32, trailing sparkles after a power shot
+// (b54), and breaks (fx_stone, turn7) at a wall cell, on a floor it falls onto at 2 px a tick
+// or more, or at a slope that rises more than 2 px against it; off the screen it is dropped.
+// A hit on an enemy (weaponHit) sets w40 and frees its slot itself.
+void h_slingStone(ObjCtx& ctx, Obj& o) {
+    for (;;) {                                                    // 0x40613c: a break runs it again
+        ctx.pl.setTriggerClass(2, 0);                             // trigger id 2 does not stop thrown things
+        if (o.b(0x54)) {
+            o.b(0x55) -= 1;
+            if (int8_t(o.b(0x55)) < 0) {
+                o.b(0x55) = 2;
+                if (Obj* s = ctx.spawnFrom(o, true, 0)) {          // FUN_0043546e(0)
+                    s->type = 0x10; s->b(0x57) = 0xff; s->flags = o.flags;
+                    s->link = &o;                                  // (+0x5c: it goes when this is no longer a stone)
+                    s->sprite = ctx.spr("fx_sprk1");
+                    s->l(0x32) = o.l(0x32) >> 2; s->l(0x36) = o.l(0x36) >> 2;
+                }
+            }
+        }
+        if (o.w(0x40)) {                                          // 0x4061f8: breaking
+            o.sprite = ctx.spr("fx_stone");
+            if (animStep(ctx, o, o.anim(0x40), kAnim_turn7, o.b(0x55) ? 1 : 3)) ctx.release(o);   // 0x4619c7
+            return;
+        }
+        bool stop = (priorityTrigger(ctx, o, -0x10).cls & 1) != 0;   // 0x4301ce
+        if (!stop) {
+            moveX(o, o.l(0x32));
+            moveY(o, o.l(0x36));
+            const ph::ColumnTable& plane = ctx.harry.b(0x465bb3) ? ctx.dt2() : ctx.det();   // Harry's plane
+            if (o.l(0x36) >= 0x20000) {
+                stop = ph::probeCell(plane, o.x - 8, o.y).hit;    // FUN_0042571f / FUN_004258a2
+            } else if (const ph::FloorHit f = ph::probeCell(plane, o.x - 8, o.y + 0xc); f.hit) {
+                // the shape's left end less its right end, against the way it flies
+                int16_t d = int16_t(ph::kCollisionHeights[f.shape * 16] - ph::kCollisionHeights[f.shape * 16 + 15]);
+                if (o.l(0x32) >= 0) d = int16_t(-d);
+                stop = int16_t(d + 2) < 0;
+            }
+            if (stop) o.facing = 0xff;
+            else {
+                o.l(0x32) += 0x50;
+                o.l(0x36) += 0x300;
+                o.l(0x36) += o.l(0x4a);
+                if (!(ctx.triggerClass(o.x, o.y) & 1)) {
+                    if (offScreen(ctx, o)) { leaveSlot(ctx, o); ctx.release(o); }   // 0x424f40
+                    return;
+                }
+            }
+        }
+        // 0x406260: it breaks
+        ctx.sound1(0xcd, 9);
+        o.w(0x26) = 0x6663;                                       // FUN_004263a6(2), which never fails on the PC
+        leaveSlot(ctx, o);
+        o.w(0x40) = 0x100;
+    }
+}
+
+// 0x45a968: the eight pieces of the big stone {l46, l4a}, taken away from x / y each tick.
+const int32_t kStonePieces[8][2] = {
+    {0, -0x44000}, {0x30000, -0x30000}, {0x44000, 0}, {0x30000, 0x30000},
+    {0, 0x44000}, {-0x30000, 0x30000}, {-0x44000, 0}, {-0x30000, -0x30000}};
+
+// 0x405c86: type 4, the big stone (mi_stone, thrown while DAT_004667af is set).  It rolls
+// (turn4 at 2 ticks) with l32 and the vertical speed l5c for 15 ticks, less when it comes
+// against a wall cell, or until an enemy marks it (b37, weaponHit), then explodes: it and three
+// more fx_expl3 quarters, chained through +0x5c (the last three show on frame 2 only); at the
+// start of that frame eight pieces (type 0x89) fly out.
+void h_bigStone(ObjCtx& ctx, Obj& o) {
+    ctx.pl.setTriggerClass(2, 0);                                 // trigger id 2 does not stop thrown things
+    animStep(ctx, o, o.anim(0x5a), kAnim_turn4, 2);               // 0x461746
+    auto next = [&](Obj* p) { return ctx.pl.objAt(uint32_t(p->l(0x5c))); };   // the +0x5c chain
+    auto releaseAll = [&]() {                                     // 0x406003
+        // (before the explosion +0x5c is the vertical speed; the original would free whatever
+        // it points at)
+        Obj* p = &o;
+        for (int i = 0; i < 3 && (p = next(p)) != nullptr; ++i) ctx.release(*p);
+        leaveSlot(ctx, o);
+        ctx.release(o);
+    };
+    if (o.b(0x36) == 0) {
+        if (o.b(0x37) == 0) {
+            moveX(o, o.l(0x32));
+            if (ctx.triggerClass(o.x + (o.l(0x32) < 0 ? -0x28 : 8), o.y - 0x18) & 1) o.w(0x46) = 0xe;
+            moveY(o, o.l(0x5c));
+            o.w(0x46) += 1;
+            if (o.w(0x46) != 0xf) return;
+        }
+        // 0x405d6a: it explodes
+        leaveSlot(ctx, o);
+        o.b(0x36) = 0xff;
+        o.w(0x26) = 0x6663;                                       // FUN_004263c4 / FUN_004263a6(2), which never fails on the PC
+        o.facing = 0; o.vflip = 0;
+        Obj* a3 = &o;
+        for (int i = 0; i < 3; ++i) {
+            Obj* p = ctx.spawnFrom(o, true);                      // FUN_0043546e(1)
+            if (!p) { releaseAll(); return; }
+            p->l(0x50) = int32_t(ctx.pl.addrOf(&o));
+            p->flags = o.flags;
+            std::memcpy(p->s + 0x12, o.s + 0x12, 2);
+            p->sprite = ctx.spr("fx_expl3");
+            if (i != 2) p->facing = 0xff;
+            if (i != 1) p->vflip = 0xff;
+            a3->l(0x5c) = int32_t(ctx.pl.addrOf(p));
+            a3 = p;
+        }
+    }
+    // 0x405f49
+    o.sprite = ctx.spr("fx_expl3");
+    if (animStep(ctx, o, o.anim(0x4a), kAnim_turn7, 4)) { releaseAll(); return; }   // 0x4619c7
+    Obj* q1 = next(&o);
+    Obj* q2 = q1 ? next(q1) : nullptr;
+    Obj* q3 = q2 ? next(q2) : nullptr;
+    if (q1) q1->frame = o.frame;
+    const uint8_t f = o.frame == 2 ? o.frame : 0xff;
+    if (q2) q2->frame = f;
+    if (q3) q3->frame = f;
+    if (o.w(0x4a) == 2) {                                         // the first tick of frame 2
+        for (const auto& v : kStonePieces) {
+            Obj* p = ctx.spawnFrom(o);                            // FUN_004356bc(1)
+            if (!p) break;
+            p->behind = 0xff; p->sprite = ctx.spr("obrston0"); p->frame = 0;
+            p->flags = o.flags; p->type = 0x89;
+            p->l(0x46) = v[0]; p->l(0x4a) = v[1];
+            p->b(0x32) = 0x14; p->l(0x36) = 0;
+        }
+    }
+}
+
+// 0x41c0d6: the big stone's blast.  Every object in the list scores (but during a boss fight,
+// level 5's aside); those whose class has bit 0 die (0x40855e, 0x433725), with these
+// exceptions: the Warrior Spirit (0x69) and the later jaguars take damage, the Ceiba jaguar
+// only inside its arena, pouches in the trees and pots (0x9c / 0x26) drop, the limp snake
+// (0x58) lets go, and objects drawn hidden (frame 0xff) are spared.
+void stoneBlast(ObjCtx& ctx) {
+    ObjectSystem& os = ctx.pl.objectSystem();
+    const bool scores = ctx.levelNo == 5 || !ctx.pl.bossActive();
+    for (Obj* a0 = os.first(); a0; a0 = os.nextOf(*a0)) {
+        const uint8_t t = a0->type;
+        if (t == 0) continue;
+        if (scores) ctx.g.stats().score += scoreForType(t);
+        if (!(typeClass(t) & 1)) continue;
+        if (t == 0x69) {
+            a0->b(0x68) = 1;
+            if (Obj* a2 = ctx.pl.objAt(uint32_t(a0->l(0x64)))) a2->w(0x6a) += 0x14;
+            continue;
+        }
+        if (a0->frame == 0xff) continue;
+        if (t == 0x9c || t == 0x26) { a0->b(0x6c) = 0xff; continue; }
+        if (t == 0x58) { a0->b(0x38) = 0xff; a0->w(0x50) = 0; a0->b(0x42) = 0xff; continue; }
+        if (t == 0x9e) { a0->w(0x6c) += 0x1e; continue; }
+        if (t == 0x8c) { a0->w(0x6a) += 0x1e; continue; }
+        if (t == 0x37) {
+            if (int16_t(a0->x - 0xbd0) < 0 && int16_t(a0->x - 0xa30) >= 0) a0->w(0x6a) += 0x1e;
+            continue;
+        }
+        if ((t == 0x20 || t == 0xac) && a0->link) ctx.release(*a0->link);   // the web's half (+0x5a), the snake's body (+0x6a)
+        deathFxAdjust(*a0);                                       // 0x40855e
+        debrisPuff(ctx, *a0);                                     // 0x433725
+        ctx.release(*a0);
+    }
+}
+
+// 0x41bfe2: type 0x89, a piece of the big stone's explosion.  It flies off (l46 / l4a, taken
+// away from x / y) for 20 ticks.  The first piece to end in an object pass (DAT_004658a0,
+// cleared by each pass) sounds the blast, flashes the screen white (DAT_0046b1b0 = 0xc0) and
+// strikes every object (stoneBlast); the others copy its marks.  Each piece then turns into a
+// spark (type 0x8a) where it was 2 ticks earlier.
+void h_stonePiece(ObjCtx& ctx, Obj& o) {
+    priorityTrigger(ctx, o, 0);                                   // 0x4301ce
+    Harry& h = ctx.harry;
+    if (h.b(0x465b72) != 0) { ctx.release(o); return; }
+    if (o.b(0x32) == 0x10 && h.b(0x4658a1) != 0) return;          // (the high byte of the word: never set on the PC)
+    moveX(o, -o.l(0x46));
+    moveY(o, -o.l(0x4a));
+    o.b(0x32) -= 1;
+    if (o.b(0x32) != 0) {
+        if (o.b(0x32) == 2) {
+            if (o.l(0x36) == 0) { o.w(0x38) = o.x; o.w(0x3a) = o.y; }
+            else {
+                // (a piece that follows the record at l36 while it keeps the type in b3a; the big
+                // stone's pieces have l36 = 0)
+                Obj* t = ctx.pl.objAt(uint32_t(o.l(0x36)));
+                if (t && t->type == o.b(0x3a)) { ctx.release(*t); o.w(0x38) = t->x; o.w(0x3a) = t->y; }
+                else ctx.release(o);
+            }
+        }
+        return;
+    }
+    bool copy = true;
+    if (h.w(0x4658a0) == 0) {
+        o.w(0x26) = 0x6663;                                       // FUN_004263a6(2), which never fails on the PC
+        h.w(0x4658a0) = 1;
+        h.l(0x4658a2) = int32_t(ctx.pl.addrOf(&o));
+        ctx.sound0(7, 0x39);                                      // FUN_0042633d(7, 0x60)
+        if (h.b(0x465b72) == 0) {
+            ctx.pl.fadeCmd() = 0xc0;
+            stoneBlast(ctx);
+            copy = false;
+        }
+    }
+    if (copy) {                                                   // 0x41c2e2
+        o.w(0x12) = h.w(0x4658a0);
+        o.w(0x26) = 0x6663;
+        o.l(0x50) = h.l(0x4658a2);
+    }
+    // 0x41c305
+    o.x = o.w(0x38); o.y = o.w(0x3a);
+    o.facing = o.l(0x46) >= 0 ? 0xff : 0;
+    o.sprite = ctx.spr("fx_stone");
+    o.type = 0x8a;
+    o.w(0x32) = 0;
+}
+
+// 0x41c420: type 0x8a, a spark from the big stone's explosion: it drifts back an eighth of the
+// piece's speed and is gone when turn7 has run.
+void h_stoneSpark(ObjCtx& ctx, Obj& o) {
+    priorityTrigger(ctx, o, 0);                                   // 0x4301ce
+    moveX(o, -(o.l(0x46) >> 3));
+    moveY(o, -(o.l(0x4a) >> 3));
+    o.flags = 0x6000;
+    if (animStep(ctx, o, o.anim(0x32), kAnim_turn7, 4)) ctx.release(o);   // 0x4619c7
+}
+
+
+// ---------------------------------------------------------------- the boomerang (types 6 / 0x87)
+
+bool harryOnBox(ObjCtx& ctx, const Obj& o, int x0, int x1, int y0, int y1);
+
+int16_t exeWord(uint32_t va) { const uint8_t* m = harryMem(va); return m ? int16_t(m[0] | m[1] << 8) : 0; }
+
+// 0x40695f: a bounce cell (trigger id 1) ahead of the boomerang, or above / below it, throws it
+// back at 5 px a tick and off its path for 6 ticks (w5a); levels 0 and 5 have none.
+void boomerangBounce(ObjCtx& ctx, Obj& o) {
+    if (ctx.levelNo == 0 || ctx.levelNo == 5) return;
+    if (ctx.trigger(o.x + (o.l(0x46) < 0 ? -0x18 : 8), o.y + 8).id == 1) {
+        o.w(0x5a) = 6;
+        if (o.type == 6) ctx.sound1(0xce, 4);
+        o.l(0x46) = o.l(0x46) < 0 ? 0x50000 : int32_t(0xfffb0000);
+    }
+    if (ctx.trigger(o.x - 8, o.y + (o.l(0x4a) < 0 ? -8 : 0x18)).id == 1) {
+        o.w(0x5a) = 6;
+        if (o.type == 6) ctx.sound1(0xce, 4);
+        o.l(0x4a) = o.l(0x4a) < 0 ? 0x50000 : int32_t(0xfffb0000);
+    }
+}
+
+// 0x41be24: the boomerang breaks (sparkles, a stone puff, sound 0xed).
+void boomerangBreak(ObjCtx& ctx, Obj& o) {
+    debrisPuff(ctx, o);                                           // 0x433725
+    ctx.spawnEffect(o, ctx.spr("fx_stone"), kAnim_turn7, 3);      // 0x433914, script 0x4619c7
+    ctx.release(o);
+    ctx.sound1(0xed, 7);
+}
+
+void h_boomerangBack(ObjCtx& ctx, Obj& o);
+
+// 0x406487: type 6, the boomerang (fxrbmrng) on its way out.  It steers along the path at
+// 0x461a90 ({dx, dy} words from where it was thrown, w50 / w52, mirrored when it faces left; one
+// entry every 4 ticks), or homes in on an enemy (class bit 2) that comes within 0x34 px (l5c /
+// b60, one entry every 12 ticks then; such a boomerang breaks at the end of the path).  At the
+// path's end its slot (DAT_0046681c) is freed and it turns into type 0x87, which flies back.
+void h_boomerang(ObjCtx& ctx, Obj& o) {
+    ObjectSystem& os = ctx.pl.objectSystem();
+    priorityTrigger(ctx, o, 0);                                   // 0x4301ce
+    o.b(0x40) += 1;
+    if (o.b(0x40) == 4) {
+        o.b(0x40) = o.l(0x5c) ? 0xf8 : 0;
+        o.l(0x3c) += 4;
+        const uint32_t p = uint32_t(o.l(0x3c));
+        if (exeWord(p) == int16_t(0x8000)) {
+            ctx.harry.setUl(0x46681c, 0);
+            if (o.b(0x6d)) { boomerangBreak(ctx, o); return; }
+            for (Obj* a = os.first(); a; a = os.nextOf(*a))
+                if (a->type == 0x87) { a->b(0x6d) = 0xff; break; }   // an older one on its way back breaks
+            o.w(0x42) = 0; o.w(0x44) = 0xfa; o.type = 0x87;
+            o.w(0x3c) = int16_t(o.w(0x50) + exeWord(p - 4));         // it heads for the path's last point
+            o.w(0x3e) = int16_t(o.w(0x52) + exeWord(p - 2));
+            h_boomerangBack(ctx, o);                                  // jmp 0x41bcb2
+            return;
+        }
+    }
+    bool follow = true;
+    if (o.w(0x5a)) o.w(0x5a) -= 1;                                    // just bounced
+    else if (o.l(0x5c)) {
+        Obj* t = ctx.pl.objAt(uint32_t(o.l(0x5c)));
+        if (t && t->type == o.b(0x60) && t->sprite != ctx.spr("skiroll") && t->sprite != ctx.spr("skimorph") &&
+            t->sprite != ctx.spr("skijaw") && t->sprite != ctx.spr("skidie")) {
+            follow = false;                                           // 0x406612: homing, 8 px jumps
+            if (int16_t(t->x - o.x) >= 0) { if (int16_t(o.w(0x48) - 5) < 0) { o.l(0x46) += 0x18000; o.x += 8; } }
+            else if (int16_t(o.w(0x48) + 5) >= 0) { o.l(0x46) -= 0x18000; o.x -= 8; }
+            const int16_t ty = int16_t(t->y + deathFxYOff(t->type));
+            if (int16_t(ty - o.y) >= 0) { if (int16_t(o.w(0x4c) - 5) < 0) { o.l(0x4a) += 0x18000; o.y += 8; } }
+            else if (int16_t(o.w(0x4c) + 5) >= 0) { o.l(0x4a) -= 0x18000; o.y -= 8; }
+        }
+    } else {
+        for (Obj* a = os.first(); a; a = os.nextOf(*a)) {             // 0x406716: something to home in on
+            if (a->type == 0 || !(typeClass(a->type) & 4) || a->frame == 0xff) continue;
+            const int16_t dx = int16_t(a->x - o.x), dy = int16_t(a->y - o.y);
+            if (int16_t(dx + 0x34) < 0 || int16_t(dx - 0x34) >= 0 || int16_t(dy + 0x34) < 0 || int16_t(dy - 0x34) >= 0) continue;
+            o.l(0x5c) = int32_t(ctx.pl.addrOf(a)); o.b(0x60) = a->type; o.b(0x6d) = 0xff;
+            follow = false;
+            break;
+        }
+    }
+    if (follow) {                                                     // 0x40682a: along the path
+        o.l(0x5c) = 0; o.b(0x60) = 0;
+        const uint32_t p = uint32_t(o.l(0x3c));
+        int16_t dx = exeWord(p);
+        if (o.facing) dx = int16_t(-dx);
+        if (int16_t(o.w(0x50) + dx - o.x) >= 0) { if (int16_t(o.w(0x48) - 0xa) < 0) o.l(0x46) += 0x26000; }
+        else if (int16_t(o.w(0x48) + 0xa) >= 0) o.l(0x46) -= 0x26000;
+        if (int16_t(o.w(0x52) + exeWord(p + 2) - o.y) >= 0) { if (int16_t(o.w(0x4c) - 9) < 0) o.l(0x4a) += 0x14000; }
+        else if (int16_t(o.w(0x4c) + 9) >= 0) o.l(0x4a) -= 0x14000;
+    }
+    moveX(o, o.l(0x46));                                              // 0x4068fe
+    moveY(o, o.l(0x4a));
+    animStep(ctx, o, o.anim(0x42), kAnim_turn4, 3);                   // 0x461746
+    boomerangBounce(ctx, o);
+}
+
+// 0x41bcb2: type 0x87, the boomerang on its way back (fxrbmrot): it steers for the end of its
+// path (w3c / w3e) and Harry gets it back (one more boomerang) by touching it; he can also
+// land on it from a jump and ride it (state 0x42f574, 0x406ab4).  After 250 ticks it breaks.
+void h_boomerangBack(ObjCtx& ctx, Obj& o) {
+    if (o.b(0x6d)) { boomerangBreak(ctx, o); return; }
+    boomerangBounce(ctx, o);
+    {
+        Harry& h = ctx.harry;                                         // 0x406ab4
+        if (h.vy() < 0x20000 && (h.cont() == 0x42cdb6 || h.cont() == 0x42c518) &&
+            harryOnBox(ctx, o, -12, 12, 0x30, 0x50)) {                // 0x45ba46
+            ctx.sound0(0x1b, 9);                                      // FUN_0042633d(0x1b, 0x60)
+            h.setCont(0x42f574);
+            h.w(0x465b47) = 0;
+            h.setUl(0x465b41, ctx.pl.addrOf(&o));
+        }
+    }
+    if (int16_t(o.x - o.w(0x3c)) < 0) {
+        if (int16_t(o.w(0x48) - 4) >= 0) o.l(0x46) -= 0x6000;
+        else { if (int16_t(o.w(0x48) + 4) < 0) o.l(0x46) += 0x7000; o.l(0x46) += 0x6000; }
+    } else {
+        if (int16_t(o.w(0x48) + 4) < 0) o.l(0x46) += 0x6000;
+        else { if (int16_t(o.w(0x48) - 4) >= 0) o.l(0x46) -= 0x7000; o.l(0x46) -= 0x6000; }
+    }
+    if (int16_t(o.y - o.w(0x3e)) < 0) { if (int16_t(o.w(0x4c) - 4) < 0) o.l(0x4a) += 0xd000; }
+    else if (int16_t(o.w(0x4c) + 4) >= 0) o.l(0x4a) -= 0xd000;
+    moveX(o, o.l(0x46));
+    moveY(o, o.l(0x4a));
+    o.sprite = ctx.spr("fxrbmrot");
+    animStep(ctx, o, o.anim(0x42), kAnim_boomerangSpin, 4);           // 0x45a8cd
+    if (ctx.touchesHarry(o)) {
+        ctx.sound0(0xeb, 8);                                          // FUN_004262d9
+        ctx.g.stats().ammoCount[1] += 1;                              // DAT_00466529
+        ctx.sparkleBurst(o, ctx.levelNo == 7 ? kSparkleOffsetsC : kSparkleOffsetsB);   // 0x433706
+        ctx.release(o);
+        return;
+    }
+    o.w(0x44) -= 1;
+    if (o.w(0x44) == 0) boomerangBreak(ctx, o);
 }
 
 
@@ -2162,18 +2544,19 @@ void projectileShatter(ObjCtx& ctx, Obj& o) {
     ctx.spawnEffect(o, ctx.spr("fx_stone"), kAnim_turn7, 3);       // 0x433914, script 0x4619c7
 }
 
+void h_drip(ObjCtx& ctx, Obj& o);
+
 void h_projectile(ObjCtx& ctx, Obj& o) {
     ctx.pl.setTriggerClass(2, 0);            // 0x40d3b0: trigger id 2 does not stop thrown things
     if (o.script) {
         anim2Step(ctx, o, 0x50, 3);
         if (!weaponHit(ctx, o, 0).z) { ctx.sound1(0xcd, 9); projectileShatter(ctx, o); return; }
     }
-    uint8_t id = 0;
-    ctx.triggerClass(o.x, o.y, &id);
-    if (id == 0xd0) {                         // into water: becomes a splash drip
+    if (priorityTrigger(ctx, o, 0).id == 0xd0) {   // 0x4301ce; into water: becomes a splash drip
         o.sprite = ctx.spr("fx_drip1"); o.flags = 0xa000; o.behind = 0xff;
         o.w(0x40) = 1; o.type = 0x53;
         ctx.sound1(0xbb, 5);
+        h_drip(ctx, o);                       // jmp 0x415f4a: the drip's handler runs at once
         return;
     }
     if (o.b(0x68) == 0 && harryContactNow(ctx, o, 0xe)) {
@@ -2967,9 +3350,7 @@ void h_hoppingSkull(ObjCtx& ctx, Obj& o) {
 // back every time; l50 remembers it until it is picked up.
 void h_pouchRespawner(ObjCtx& ctx, Obj& o) {
     if (!o.link) {
-        const int dx = o.x - ctx.camX, dy = o.y - ctx.camY;
-        const bool onScreen = dx >= -0x20 && dx < 0x160 && dy >= -0x20 && dy < 0xe8;   // 0x424f40
-        if (!onScreen && int8_t(ctx.g.stats().ammoCount[0] - 10) < 0) {
+        if (offScreen(ctx, o) && int8_t(ctx.g.stats().ammoCount[0] - 10) < 0) {     // 0x424f40
             if (Obj* p = spawnFromTemplate(ctx, o, 7))   // FUN_004351c5 from the template at 0x467fe4
                 o.link = p;                               // l50
         }
@@ -5044,6 +5425,13 @@ Handler ObjectSystem::handler(uint8_t type) {
     case 0x2b: return h_sleepingBat;
     case 0x3c: return h_treeSnakeBody;
     case 0x40: return h_feather;
+    case 0x41: return h_dust;
+    case 4:    return h_bigStone;
+    case 5:    return h_slingStone;
+    case 0x89: return h_stonePiece;
+    case 6:    return h_boomerang;
+    case 0x87: return h_boomerangBack;
+    case 0x8a: return h_stoneSpark;
     case 70:   return h_climbingRat;
     case 74:   return h_pouchRespawner;
     case 72:   return h_vineMonkey;

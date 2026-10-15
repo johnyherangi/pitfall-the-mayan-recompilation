@@ -1997,7 +1997,7 @@ void PlayLogic::h4313aa() {
     a5->b(0x6d) = 0;
     a5->behind = 0xff;
     a5->type = 6;
-    a5->script = harryMem(0x461a90);
+    a5->l(0x3c) = 0x461a90;                                // the flight path (h_boomerang)
     a5->l(0x4a) = 0;
     a5->l(0x46) = 0xc0000;
     a5->x += 0xc;
