@@ -227,6 +227,10 @@ bool harryContact(ObjCtx& ctx, Obj& o, int damage, int16_t* d1 = nullptr);
 bool harryContactNow(ObjCtx& ctx, Obj& o, int damage, int16_t* d1 = nullptr);
 // 0x4301ce: triggers 0x30 / 0x31 at (x + dx, y) toggle the "in front" flag.
 void priorityTrigger(ObjCtx& ctx, Obj& o, int dx);
+// What FUN_00425d6f (the .det probe) leaves in d3, for the handlers that go on to use it:
+// shape * 16 + (x & 15) on a hit; on a miss the d3 it was given (y < 0x12), 0 (an empty
+// column) or the row byte of the column entry that ended the scan.
+uint32_t floorProbeD3(const ObjCtx& ctx, int x, int y, uint32_t d3);
 // 0x424d6a / 0x424fbb: release the object when it is far from the camera
 // (far: 120 px beyond the screen edges; wide: a whole screen beyond them).
 void exitDespawnFar(ObjCtx& ctx, Obj& o);

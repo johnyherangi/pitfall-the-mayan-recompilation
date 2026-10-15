@@ -672,6 +672,25 @@ void priorityTrigger(ObjCtx& ctx, Obj& o, int dx) {
     else if (t.id == 0x31) o.flags &= 0x7fff;
 }
 
+uint32_t floorProbeD3(const ObjCtx& ctx, int x, int y, uint32_t d3) {
+    // FUN_00425d6f walks the raw .det: the column's offset (a big-endian word at
+    // (x >> 4) * 2 + 4, added sign-extended), then its (row, shape) byte pairs.
+    if (int16_t(int16_t(y) - 0x12) < 0) return d3;                  // cmp d1.w,0x12 / js
+    const std::vector<uint8_t>& det = ctx.lv.det;
+    auto at = [&](int64_t i) { return i >= 0 && size_t(i) < det.size() ? uint32_t(det[size_t(i)]) : 0u; };
+    const int64_t col = ((uint16_t(x) >> 3) & 0xfffe) + 4;
+    const uint16_t off = uint16_t(at(col) << 8 | at(col + 1));
+    if (off == 0) return 0;
+    const uint16_t row = uint16_t(y) >> 4;
+    for (int64_t a0 = int16_t(off); ; a0 += 2) {
+        const uint32_t e = at(a0);
+        if (e == uint16_t(row + 1) || e == row || e == uint16_t(row - 1))
+            return at(a0 + 1) * 16 + (uint16_t(x) & 15);
+        if (int16_t(uint16_t(row - 1) - e) < 0) return e;           // the entry that ends the scan
+        if (a0 >= int64_t(det.size())) return e;                    // (past the data: reads 0)
+    }
+}
+
 void exitDespawnFar(ObjCtx& ctx, Obj& o) {
     // 0x424d6a / 0x424ec4
     const int dx = o.x - ctx.camX, dy = o.y - ctx.camY;

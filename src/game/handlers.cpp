@@ -285,7 +285,7 @@ void h_heart(ObjCtx& ctx, Obj& o) {
     if (o.w(0x5a) < 0) {
         o.w(0x5a) = 6;
         uint32_t r; do { r = ctx.rnd() & 7; } while (r == 7);
-        if (Obj* e = ctx.spawn()) {
+        if (Obj* e = ctx.spawnFrom(o)) {              // FUN_004356bc(1)
             e->x = int16_t(o.x + kSparkleOffsetsA[r * 2]); e->y = int16_t(o.y + kSparkleOffsetsA[r * 2 + 1] - 3);
             e->type = 0x10; e->flags = 0x6000; e->b(0x64) = 0xff;
             e->sprite = ctx.spr("fx_sprk2");
@@ -304,8 +304,7 @@ void h_heart(ObjCtx& ctx, Obj& o) {
 
 // 0x41e132: type 156, a pouch hanging in the trees: whip it down.
 void h_hangingPouch(ObjCtx& ctx, Obj& o) {
-    o.b(0x2b) += 1;
-    if (o.b(0x2b) == 0x1e) { o.b(0x2b) = 0; o.b(0x2a) = 0xff; }
+    halfMinuteTick(o);                        // 0x4057b0
     if (o.l(0x32) != 0) {
         // Falling: gravity 0x3800 up to 6 px/tick, then land on either plane.
         if (o.w(0x34) != 6) o.l(0x32) += 0x3800;
@@ -1326,12 +1325,11 @@ void h_web(ObjCtx& ctx, Obj& o) {
         Obj* half = ctx.spawnFrom(o, true);   // FUN_0043546e(1)
         if (!half) { ctx.pl.restoreEntry(o); ctx.release(o); return; }
         half->facing = 0xff;
+        std::memcpy(half->s + 0x12, o.s + 0x12, 2);
         half->sprite = o.sprite;
-        half->flags = 0x6000;
-        half->w(0x26) = 0x6663;
-        half->type = 0;                       // drawn only; the owner animates it
-        half->link = &o;
-        o.link = half;
+        half->flags = 0x6000;                 // (type 0: drawn only; the owner animates it)
+        half->link = &o;                      // (+0x50)
+        o.link = half;                        // (+0x5a)
     }
     if (o.w(0x36)) animStep(ctx, o, o.anim(0x36), o.script ? o.script : kAnim_webBounceH, 1);
     if (o.w(0x46)) webHit(ctx, o, nullptr);                 // 0x406cc7: the angled webs give under the whip
@@ -1368,13 +1366,12 @@ void h_web(ObjCtx& ctx, Obj& o) {
             h.b(0x465bb2) = 0x60;
         }
     }
-    if (o.link && !o.link->freed) {
+    if (o.link) {                                     // 0x406e3f: the mirrored half (+0x5a)
         o.link->frame = o.frame;
-        const int dx = o.x - ctx.camX, dy = o.y - ctx.camY;
-        if (dx < -0x78 || dx >= 0x1b8 || dy < -0x82 || dy >= 0x15e) {
+        if (farFromCamera(ctx, o)) {                  // 0x424ec4
             ctx.pl.restoreEntry(o);
-            ctx.release(*o.link);
             ctx.release(o);
+            ctx.release(*o.link);
         }
         return;
     }
@@ -1384,9 +1381,10 @@ void h_web(ObjCtx& ctx, Obj& o) {
 
 // ---------------------------------------------------------------- scenery bits
 
-// 0x41f320: type 161, a static dot / hole; sn_hole sits behind Harry.
+// 0x41f320: type 161, static scenery (snake holes and dots, leaves); the one drawn with the
+// sprite of slot 0x47006c (fx_leaf4, fxleaf42 on level 5) sits behind Harry.
 void h_dot(ObjCtx& ctx, Obj& o) {
-    if (o.sprite && o.sprite->name() == "sn_hole") o.behind = 0xff;
+    if (o.sprite == ctx.spr("fx_leaf4")) o.behind = 0xff;
     exitDespawnFar(ctx, o);
 }
 
@@ -1606,17 +1604,20 @@ bool treeSnakeBiteRange(ObjCtx& ctx, const Obj& o) {
 void h_treeSnake(ObjCtx& ctx, Obj& o) {
     if (o.w(0x32) == 0) {
         o.w(0x32) = 0x40;
-        Obj* body = ctx.spawn();
+        Obj* body = ctx.spawnFrom(o);                 // FUN_004356bc(2)
         if (!body) { ctx.pl.restoreEntry(o); ctx.release(o); return; }
-        o.link = body;
-        body->x = o.x; body->y = int16_t(o.y - 2); body->flags = 0x6000;
+        o.link = body;                                // (+0x6a)
+        body->y = int16_t(body->y - 2); body->flags = 0x6000;
         body->sprite = ctx.spr("tszbody1"); body->type = 0x3c; body->frame = 0;
         o.sprite = ctx.spr("tszhang"); o.frame = 0;
     }
-    auto releaseBoth = [&]() { if (o.link && !o.link->freed) ctx.release(*o.link); };
+    auto releaseBoth = [&]() { if (o.link) ctx.release(*o.link); };   // (FUN_0043598f ignores a null record)
     if (!weaponHit(ctx, o, 0x14).z) { releaseBoth(); killObject(ctx, o); return; }
     if (ctx.frozen()) { freezeSparkle(ctx, o); return; }
-    harryContact(ctx, o, 10);                 // 0x417688
+    // 0x417688: meant to move the box 0x12 px while the snake hangs facing right, but it
+    // compares Harry's sprite (0x465b1d) with the tszhang slot, so the plain test runs.
+    if (ctx.harry.spriteIs("tszhang") && o.facing) { o.x += 0x12; harryContact(ctx, o, 10); o.x -= 0x12; }
+    else harryContact(ctx, o, 10);
     auto leave = [&]() {
         const int dx = o.x - ctx.camX, dy = o.y - ctx.camY;
         if (dx < -0x78 || dx >= 0x1b8 || dy < -0x82 || dy >= 0x15e) { releaseBoth(); ctx.pl.restoreEntry(o); ctx.release(o); }
@@ -2023,8 +2024,10 @@ void h_tnt(ObjCtx& ctx, Obj& o) {
     e->type = 0x32; e->sprite = ctx.spr("fxzexpl2"); e->flags = 0xe000; e->link = nullptr;
     e->frame = 0xff; e->behind = 0xff; e->l(0x3c) = 0; e->facing = 0;
     if (Obj* half = ctx.spawnFrom(*e, true, 0)) {              // FUN_0043546e(0) from the explosion: the mirrored half
-        e->link = half; half->link = e;
-        half->behind = 0xff; half->w(0x26) = 0x6663; half->type = 0;
+        e->link = half; half->link = e;                        // (+0x54 / +0x50)
+        half->behind = 0xff;
+        std::memcpy(half->s + 0x12, e->s + 0x12, 2);
+        half->w(0x26) = 0x6663; half->type = 0;
         half->sprite = ctx.spr("fxzexpl2"); half->flags = 0xe000; half->frame = 0xff; half->facing = 0xff;
     }
 }
@@ -2034,10 +2037,10 @@ void h_tnt(ObjCtx& ctx, Obj& o) {
 void h_explosion(ObjCtx& ctx, Obj& o) {
     if (animStep(ctx, o, o.anim(0x3c), kAnim_marker, 4)) {    // 0x4619cf
         ctx.release(o);
-        if (o.link && !o.link->freed) ctx.release(*o.link);
+        if (o.link) ctx.release(*o.link);                     // (+0x54, the mirrored half)
         return;
     }
-    if (o.link && !o.link->freed) o.link->frame = o.frame;
+    if (o.link) o.link->frame = o.frame;
     if (int8_t(o.frame - 3) >= 0) {
         o.touchTick = 0;
         if (harryContact(ctx, o, 0x28)) {
@@ -2056,16 +2059,18 @@ void h_verticalWeb(ObjCtx& ctx, Obj& o) {
     if (!o.link) {
         Obj* half = ctx.spawnFrom(o, true);                    // FUN_0043546e(1)
         if (!half) { ctx.pl.restoreEntry(o); ctx.release(o); return; }
-        half->vflip = 0xff; half->flags = 0x6000; half->sprite = o.sprite; half->w(0x26) = 0x6663;
-        half->link = &o;
-        o.link = half;
+        half->vflip = 0xff;
+        std::memcpy(half->s + 0x12, o.s + 0x12, 2);
+        half->flags = 0x6000; half->sprite = o.sprite;
+        half->link = &o;                                       // (+0x50)
+        o.link = half;                                         // (+0x5a)
     }
     bool cut = false;
     if (webHit(ctx, o, &cut)) {                                // 0x40dcc5
         o.w(0x3c) = 1;
         o.facing = int16_t(o.x - ctx.harry.x()) >= 0 ? 0xff : 0;
         if (cut) {                                             // torn through
-            if (o.link && !o.link->freed) ctx.release(*o.link);
+            if (o.link) ctx.release(*o.link);
             killObject(ctx, o);
             return;
         }
@@ -2082,11 +2087,11 @@ void h_verticalWeb(ObjCtx& ctx, Obj& o) {
         ctx.pl.harryCall(0x427148);
         o.w(0x3c) = 1;
     }
-    if (o.link && !o.link->freed) { o.link->frame = o.frame; o.link->facing = o.facing; }
+    if (o.link) { o.link->frame = o.frame; o.link->facing = o.facing; }
     if (farFromCamera(ctx, o)) {
         ctx.pl.restoreEntry(o);
         ctx.release(o);
-        if (o.link && !o.link->freed) ctx.release(*o.link);
+        if (o.link) ctx.release(*o.link);
     }
 }
 
@@ -2428,14 +2433,21 @@ void h_chute(ObjCtx& ctx, Obj& o) {
 void h_oneWayDoor(ObjCtx& ctx, Obj& o) {
     if (o.b(0x32) == 0) {
         o.b(0x33) = o.frame;
-        if (ctx.levelNo == 4 || ctx.levelNo == 9) o.sprite = ctx.spr("ob_door3");
+        if (ctx.levelNo == 4 || ctx.levelNo == 9) {
+            o.sprite = ctx.spr("ob_door3");
+            o.w(0x26) = 0x6663;                                  // FUN_004263c4 / FUN_004263a6(6), which never fails on the PC
+        }
         const uint8_t id = triggerIdAt(ctx, o.x - 0x18, o.y - 0x10);
         o.b(0x32) = id;
         int y = o.y + 0x22;
+        // 0x420779 means to test the class of the door's trigger, but the floor probe has
+        // replaced d3 by then (with shape * 16 + (x & 15) on a floor), so whether a door shut
+        // before a restart comes back shut depends on that class byte, not its own.
+        const uint32_t d3 = floorProbeD3(ctx, o.x, y, id);
         ctx.floorSnap(o.x, y);
         o.y = int16_t(y - 0x20 + 0xb);
         o.frame = 0xff;
-        if (ctx.pl.triggerClassOf(id) != 0) o.frame = 0;        // already shut
+        if (ctx.pl.triggerClassOf(uint8_t(d3)) != 0) o.frame = 0;
     }
     if (o.frame != 0) {
         if (!between(ctx.harry.y() - o.y, -0x60, 0x60)) return;
@@ -4486,15 +4498,12 @@ void h_snakeRespawner(ObjCtx& ctx, Obj& o) {
     if (!o.link) {
         if (o.b(0x5a) != 0xa) {
             o.b(0x5a) += 1;
-            if (Obj* s = ctx.spawnFrom(o, true)) {                       // FUN_004351c5
-                const ph::ObjectTemplate& t = ph::kObjectTemplates[116];
-                s->w(0x26) = 0x6663;
-                s->type = t.type; s->frame = t.sub; s->flags = t.flags; s->sprite = ctx.spr(t.sprite);
-                o.link = s;
+            if (Obj* s = spawnFromTemplate(ctx, o, 0x74)) {              // FUN_004351c5, template 0x468314
+                o.link = s;                                              // (+0x50)
                 o.w(0x5a) = int16_t((ctx.rnd() & 0x7f) + 0xd0);
             }
         }
-    } else if (o.link->freed || o.link->type != 0x6d) {
+    } else if (o.link->type != 0x6d) {                                   // (a freed record's type is 0)
         if (o.w(0x5a)) o.w(0x5a) -= 1;
         else o.link = nullptr;
     }
