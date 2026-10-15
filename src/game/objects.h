@@ -151,6 +151,7 @@ void animPeek(ObjCtx& ctx, Obj& o, AnimCursor& cur, const uint8_t* script);
 // FUN_004237a5 (the pointer-based interpreter used by Harry and a few objects):
 // o.script / o.l(pcOff) hold the script and the position, o.b(pcOff + 4) the tick.
 bool anim2Step(ObjCtx& ctx, Obj& o, int pcOff, int ticksPerFrame);
+bool anim2Step(ObjCtx& ctx, Obj& o, const uint8_t* script, int pcOff, int ticksPerFrame);   // a second script on the same object
 
 // 0x424171: hits from the whip (and the sling, once ported) accumulate in o.hits;
 // returns true when something hit this tick, *killed when hits >= hitPoints.
@@ -186,13 +187,14 @@ extern const uint8_t kAnim_snakeEmerge[], kAnim_snakeMiss[], kAnim_snakeLunge[],
     kAnim_run8[], kAnim_jaguarIntro[], kAnim_jaguarReverse[], kAnim_bungeeStub[],
     kAnim_skullChatter[], kAnim_skullQuiet[], kAnim_skullRoll[], kAnim_boneIdle[], kAnim_potShards[], kAnim_fireJet[], kAnim_tongueBounce[], kAnim_tongueClose[], kAnim_gargoyle[], kAnim_axeSpin[],
     kAnim_skullMorph[], kAnim_skullWalk[], kAnim_skullDie[], kAnim_ballDrop[], kAnim_splashRing[], kAnim_rippleRing[], kAnim_spearThrust[],
-    kAnim_snakeLunge2[], kAnim_spitFly[], kAnim_spitSplat[], kAnim_crocBite[], kAnim_crocDive[];
+    kAnim_snakeLunge2[], kAnim_spitFly[], kAnim_spitSplat[], kAnim_crocBite[], kAnim_crocDive[], kAnim_priestTurn[], kAnim_fireballDie[];
 extern const uint8_t kData_bungeeScripts[];      // 0x45aaa4: Harry's bungee animation triples (see h_bungee)
 extern const uint8_t kData_firePath[];           // 0x45ad94: the fire pit's 59 keyframes {frame, dx, dy, tailFrame, tailDx, tailDy} (int16)
+extern const uint8_t kData_priestDeath[];        // 0x45a849: the fire priest's collapse (a byte script; its cursor jumps past the first 0xf0)
 extern const uint8_t kAnim2_monkeyToss[], kAnim2_condorDive[], kAnim2_jaguarLeap[], kAnim2_jaguarCrouchA[],
     kAnim2_jaguarCrouchB[], kAnim2_jaguarCrouchRoar[], kAnim2_jaguarRoar[], kAnim2_bossCloud[],
     kAnim2_skullThrow[], kAnim2_skullChop[], kAnim2_boneTumble[], kAnim2_ballSwingA[], kAnim2_ballSwingB[], kAnim2_ballSwingC[],
-    kAnim2_crocSwim[], kAnim2_crocSink[];
+    kAnim2_crocSwim[], kAnim2_crocSink[], kAnim2_priestRise[], kAnim2_priestMain[], kAnim2_fireball[];
 extern const char* const kAnim2Sprites[];        // names for the relocated 0xf1 opcodes
 // Sparkle offset tables (handlers.cpp), 0x8000-terminated (dx, dy) pairs.
 extern const int16_t kSparkleOffsetsA[], kSparkleOffsetsB[], kSparkleOffsetsC[];

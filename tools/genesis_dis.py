@@ -83,7 +83,11 @@ def rom_sequences(ins):
     for i in ins:
         for m in re.finditer(r'#\$([0-9a-f]+)', i.op_str):
             v = int(m.group(1), 16)
-            if 0x60000 <= v < 0x80000: sprites.append(v)
+            # sprite pointers: stored into / compared with an object's +0xe or Harry's sprite
+            # (ff34be), or loaded into a data register for the effect spawners
+            to_sprite = '$e(a' in i.op_str or 'ff34be' in i.op_str
+            if (0x1000 <= v < 0x100000 and to_sprite) or (0x60000 <= v < 0x80000 and not to_sprite):
+                sprites.append(v)
         if i.mnemonic in ('jsr', 'jmp', 'bsr.w', 'bsr.b'):
             m = re.match(r'\$([0-9a-f]+)', i.op_str)
             if m: calls.append(int(m.group(1), 16))
@@ -115,10 +119,20 @@ def build_map():
         rsq = rom_sequences(rom_disasm(rs, re_))
         psq = pc_sequences(pc_disasm(ps, pe))
         for kind, a, b in zip(('sprite', 'call', 'ram'), rsq, psq):
-            if len(a) == len(b) and a:
-                for x, y in zip(a, b):
-                    xref[kind].setdefault(str(x), {})
-                    xref[kind][str(x)][str(y)] = xref[kind][str(x)].get(str(y), 0) + 1
+            def consistent(a, b):
+                fw, bw = {}, {}
+                return all(fw.setdefault(x, y) == y and bw.setdefault(y, x) == x for x, y in zip(a, b))
+            if len(a) != len(b) or not a or not consistent(a, b):
+                # Different counts (the translation sometimes repeats or drops a load): fall
+                # back to the distinct values in order of first use, if those line up.
+                a = list(dict.fromkeys(a)); b = list(dict.fromkeys(b))
+                if len(a) != len(b) or not a or not consistent(a, b): continue
+                weight = 1
+            else:
+                weight = 2
+            for x, y in zip(a, b):
+                xref[kind].setdefault(str(x), {})
+                xref[kind][str(x)][str(y)] = xref[kind][str(x)].get(str(y), 0) + weight
     # keep the majority vote
     final = {}
     for kind in xref:

@@ -33,7 +33,7 @@ int main(int argc, char** argv) {
         g.tick(in);
         if (i % every) continue;
         const game::Harry& h = g_debugLogic->harry();
-        std::printf("t%4d H(%d,%d %s dmg %d) sc %d:", i, h.x, h.y, h.anim, h.damage, g.stats().score);
+        std::printf("t%4d H(%d,%d %s dmg %d) sc %d cam(%d,%d bob %d):", i, h.x, h.y, h.anim, h.damage, g.stats().score, g.state().scrollX, g.state().scrollY, g.state().bob);
         for (auto& p : g_debugLogic->objectSystem().objects()) if (!p->freed && (type < 0 || p->type == type || p->type == 29 || p->type == 0x26))
             std::printf(" [%s t%d (%d,%d) f%d fc%d s%d v%d b36=%d w38=%d hits%d]", p->sprite ? p->sprite->name().c_str() : "-", p->type, p->x, p->y, p->frame, p->facing, int(p->b(0x32)), int(p->b(0x50)), int(p->b(0x36)), int(p->w(0x38)), p->hits);
         std::printf("\n");

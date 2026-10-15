@@ -111,6 +111,7 @@ public:
     void setShake(int v) { shake_ = v; }       // DAT_00465b02: vertical screen shake (copied to FrameState::bob)
     int shake() const { return shake_; }
     void lockCameraLeft(int x) { camMinX_ = x; }
+    int cameraLeftLock() const { return camMinX_; }
     void lockCameraRight(int x) { camMaxX_ = x; }   // DAT_00465b0b (the level's right limit until a handler narrows it)
     int cameraRightLock() const { return camMaxX_; }
     void setBoss(Obj* o) { boss_ = o; }        // trg+0x1f4; nullptr clears DAT_00466507

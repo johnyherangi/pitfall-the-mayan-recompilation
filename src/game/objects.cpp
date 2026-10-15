@@ -217,16 +217,20 @@ bool animStep(ObjCtx& ctx, Obj& o, AnimCursor& cur, const uint8_t* script, int t
 }
 
 bool anim2Step(ObjCtx& ctx, Obj& o, int pcOff, int ticksPerFrame) {
-    // FUN_004237a5 for objects: pc = o.l(pcOff) (byte offset into o.script), tick at pcOff + 4.
+    return anim2Step(ctx, o, o.script, pcOff, ticksPerFrame);
+}
+
+bool anim2Step(ObjCtx& ctx, Obj& o, const uint8_t* script, int pcOff, int ticksPerFrame) {
+    // FUN_004237a5 for objects: pc = o.l(pcOff) (byte offset into the script), tick at pcOff + 4.
     // Only the opcodes the object scripts use are implemented; the joypad-driven
     // branches (0xf2/0xf4/0xf5) and the sling-swing opcodes are Harry's.
-    if (!o.script) return true;
+    if (!script) return true;
     FieldRef<int32_t> pc = o.l(pcOff);
     FieldRef<uint8_t> tick = o.b(pcOff + 4);
     tick += 1;
     if (int8_t(ticksPerFrame - int(tick)) < 0) { tick = 0; pc += 1; }
     for (int guard = 0; guard < 64; ++guard) {
-        const uint8_t* p = o.script + int32_t(pc);
+        const uint8_t* p = script + int32_t(pc);
         const uint8_t b = p[0];
         if (b < 0x80) { o.frame = b; return false; }
         switch (b) {

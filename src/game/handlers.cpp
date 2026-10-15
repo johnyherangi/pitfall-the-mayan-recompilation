@@ -3647,36 +3647,90 @@ void h_fish(ObjCtx& ctx, Obj& o) {
     exitDespawnFar(ctx, o);
 }
 
-// ---------------------------------------------------------------- the rolling wheel (types 67 / 149)
+// ---------------------------------------------------------------- the rolling wheels (types 67 / 148 / 149)
 
-// 0x414100: the great stone wheel of the mines (type 67).  Five sprites make the wheel: the
-// object itself and four children (obrwhee1 flipped three ways and obrwhee2) that follow it
-// and take their frames from the 0x45bbba table by the roll angle (l54, w32 = row * 5).  It
-// falls (l4c, gravity 0x3000, 10 px terminal) until it finds a floor 0x36 px under it,
-// then rolls (l50 toward +-3.19 px/tick; b39 set = to the left), shaking the screen
-// (DAT_00465b02) while it rolls and harder for 0x14 ticks after a landing.  Touching it
-// is death (0xa0) plus a shove the way it is going.
-void h_wheel(ObjCtx& ctx, Obj& o) {
-    if (o.frame == 0xff) {                                               // 0x414356: first tick
-        o.behind = 0xff;
-        o.l(0x54) = 0x40000;
-        o.parts.clear();
-        for (int i = 0; i < 4; ++i) {                                    // FUN_0043546e(4) x 4
-            Obj* c = ctx.spawn();
-            if (!c) { for (Obj* p : o.parts) ctx.release(*p); ctx.release(o); return; }
-            c->x = o.x; c->y = o.y; c->w(0x26) = 0x6663;
-            c->sprite = ctx.spr(i == 3 ? "obrwhee2" : "obrwhee1"); c->flags = 0x2000; c->behind = 0xff;
-            if (i == 0 || i == 1) c->facing = 0xff;
-            if (i == 1 || i == 2) c->vflip = 0xff;
-            o.parts.push_back(c);
+// Five sprites make a wheel: the object itself and four children (obrwhee1 flipped three ways
+// and obrwhee2) that follow it and take their frames from the 0x45bbba table by the roll
+// angle (l54 in 1/0xc0000 turns per row, w32 = row * 5).
+namespace wheel {
+
+// 0x414356: first tick (frame 0xff): behind Harry, roll angle 4.0 and the four children.
+// 1 = set up now, 0 = already running, -1 = the pool ran out (everything is released).
+int init(ObjCtx& ctx, Obj& o) {
+    if (o.frame != 0xff) return 0;
+    o.behind = 0xff;
+    o.l(0x54) = 0x40000;
+    o.parts.clear();
+    for (int i = 0; i < 4; ++i) {                                        // FUN_0043546e(4) x 4
+        Obj* c = ctx.spawn();
+        if (!c) {                                                        // 0x4146f1
+            for (Obj* p : o.parts) ctx.release(*p);
+            o.parts.clear();
+            ctx.release(o);
+            return -1;
         }
+        c->x = o.x; c->y = o.y; c->w(0x26) = 0x6663;
+        c->sprite = ctx.spr(i == 3 ? "obrwhee2" : "obrwhee1"); c->flags = 0x2000; c->behind = 0xff;
+        if (i == 0 || i == 1) c->facing = 0xff;
+        if (i == 1 || i == 2) c->vflip = 0xff;
+        o.parts.push_back(c);
+    }
+    return 1;
+}
+
+// 0x414491: the common tail - the in-front trigger, the rumble, the roll angle and frames,
+// the children following, and the vertical exit (0x424e73 / 0x4146f1, which also stops the
+// rumble).
+void tail(ObjCtx& ctx, Obj& o) {
+    priorityTrigger(ctx, o, 0);                                          // 0x4301ce
+    if (!ctx.g.soundPlaying(0xd1)) ctx.sound(0xd1);                      // (FUN_004261d1: channel 1 free?)
+    o.l(0x54) += o.l(0x50);                                              // roll angle
+    if (o.l(0x54) < 0) {
+        o.l(0x54) += 0xc0000;
+        o.w(0x32) -= 5;
+        if (o.w(0x32) < 0) o.w(0x32) = 0xf;
+    } else if (o.w(0x56) >= 0xc) {
+        o.l(0x54) -= 0xc0000;
+        o.w(0x32) += 5;
+        if (o.w(0x32) == 0x14) o.w(0x32) = 0;
+    }
+    static const uint8_t kWheelFrames[20] = {                            // 0x45bbba: 4 rows of 5
+        0, 0, 0, 0, 3,  1, 3, 1, 3, 2,  2, 2, 2, 2, 1,  3, 1, 3, 1, 0};
+    const int row = std::clamp<int>(o.w(0x32), 0, 15);
+    o.frame = kWheelFrames[row];
+    for (size_t i = 0; i < o.parts.size(); ++i) {
+        Obj* c = o.parts[i];
+        if (!c || c->freed) continue;
+        c->frame = kWheelFrames[row + 1 + int(i)];
+        c->x = o.x; c->y = o.y; c->flags = o.flags;
+    }
+    const int dy = o.y - ctx.camY;
+    if (dy < -0xa0 || dy >= 0x17c) {
+        if (ctx.g.soundPlaying(0xd1)) ctx.g.stopSound(0xd1);
+        for (Obj* p : o.parts) if (p && !p->freed) ctx.release(*p);
+        o.parts.clear();
+        exitDespawnVertical(ctx, o);
+    }
+}
+
+} // namespace wheel
+
+// 0x414100: the great stone wheel of the mines (type 67).  It falls (l4c, gravity 0x3000,
+// 10 px terminal) until it finds a floor 0x36 px under it, then rolls (l50 toward +-3.19
+// px/tick; b39 set = to the left), shaking the screen (DAT_00465b02) while it rolls and
+// harder for 0x14 ticks after a landing.  Touching it is death (0xa0) plus a shove the way
+// it is going.
+void h_wheel(ObjCtx& ctx, Obj& o) {
+    const int first = wheel::init(ctx, o);
+    if (first < 0) return;
+    if (first) {
         o.b(0x6c) = 0xff; o.l(0x54) = 0;
         if (o.b(0x39) == 0) o.l(0x4c) = 0x40000;
     }
     if (ctx.harry.invulnerable == 0 && harryContact(ctx, o, 0xa0))
         ctx.pl.knockBack(o.l(0x50) < 0, false);                           // 0x42715b
     bool grounded = false;
-    if (o.w(0x38) < 0xc8) {                                              // not yet fallen 200 px
+    if (o.w(0x38) < 0xc8) {                                              // not yet fallen 200 px (l36)
         int y = o.y + 0x36;
         grounded = ctx.floorSnap(o.x, y);
         o.y = int16_t(y - 0x36);
@@ -3701,34 +3755,41 @@ void h_wheel(ObjCtx& ctx, Obj& o) {
             if (o.w(0x3a) == 0) ctx.pl.setShake(0);
         }
     }
-    priorityTrigger(ctx, o, 0);                                          // 0x4301ce
-    if (!ctx.g.soundPlaying(0xd1)) ctx.sound(0xd1);                      // the rumble, kept going
-    o.l(0x54) += o.l(0x50);                                              // roll angle
-    if (o.l(0x54) < 0) {
-        o.l(0x54) += 0xc0000;
-        o.w(0x32) -= 5;
-        if (o.w(0x32) < 0) o.w(0x32) = 0xf;
-    } else if (o.w(0x56) >= 0xc) {
-        o.l(0x54) -= 0xc0000;
-        o.w(0x32) += 5;
-        if (o.w(0x32) == 0x14) o.w(0x32) = 0;
+    wheel::tail(ctx, o);
+}
+
+// 0x41d9e6: the wheel in the pit of the Copan Temple (type 148).  It rolls
+// down whichever slope it stands on (the floor shape 0x3c px under it: heights at its two
+// ends), +0x800 / -0x1000 per tick up to 4 px/tick, so it swings back and forth in the
+// U-shaped pit.  Once the camera reaches the pit (camY >= 0x2be, 0xb45 <= camX < 0xc90) the
+// camera is held to 0xb3a..0xc98 and the screen shakes for as long as the hold lasts.
+void h_pitWheel(ObjCtx& ctx, Obj& o) {
+    // (The original compares the left hold with 0xc98, the right one's value, so the test
+    // never short-cuts and the hold is re-applied every tick.)
+    if (ctx.pl.cameraLeftLock() != 0xc98 && ctx.camY >= 0x2be && ctx.camX < 0xc90 && ctx.camX >= 0xb45) {
+        ctx.pl.lockCameraLeft(0xb3a);
+        ctx.pl.lockCameraRight(0xc98);
     }
-    static const uint8_t kWheelFrames[20] = {                            // 0x45bbba: 4 rows of 5
-        0, 0, 0, 0, 3,  1, 3, 1, 3, 2,  2, 2, 2, 2, 1,  3, 1, 3, 1, 0};
-    const int row = std::clamp<int>(o.w(0x32), 0, 15);
-    o.frame = kWheelFrames[row];
-    for (size_t i = 0; i < o.parts.size(); ++i) {
-        Obj* c = o.parts[i];
-        if (!c || c->freed) continue;
-        c->frame = kWheelFrames[row + 1 + int(i)];
-        c->x = o.x; c->y = o.y; c->flags = o.flags;
+    if (ctx.pl.cameraRightLock() == 0xc98) {
+        // (0x41da38 then tests d0 against -2..1, but d0 still holds the dispatcher's 4 * type,
+        // so the shake is redrawn every tick.)
+        ctx.pl.setShake(int(ctx.rnd() & 3));
     }
-    const int dy = o.y - ctx.camY;                                       // 0x424e73 / 0x4146f1
-    if (dy < -0xa0 || dy >= 0x17c) {
-        if (ctx.g.soundPlaying(0xd1)) ctx.g.stopSound(0xd1);
-        for (Obj* p : o.parts) if (p && !p->freed) ctx.release(*p);
-        exitDespawnVertical(ctx, o);
+    const int first = wheel::init(ctx, o);
+    if (first < 0) return;
+    if (first) { o.l(0x50) = 0x40000; o.l(0x54) = 0x40000; o.b(0x4f) = 0xff; }
+    if (ctx.harry.invulnerable == 0 && harryContact(ctx, o, 0xa0))
+        ctx.pl.knockBack(o.l(0x50) < 0, false);                           // 0x42715b
+    const ph::FloorHit f = ph::probeNear(ctx.det(), o.x, o.y + 0x3c);    // FUN_00425d6f
+    if (f.hit) {
+        o.y = int16_t(f.surfaceY - 0x3c);
+        const int slope = int(ph::kCollisionHeights[f.shape * 16]) - int(ph::kCollisionHeights[f.shape * 16 + 15]);
+        if (slope != 0) o.b(0x4f) = slope < 0 ? 0xff : 0;                // left end higher: roll right
     }
+    if (o.b(0x4f) == 0) { if (o.w(0x52) != -4) o.l(0x50) -= 0x1000; }
+    else                { if (o.w(0x52) != 4) o.l(0x50) += 0x800; }
+    moveX(o, o.l(0x50));
+    wheel::tail(ctx, o);
 }
 
 // 0x41dbf2: type 149, the wheel's source: while Harry is above row 18 it releases a wheel
@@ -4117,6 +4178,127 @@ void h_crocLurker(ObjCtx& ctx, Obj& o) {
     exitDespawnFar(ctx, o);
 }
 
+// ---------------------------------------------------------------- fire priest and its fireball (types 45 / 44)
+
+// 0x40fa04: the fireball (type 0x2c, fxzfireb).  While it is still in the priest's hands
+// (frames below 4) it waits whenever the priest flinches and fizzles out (w32, the 0x45abd7
+// script) when the priest is beaten; then it flies, homing on Harry (x speed +-0x5000 per tick
+// up to 7 px, y +-0x1000 up to 1 px), for at most 250 ticks and within -0x28..0x40 px of its
+// launch height.  Frames follow its x speed (2 while it hangs still, 3 at 1 px/tick).  17
+// damage; the whip, Harry or a wall marker put it out.
+void h_fireball(ObjCtx& ctx, Obj& o) {
+    if (o.w(0x32)) {
+        if (animStep(ctx, o, o.anim(0x32), kAnim_fireballDie, 3)) { ctx.release(o); return; }
+        exitDespawnWide(ctx, o);
+        return;
+    }
+    auto die = [&] { o.w(0x32) = 0x100; exitDespawnWide(ctx, o); };
+    if (o.frame < 4) {
+        Obj* p = o.link;
+        if (!p || p->freed || p->type != 45 || p->b(0x32) != 0) { o.w(0x32) = 0x100; return; }
+        if (p->b(0x6b) != 0) { exitDespawnWide(ctx, o); return; }        // the priest flinches: hold
+    }
+    o.w(0x6a) += 1;
+    if (o.w(0x6a) >= 0xfa) o.w(0x32) = 0x100;
+    const int vx = o.w(0x5c);                                            // whole pixels of l5a
+    if (vx == 0) o.frame = 2;
+    else if (vx == 1 || vx == -1) o.frame = 3;
+    else {
+        anim2Step(ctx, o, 0x36, 3);
+        if (o.frame != 5 && o.frame != 4) { exitDespawnWide(ctx, o); return; }
+    }
+    if (weaponHits(ctx, o, 0, nullptr)) { die(); return; }
+    if (ctx.touchesHarry(o)) { ctx.hurtHarry(0x11); o.w(0x32) = 0x100; }  // 0x407b0f
+    if (vx > 0) o.facing = 0; else if (vx < 0) o.facing = 0xff;
+    if (!between(o.w(0x64) - o.y, -0x28, 0x40)) { die(); return; }
+    moveX(o, o.l(0x5a));
+    moveY(o, o.l(0x5e));
+    if (ctx.harry.y - 0x20 - o.y >= 0) { if (o.l(0x5e) < 0x10000) o.l(0x5e) += 0x1000; }
+    else                                { if (o.l(0x5e) >= -0x10000) o.l(0x5e) -= 0x1000; }
+    if (ctx.harry.x - o.x >= 0) { if (o.l(0x5a) < 0x70000) o.l(0x5a) += 0x5000; }
+    else                         { if (o.l(0x5a) >= -0x70000) o.l(0x5a) -= 0x5000; }
+    if (ctx.triggerClass(o.x, o.y) & 1) { die(); return; }
+    exitDespawnWide(ctx, o);
+}
+
+// 0x40fc84: a temple fire priest (type 45).  It rises from the floor (tprapea2 frames 0..7,
+// then tprhigh), conjures a fireball (type 0x2c) on each pass of its main script - holding
+// on frame 6 while the last one is still alive - and turns (tprapea2 7..2..7) when Harry gets
+// behind it.  69 hp; a hit makes it flinch for 9 ticks (tpzhit).  Beaten, it collapses
+// (0x45a849, tpzhit): on normal it falls apart for good (2000 points) - a whip on frame 4 of
+// the collapse hurries it - but on hard it reassembles with its hit count full, and the whip
+// only sends it back to the start of the fall.  15 contact damage while upright.
+void h_firePriest(ObjCtx& ctx, Obj& o) {
+    auto spriteIs = [&](const char* n) { return o.sprite && o.sprite->name() == n; };
+    if (o.frame == 0xfe) {                                               // first tick
+        int y = o.y + 0xd; ctx.floorSnap(o.x, y); o.y = int16_t(y - 0xd);
+        o.frame = 0xff;
+        o.l(0x36) = 0; o.b(0x3a) = 0;                                    // main script (0x45a82f)
+        o.l(0x46) = 0; o.b(0x4a) = 0; o.b(0x4b) = 0xff;                  // rising script (0x45a814) running
+        if (ctx.harry.x - o.x < 0) o.facing = 1;
+    }
+    if (!spriteIs("tpzhit")) harryContact(ctx, o, 0xf);
+    if (o.w(0x52)) {                                                     // turning
+        o.sprite = ctx.spr("tprapea2");
+        const bool done = animStep(ctx, o, o.anim(0x52), kAnim_priestTurn, 4);
+        if (o.w(0x52) == 5) o.facing ^= 1;                               // (cursor at frame 5, first tick)
+        if (!done) { exitDespawnFar(ctx, o); return; }
+        o.sprite = ctx.spr("tprhigh");
+    }
+    if (o.b(0x4b)) {                                                     // rising
+        if (!anim2Step(ctx, o, kAnim2_priestRise, 0x46, 4)) { exitDespawnFar(ctx, o); return; }
+        o.b(0x4b) = 0;
+    }
+    auto collapse = [&] {                                                // 0x40fdba
+        if (animStep(ctx, o, o.anim(0x34), kData_priestDeath, 4)) {
+            if (!ctx.hard) { ctx.g.stats().score += 2000; ctx.release(o); return; }
+            o.b(0x32) = 0; o.hits = 0x45;                                // hard: back on its feet
+            o.sprite = ctx.spr("tprhigh"); o.frame = 0;
+            return;
+        }
+        if (o.w(0x34) == 0x31 && !ctx.hard) { o.w(0x34) = 0x5d; o.hits = 0; }   // skip the reassembly
+        if (o.frame == 4 && weaponHits(ctx, o, 0, nullptr)) o.b(0x34) = ctx.hard ? 0x31 : 0x5d;
+        exitDespawnFar(ctx, o);
+    };
+    if (o.b(0x32)) { collapse(); return; }
+    if (spriteIs("tprhigh")) {
+        bool killed = false;
+        const bool hit = weaponHits(ctx, o, 0x45, &killed);
+        if (killed) { o.b(0x32) = 0xff; o.b(0x6b) = 0; o.sprite = ctx.spr("tpzhit"); collapse(); return; }
+        if (hit) { o.b(0x6b) = 9; o.b(0x6a) = o.frame; }
+    }
+    if (o.b(0x6b)) {                                                     // flinching
+        o.sprite = ctx.spr("tpzhit"); o.frame = 4;
+        o.b(0x6b) -= 1;
+        if (o.b(0x6b)) { exitDespawnFar(ctx, o); return; }
+        o.sprite = ctx.spr("tprhigh"); o.frame = o.b(0x6a);
+    }
+    if (o.frame == 6) {
+        const bool behind = ctx.harry.x < o.x ? o.facing == 0 : o.facing != 0;
+        if (behind) { o.w(0x52) = 0x100; exitDespawnFar(ctx, o); return; }
+        Obj* f = o.link2;
+        if (f && !f->freed && f->type == 0x2c) { exitDespawnFar(ctx, o); return; }   // its fireball still burns
+        o.link2 = nullptr;
+    }
+    anim2Step(ctx, o, kAnim2_priestMain, 0x36, 4);
+    if (o.b(0x3a) == 0 && o.l(0x36) == 4) {                              // 0x45a833: the fireball appears
+        if (Obj* f = ctx.spawn()) {                                      // FUN_004356bc(3)
+            f->w(0x26) = 0x6663;
+            o.link2 = f;
+            ctx.rnd(); ctx.sound(0x28);                                  // FUN_0042633d(0x28, 0x60, 8)
+            f->type = 0x2c; f->facing = o.facing;
+            f->x = int16_t(o.x - 0x1a); f->y = int16_t(o.y - 0x38);
+            f->sprite = ctx.spr("fxzfireb"); f->flags = 0x2000;
+            f->script = kAnim2_fireball; f->l(0x36) = 0; f->b(0x3a) = 0;
+            f->l(0x5e) = 0; f->w(0x64) = f->y;
+            f->link = &o;
+            f->l(0x5a) = 0x60000;
+            if (f->facing) { f->l(0x5a) = -0x60000; f->x += 0x33; }
+        }
+    }
+    exitDespawnFar(ctx, o);
+}
+
 // ---------------------------------------------------------------- default
 
 // Types without a port yet: show the template frame and leave when far away.
@@ -4201,11 +4383,14 @@ Handler ObjectSystem::handler(uint8_t type) {
     case 36:   return h_spit;
     case 28:   return h_spear;
     case 39:   return h_firePit;
+    case 44:   return h_fireball;
+    case 45:   return h_firePriest;
     case 119:  return h_whipLever;
     case 164:  return h_snakeRespawner;
     case 47:   return h_fish;
     case 52:   return h_stoneBlock;
     case 67:   return h_wheel;
+    case 148:  return h_pitWheel;
     case 149:  return h_wheelSpawner;
     case 82:   return h_dripper;
     case 0x81: return h_ripple;
