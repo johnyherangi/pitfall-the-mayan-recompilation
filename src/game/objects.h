@@ -318,6 +318,9 @@ extern const uint8_t kData_mapPaths[], kData_mapLevels[], kData_mapNames[];
 extern const uint8_t kData_cutscene[], kData_credits[], kData_titleRunner[];
 // 0x4614c2 .. 0x4615a1: the typed cheat codes (cheats.cpp), every byte 0x2d higher than its letter.
 extern const uint8_t kData_cheatCodes[];
+// The engine's water (camera.cpp): 0x455010, the forest's shimmer (32 longs, their low bytes the
+// lines' offsets); 0x455090, the wobble of the water's lines on levels 6 / 18 (longs, 0x8000 ending them).
+extern const uint8_t kData_leafWave[], kData_waterWave[];
 extern const uint8_t kAnim2_deathFade[], kAnim2_monkeyToss[], kAnim2_condorDive[], kAnim2_jaguarLeap[], kAnim2_jaguarCrouchA[],
     kAnim2_jaguarCrouchB[], kAnim2_jaguarCrouchRoar[], kAnim2_jaguarRoar[], kAnim2_bossCloud[],
     kAnim2_skullThrow[], kAnim2_skullChop[], kAnim2_boneTumble[], kAnim2_ballSwingA[], kAnim2_ballSwingB[], kAnim2_ballSwingC[],

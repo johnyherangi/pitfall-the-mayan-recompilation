@@ -48,7 +48,14 @@ struct FrameState {
     int parX = 0, parY = 0;              // DAT_00450f94 / DAT_00450f98 (parallax camera)
     int bob = 0;                         // DAT_004517ec (vertical shake offset)
     int vaultCeiling = 0;                // [DAT_00450510] + 0x1f4 (big-endian word): the vaults' ceiling, their parallax layer's y
-    std::vector<int8_t> lineScroll;      // DAT_004513e0 .. (per-line parallax offsets)
+    std::vector<int8_t> lineScroll;      // DAT_004513e0 .. (per-line parallax offsets, level 0)
+    // DAT_004513e0 .. on levels 1, 6, 18: the waterfalls' parallax, its first map column (the
+    // pointer the original keeps there, as a tile column), then each 16-px column's height in it
+    // (0 .. 511) or -1 (cleared), -1 ending them.
+    std::vector<int32_t> waterColumns;
+    int waveStart = 0;                   // DAT_004513d0 (DAT_004517f0): the first line's place in the water's wobble
+    int stopWatch = 0;                   // DAT_004517e8 (DAT_0046652f as the logic's end left it): the water stands still
+    bool rideLoop = false;               // level 7: the ride's loop runs (DAT_00465c56, not DAT_004661c1): no parallax
     std::vector<engine::SpriteInstance> displayList;   // 0x46aa94 (20-byte entries)
     uint32_t joypad = 0, joypadPrev = 0; // DAT_004517f8 / edge detection
     int atariScreen = 0;                 // DAT_00465ba8: the 2600 level's screen (FUN_00436fb4 reads it as it draws)
@@ -267,6 +274,12 @@ private:
     uint32_t demoButtons_ = 0;         // DAT_0046fb94
     int cloudDrift_ = 0;               // DAT_00450f94 accumulator for drifting layers
     int ruinsCounter_ = 0;             // DAT_004517e0
+    // The engine's water (FUN_00443370; zero in the BSS, never reset): the forest's shimmer
+    // (DAT_0046fb48 / 4c), the six falling phases of the waterfalls (DAT_00450014 / 18 / 1c / 20 /
+    // 24, DAT_004500e8), their wobble's place and countdown (DAT_004517f0, DAT_00450010).
+    int leafCount_ = 0, leafPhase_ = 0;
+    int32_t water_[6] = {};
+    int waveIndex_ = 0, waterCount_ = 0;
     // The title (FUN_00442410 / FUN_00443370 / FUN_004426e0 / FUN_00442bf0): records of
     // {x, y, sprite, frame, flags} at 0x451810 (the logo), 0x451830 / 0x451850 (its dust),
     // 0x451870 .. 0x4518d0 (the four stones under it) and 0x451a10 (the runner, later the jaguar).

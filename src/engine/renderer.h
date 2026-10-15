@@ -85,11 +85,25 @@ public:
     // Fill the view with colour 0 (level 22 / blank backgrounds).
     void clearView(int scrollX);
 
+    // FUN_00436534 at 0x4366ca (levels 1, 6, 18): the waterfalls' parallax in 21 columns of 16 px
+    // from the view's origin less (parX & 0xf).  cols[0] is the map's first tile column, cols[1 ..]
+    // each column's height in the map (0 .. 511; the map is 64 tiles high and wraps), drawn two
+    // opaque tiles wide (FUN_00436701 / FUN_00436998: h-flip only), the map's column moving on two
+    // tiles a drawn column; -1 clears the column (16 px of colour 0 down the view).
+    void drawWaterfall(const ph::Background& bg, const int32_t* cols, size_t n, int parX, int scrollX);
+    // FUN_00437ba0: line `row` of the view turned round by `by` px (right when positive).
+    void rotateRow(int row, int by, int scrollX);
+    // FUN_00438140 on levels 18 and 6 (not for the HUD, DAT_0046d040): a sprite whose x is in
+    // 0x3c0 .. 0x64f or 0x870 .. 0x8e7 (level 18), 0x948 .. 0xb07 or 0xbb8 .. 0xc2f (level 6) is
+    // cut off at y 0x3b8 / 0x1b8, under the water.  0: none.
+    void setWaterClip(int level) { waterClip_ = level; }
+
 private:
     void drawTile(uint8_t* dst, const uint8_t* tile, uint16_t entry);
     Framebuffer& fb_;
     int hatMode_ = 0;
     const ph::Sprite* hat_ = nullptr;
+    int waterClip_ = 0;
 };
 
 } // namespace engine

@@ -41,8 +41,10 @@ function boundaries are unreliable there; the full decompilation is kept in
 | `0x436fb4`   | tile layer renderer (41×29 tiles, deferred hi-priority); without a map (`DAT_00450fcc`) it clears the view; level 22's second room is the map at `DAT_004504f0` (`room2_extra`); level 21 draws its map last, wrapping, at the parallax camera | `Renderer::drawTileLayer`, `Game::composeFrame` |
 | `0x436b00` / `0x436b2c` | deferred tile drain / one tile (flips, see-through) | `Renderer::drawDeferredTiles`, `Renderer::drawTile` |
 | `0x437078` / `0x437128` | `FUN_00436fb4` on level 20: the 2600 screen, two 40-tile strips of the map picked by the screen's descriptor | `Game::renderAtari2600`, `Renderer::drawTileStrip` |
-| `0x436534`   | parallax renderer (line-scrolled bitmap / tiles); the vaults and level 21 draw their scene as the parallax map at the main camera with its priority tiles kept (`FUN_0043731c`) | `Renderer::drawParallaxLinear/Tiles`, `Renderer::drawWrappedLayer` |
-| `0x438140`   | RLE sprite blitter, 4 flip variants                    | `Renderer::drawSprite`                |
+| `0x436534`   | parallax renderer: levels 0 / 5 a line-scrolled bitmap (`0x43682c`), 1 / 6 / 18 the waterfalls, 7 none while the ride loops (`0x4366a8`), the vaults and level 21 their scene as the parallax map at the main camera with its priority tiles kept (`FUN_0043731c`), the others the map wrapping at the parallax camera in whole 8-px rows but on level 9 (`0x4371a5`; in a 200-line display mode 27 rows, one lower) | `Renderer::drawParallaxLinear`, `Renderer::drawWaterfall`, `Renderer::drawWrappedLayer`, `Game::composeFrame` |
+| `0x4366ca` / `0x436701` / `0x436998` | the waterfalls: 21 columns of 16 px from `0x450fd0` (the frame's copy of `0x4513e0`: the map's column, then a row per column, -1 a column cleared to 0 without moving on in the map), 29 rows of two opaque tiles each (mirrored by 0x4000), the map 64 rows round | `Renderer::drawWaterfall` |
+| `0x437ba0`   | levels 6 / 18, but while the stop-watch runs (`DAT_004517e8`): the view's lines below world y 0x1a0 / 0x3a0 each turned round by the next long of the table at `0x455090` (0x8000 ends it), from `DAT_004513d0` (the frame's copy of `DAT_004517f0`) | `Game::composeFrame`, `Renderer::rotateRow` |
+| `0x438140`   | RLE sprite blitter, 4 flip variants; the hat man (`DAT_0046d058`); on levels 18 / 6 a sprite whose x is in 0x3c0 .. 0x64f or 0x870 .. 0x8e7 / 0x948 .. 0xb07 or 0xbb8 .. 0xc2f is cut off below world y 0x3b8 / 0x1b8 (under the water) | `Renderer::drawSprite`, `Renderer::setHatman / setWaterClip` |
 | `0x4426e0`   | display-list walk; on the title, the logo, its dust and the stones under it (and their sounds, the start key off while they break) | `Game::composeFrame`, `Game::titleFrame`, `Game::renderTitle` |
 | `0x442410`   | a level's start at the end of its load: the title's records and camera (0, 0x10), else the logic (`FUN_00435fc0`) | `Game::titleSetup`, `Game::startLevel` |
 | `0x442bf0`   | the title's runner (ticks 0x15 .. 0xdb, his steps) and jaguar (0x1f5 .. 0x257, its growls) | `Game::titleFrame`, `Game::renderTitleRunner` |
@@ -76,7 +78,10 @@ function boundaries are unreliable there; the full decompilation is kept in
 | `0x450fb8/bc`| camera limits                            | `FrameState::maxScrollX/Y`   |
 | `0x450f94/8` | parallax scroll x / y                    | `FrameState::parX/Y`         |
 | `0x4517ec`   | vertical bob offset                      | `FrameState::bob`            |
-| `0x4513e0`   | per-line parallax offsets (`0x46fb44` count) | `FrameState::lineScroll` |
+| `0x4513e0`   | per-line parallax offsets (`0x46fb44` count; on levels 1 / 6 / 18 the waterfalls' columns) | `FrameState::lineScroll`, `FrameState::waterColumns` |
+| `0x46fb48` / `0x46fb4c` | level 0's shimmer: the countdown (3) and the phase (1 .. 32) into the table at `0x455010`, moving only while the parallax's y is over 0x6f | `Game::leafCount_ / leafPhase_` |
+| `0x450014` .. `0x450024`, `0x4500e8` | the waterfalls' six phases (16.16; down by 0x72000 / 0x8c000 / 0x5f000 / 0x65000 / 0x84000 / 0x6c800 a tick but while the stop-watch runs, `DAT_004517e8`); `0x450028` .. the 48 columns' rows (half the camera's y plus the phase of the column's place in a block of eight) | `Game::water_` |
+| `0x450010` / `0x4517f0` | the wobble's countdown (4) and its start in the table at `0x455090` (levels 6 / 18) | `Game::waterCount_ / waveIndex_`, `FrameState::waveStart` |
 | `0x46aa94`   | sprite display list (20-byte entries), end `0x46aa90` | `FrameState::displayList` |
 | `0x4517f8`   | joypad bits (Genesis layout)             | `FrameState::joypad`         |
 | `0x45190c`   | ticks since level start                  | `FrameState::frame`          |

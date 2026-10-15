@@ -16,7 +16,7 @@ decompiled code by a test or a rendered image.
 | 448×256 back buffer, 320×224 view at `(scrollX&7, 9)` | `FUN_0043e1c0`, `FUN_00443b90` |
 | Tile pass (41×29, opaque fast path, flips, deferred hi-priority tiles) | `FUN_00436fb4` |
 | Sprite blitter incl. all four flip variants and clipping rules | `FUN_00438140`; H-flip verified by image |
-| Line-scrolled parallax for levels 0/5 with horizontal wrap | `FUN_00436534` first branch |
+| Line-scrolled parallax for levels 0/5 with horizontal wrap; level 0's shimmering lines below the parallax's y 0x6f (each the low byte of a long of the table at `0x455010`, from a phase `DAT_0046fb4c` stepped every fourth tick by `DAT_0046fb48` while the lines show) | `FUN_00436534` first branch, `FUN_00443370` case 0; rendered frames of level 0 |
 | Text / glyph mapping | `FUN_00442600`, `FUN_004387c0` |
 | HUD (`FUN_00442fa0`, `FUN_00435d45`): the "%06d" score, the crocodile's place, jaws and dead pose, `mi_life`'s animations (the meter going down, a 1-up arriving, the blink and flash near the end), lives, treasures, weapon, ammo, the levels it is drawn on, shown in the demos with "DEMONSTRATION"; the slide in from the edges after a start or restart (`DAT_00451940` / `DAT_004667a8`, put back after the pre-ticks) | rendered frames of level 0 and demo 0; `tests/ph_tests.cpp` checks the slide (0x2d at the start, 0 after 15 ticks) and the tick count |
 | The logic's end `0x4363bd` on every path (twice at a start or restart), the logic ticks a level load and `*3` run before the first frame (`0x46ffa0`), the hard flag set each tick (normal in a demo), the tick counts that are never reset (`DAT_004601d9`, `DAT_004601d5`) | `PlayLogic::epilogue`, `Game::preTicks`, `Game::hardMode` |
@@ -30,6 +30,7 @@ decompiled code by a test or a rendered image.
 | Attract-mode demo input scripts (3 recordings) | `0x46fbc0`, `0x46fc80`, `0x46fec8` |
 | Level names, string resources, original icon | PE resources |
 | Per-level parallax camera ratios | `FUN_00443370` switch |
+| The parallax's per-level cases (`FUN_00436534`): the waterfalls of levels 1 / 6 / 18 (`0x4366ca`: 21 opaque 16-px columns of the map, 64 rows round, each column at half the camera's y plus one of six phases `DAT_00450014 .. 24` / `DAT_004500e8` falling at their own speeds but while the stop-watch runs, by its x in blocks of eight; on level 1 water only from x 0x80 to 0x37f, the other columns cleared), the wobble of the lines below the water on levels 6 / 18 (`FUN_00437ba0`: each line turned round by the next long of the table at `0x455090`, the start moving a line every fifth tick, `DAT_004517f0`) and their sprites cut off at the water (`FUN_00438140`), none on level 7 while the ride loops (`0x4366a8`), the others wrapping in whole 8-px rows but on level 9 | rendered frames of levels 0, 1, 6, 7, 9 and 18, the waterfalls at level 1's edges; ASan |
 | Title → demo → intro sequencing, Start handling | `FUN_00443c90` tail |
 | The title (level 15): its set-up and camera (`FUN_00442410`), the runner's frames and the pan (`FUN_00443370`), the logo dropping in, its dust, the stones cracking and breaking away, the blinking prompt, its sounds (`FUN_004426e0`), the runner and the jaguar (`FUN_00442bf0`), no start key before tick 0x3d nor while the stones break | rendered frames; `tests/ph_tests.cpp` (title: the pan from tick 58 to 217, no start at ticks 0x30 and 0x150) |
 | The cutscenes (levels 21 .. 23): the scene code `0x401000 .. 0x401dff` with its scripts, actors, frame scripts and texts from the data section (kept across levels as the original's), the skip key, the credits (twice as fast after an attract, `DAT_0046fb84`), and their drawing (`FUN_00401346`, `FUN_004012d8`, `FUN_004013f8`, level 21's scene drawn as its parallax map with its vines over everything, level 22's second room, level 23's lines behind the jungle) in `FUN_00443c90`'s order | rendered frames of all three; `tests/ph_tests.cpp` (cutscene: the intro's texts, 1-up, camera, shakes and `*8` at their ticks, a key skipping it, the reunion to `*9`, the end's words by the difficulty and the letters, the hand, "[THE END]", a key skipping the credits) |
@@ -44,8 +45,6 @@ decompiled code by a test or a rendered image.
 
 | item | what differs |
 |------|--------------|
-| Tile-based parallax for non-forest levels | generic wrapping tile draw at `(parX, parY)`; the original has per-level special cases (the waterfalls' columns of levels 1 / 6 / 18, `0x4366ca` with `DAT_00450028..`, level 7's `0x4366a8`, level 6/18 water reflection `FUN_00437ba0`) and draws the others in whole 8-px rows (but level 9) leaving their see-through pixels as they were (the vaults' and level 21's scene layers are ported as the original) |
-| Forest leaf line-scroll band | 32-entry wave table reproduced by shape, not copied from `DAT_00455010` |
 | Engine exits inside the logic tick | `engineExit` unwinds the tick at once; the port runs the tick out and skips only its end (`0x4363bd`) |
 | The logic's memory | Harry and the logic's globals (`0x465800 .. 0x4668ff`) start at zero with each level here; the original keeps what the last level left.  The title's jungle sounds (`FUN_00431a67`, whose countdown `DAT_00465b04` and checks of `DAT_00465b72` / `DAT_0046652f` / `DAT_0046652b` are the logic's) keep their own countdown |
 | "PAUSED", the frame rate / position text | drawn with `TextOutA` (the window's font) in the original, in the 8×8 font here at the same place; the frame rate counts the frames composed against the wall clock as the original's `timeGetTime` |
@@ -81,9 +80,8 @@ decompiled code by a test or a rendered image.
 The machine-translated 68000 half of the binary (`0x401000–0x437fff`) is ported routine by routine: Harry's
 states, the object system and 140 of its behaviour types, the camera and spawner, the triggers and level
 scripts, the map screen, the 2600 level, the continue screen, the title, the cutscenes, level 24, the engine's
-transitions, CD audio and the typed cheat codes.  What is left: the per-level water effects of `FUN_00443370` /
-`FUN_00437ba0` (and the sprites of level 18 clipped at the water, `FUN_00438140`), the window's status bar with the
-level's name (`FUN_00440bc0`), the "loading" dialog of a windowed level load, the original's menu (`FUN_0043b920`: a
+transitions, CD audio, the typed cheat codes and the parallax's water effects.  What is left: the window's status
+bar with the level's name (`FUN_00440bc0`), the "loading" dialog of a windowed level load, the original's menu (`FUN_0043b920`: a
 new game, the levels to start at, the intro — which clears `DAT_0046fb84` —, the vaults and the 2600 level, help) and
 options property sheet, the real disc through MCI in the Win32 front end, and a build with MSVC itself (the Windows
 build is checked with clang / llvm-mingw).

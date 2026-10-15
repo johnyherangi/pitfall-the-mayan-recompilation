@@ -372,13 +372,14 @@ void PlayLogic::tick(Game& g) {
 void PlayLogic::epilogue(Game& g) {
     // 0x4363bd: the camera for the engine, the tick count, then the numbers the HUD shows.
     // (DAT_004517f4 = DAT_00465cf6 is never read; DAT_004517e8 = DAT_0046652f, the stop-watch,
-    // stills the water effects of FUN_00443370 / FUN_00437ba0, which are not ported.)
+    // stills the water of FUN_00443370 / FUN_00437ba0.)
     FrameState& fs = g.state();
     fs.scrollX = h_.w(0x4658b4);
     fs.scrollY = h_.w(0x4658b6);
     fs.camX = fs.scrollX;
     fs.camY = fs.scrollY;
     fs.bob = h_.w(0x465b02);
+    fs.stopWatch = h_.w(0x46652f);                         // DAT_004517e8
     ++g.logicTicks();                                      // DAT_004601d9
     if (g.invincible()) h_.damage() = 0;                   // DAT_0046d054
     // 0x436435: 50 treasures make a continue (at most 9), the lives are 1 .. 10 (none left:
@@ -408,6 +409,8 @@ void PlayLogic::meterLive(Game& g) {
     }
     g.stats().damage = h_.damage();
     g.stats().harryDead = h_.b(0x465b72) == 0xff;
+    // FUN_00436534 reads the ride's bytes as it draws: level 7's loop has no parallax (0x4366a8)
+    g.state().rideLoop = level_ == kBalankancheMine && h_.b(0x465c56) != 0 && h_.b(0x4661c1) == 0;
 }
 
 void PlayLogic::timers() {

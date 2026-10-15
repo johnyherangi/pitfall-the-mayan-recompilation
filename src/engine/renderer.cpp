@@ -99,6 +99,45 @@ void Renderer::clearRows(int bufRow, int rows) {
     for (int y = bufRow; y < bufRow + rows && y < kBufH; ++y) std::memset(fb_.px.data() + size_t(y) * kBufW, 0, size_t(kViewW));
 }
 
+void Renderer::drawWaterfall(const ph::Background& bg, const int32_t* cols, size_t n, int parX, int scrollX) {
+    if (bg.wTiles == 0 || bg.hTiles == 0 || n == 0) return;
+    uint8_t* col = fb_.viewBase(scrollX) - (parX & 0xf);
+    int mapCol = cols[0];
+    auto tile = [&](uint8_t* dst, uint16_t e) {
+        // FUN_00436998: an opaque 8x8 tile, mirrored by 0x4000
+        const int t = e & 0xfff;
+        if (t >= bg.tileCount()) return;
+        const uint8_t* src = &bg.tiles[size_t(t) * 64];
+        for (int y = 0; y < 8; ++y, dst += kBufW, src += 8)
+            for (int x = 0; x < 8; ++x) dst[x] = (e & 0x4000) ? src[7 - x] : src[x];
+    };
+    for (size_t k = 1; k <= 21; ++k, col += 16) {
+        const int32_t v = k < n ? cols[k] : -1;
+        if (v == -1) {                                           // 0x4367f8: the column cleared
+            for (int y = 0; y < kViewH; ++y) std::memset(col + size_t(y) * kBufW, 0, 16);
+            continue;
+        }
+        uint8_t* dst = col - (v & 7) * kBufW;
+        const int row0 = (v & 0x1f8) >> 3;
+        for (int r = 0; r < 29; ++r, dst += 8 * kBufW) {
+            const int row = (row0 + r) % 0x40;
+            if (row >= bg.hTiles) continue;
+            for (int c = 0; c < 2; ++c) {
+                const int mc = mapCol + c;
+                if (mc >= 0 && mc < bg.wTiles) tile(dst + 8 * c, bg.tilemap[size_t(row) * size_t(bg.wTiles) + size_t(mc)]);
+            }
+        }
+        mapCol += 2;
+    }
+}
+
+void Renderer::rotateRow(int row, int by, int scrollX) {
+    if (row < 0 || row >= kViewH || by == 0) return;
+    uint8_t* p = fb_.viewBase(scrollX) + size_t(row) * kBufW;
+    if (by > 0) std::rotate(p, p + (kViewW - by % kViewW), p + kViewW);
+    else std::rotate(p, p + ((-by) % kViewW), p + kViewW);
+}
+
 void Renderer::clearView(int scrollX) {
     uint8_t* dst = fb_.viewBase(scrollX);
     for (int y = 0; y < kViewH; ++y) std::memset(dst + size_t(y) * kBufW, 0, kViewW);
@@ -186,7 +225,15 @@ void Renderer::drawSprite(const SpriteInstance& in, const View& view) {
     // Flip bits as the original blitter tests them: 0x40 = mirror horizontally
     // (rows still run downwards), 0x80 = rows run upwards, 0xc0 = both.
     const bool hflip = (s.flags & kSprHFlip) != 0, vflip = (s.flags & kSprVFlip) != 0;
-    const int scrollX = view.scrollX, scrollY = view.scrollY, right = view.right(), bottom = view.bottom();
+    const int scrollX = view.scrollX, scrollY = view.scrollY, right = view.right();
+    int bottom = view.bottom();
+    if (waterClip_ == 0x12) {
+        const uint32_t x = uint32_t(s.x);
+        if (((x > 0x3bf && x < 0x650) || (x > 0x86f && x < 0x8e8)) && bottom > 0x3b7) bottom = 0x3b8;
+    } else if (waterClip_ == 6) {
+        const uint32_t x = uint32_t(s.x);
+        if (x > 0x947 && (x < 0xb08 || (x > 0xbb7 && x < 0xc30)) && bottom > 0x1b7) bottom = 0x1b8;
+    }
 
     // Horizontal placement / whole-sprite rejection.
     int ax;

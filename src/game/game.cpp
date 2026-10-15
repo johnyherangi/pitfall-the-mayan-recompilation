@@ -655,6 +655,11 @@ void Game::composeFrame() {
             renderer_.drawParallaxLinear(level_->parallaxLinear, snap_.parX, snap_.parY,
                                          snap_.lineScroll.empty() ? nullptr : snap_.lineScroll.data(),
                                          int(snap_.lineScroll.size()));
+        } else if (levelNo_ == kXibalbaFalls || levelNo_ == kYaxchilanLagoon || levelNo_ == kJainaIslandFalls) {
+            // 0x4366ca: the waterfalls, a column at a time (camera.cpp)
+            renderer_.drawWaterfall(level_->parallax, snap_.waterColumns.data(), snap_.waterColumns.size(), snap_.parX, snap_.scrollX);
+        } else if (levelNo_ == kBalankancheMine && snap_.rideLoop) {
+            // 0x4366a8: none while the ride's loop runs (the map covers the whole view there)
         } else if (levelNo_ == kIntro) {
             // 0x4365e2: the intro's scene is its parallax map, drawn at the main camera (whole rows)
             // with its high-priority tiles kept for after the actors (FUN_0043731c)
@@ -662,7 +667,10 @@ void Game::composeFrame() {
             renderer_.drawWrappedLayer(level_->parallax, snap_.scrollX, snap_.scrollY & ~7, fine, fine, &deferred_);
             deferredMap = &level_->parallax;
         } else {
-            renderer_.drawParallaxTiles(level_->parallax, snap_.parX, snap_.parY, snap_.scrollX & 7);
+            // 0x436589: at the parallax camera, wrapping both ways, in whole rows of 8 px but on
+            // level 9 (0x4371a5)
+            renderer_.drawWrappedLayer(level_->parallax, snap_.parX, levelNo_ == kTempleOfTikal ? snap_.parY : snap_.parY & ~7,
+                                       snap_.parX & 7, snap_.scrollX & 7, nullptr);
         }
     } else {
         renderer_.clearView(snap_.scrollX);
@@ -679,7 +687,18 @@ void Game::composeFrame() {
             renderer_.drawWrappedLayer(bg, snap_.scrollX, snap_.scrollY, snap_.scrollX & 7, snap_.scrollX & 7, nullptr);
         else { renderer_.drawTileLayer(bg, view, deferred_); deferredMap = &bg; }
     }
-    // (FUN_00437ba0, the water of levels 6 and 18, is not ported.)
+    // FUN_00437ba0: on levels 6 and 18, but while the stop-watch runs, the lines below the water
+    // (world y 0x1a0 / 0x3a0) wobble: each turned round by the next long of the table at 0x455090.
+    if ((levelNo_ == kYaxchilanLagoon || levelNo_ == kJainaIslandFalls) && snap_.stopWatch == 0) {
+        const int n = snap_.scrollY - (levelNo_ == kYaxchilanLagoon ? 0xc0 : 0x2c0);
+        auto wave = [](int i) { int32_t w; std::memcpy(&w, kData_waterWave + size_t(i) * 4, 4); return w; };
+        int idx = snap_.waveStart;
+        for (int r = 0xe0 - n; n > 0 && r < 0xe0; ++r) {
+            renderer_.rotateRow(r, wave(idx), snap_.scrollX);
+            if (wave(++idx) == 0x8000) idx = 0;
+        }
+    }
+    renderer_.setWaterClip(levelNo_ == kJainaIslandFalls || levelNo_ == kYaxchilanLagoon ? levelNo_ : 0);
     // FUN_004426e0: the title's logo, or the sprites behind, back to front (from the list's end).
     if (levelNo_ == kTitleScreen) renderTitle();
     else
@@ -696,6 +715,7 @@ void Game::composeFrame() {
     // camera, wrapping (0x4371a5).
     if (levelNo_ == kIntro && level_->hasBg)
         renderer_.drawWrappedLayer(level_->bg, snap_.parX, snap_.parY, snap_.parX & 7, snap_.scrollX & 7, nullptr);
+    renderer_.setWaterClip(0);                                     // DAT_0046d040 = 1 for the HUD
     renderHud();                                                   // FUN_00442fa0
     renderPaused();
     renderFrameRate();

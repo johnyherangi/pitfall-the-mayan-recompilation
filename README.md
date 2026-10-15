@@ -109,10 +109,10 @@ attract-mode demos) and most of the Genesis-derived game logic are
 reconstructed: Harry's whole state machine, the object system with 140
 behaviour types, the camera and spawner, the triggers and level scripts, every
 boss, the Loltun vaults, the continue screen, the map screen, the Atari 2600
-level, the title, the intro, the reunion, the end and its credits, and the
-typed cheat codes.  Still to do: the per-level water effects and the
-original's menus and options sheet.  See `docs/RECONSTRUCTION_LEDGER.md` for
-the exact status.
+level, the title, the intro, the reunion, the end and its credits, the
+typed cheat codes and the waterfalls and water effects.  Still to do: the
+original's menus, status bar and options sheet.  See
+`docs/RECONSTRUCTION_LEDGER.md` for the exact status.
 
 ## Legal
 
