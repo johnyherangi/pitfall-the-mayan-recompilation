@@ -82,10 +82,6 @@ struct Obj {
     void setSprite(const ph::Sprite* spr) { sprite = spr; rawBox = nullptr; }
 };
 
-// Harry's state as the object handlers see it (continuation addresses in
-// DAT_00465b69 and a few flags of the original).
-enum class HarryState { Normal, Jumping, Hurt, Dead, Drowning, Swinging, Climbing, Grabbed, OnBungee };
-
 // FUN_004251f9: the trigger under (x, y).  cls = the class byte (0 when >= 0xf0, d2),
 // id = the trigger id (d3), raw = the class byte itself (d6); found is false when the
 // cell has no trigger (the routine then returns with Z set, as it does for a class >= 0xf0).
@@ -98,17 +94,10 @@ struct ObjCtx {
     Harry& harry;
     int levelNo = 0;
     int camX = 0, camY = 0;        // DAT_004658b4 / DAT_004658b6
-    uint32_t pad = 0;              // joypad bits (engine::kJoy*), DAT_00466761..65
-    uint32_t padPressed = 0;       // bits that went down this tick (DAT_0046676a == 1 for jump; a handler clears a bit it consumes)
     bool hard = false;             // DAT_00462694: hard difficulty (whip damage 9 instead of 10)
-    bool boss = false;             // DAT_00466507: a boss fight is on (heart beat, boss meter)
-    bool freeze = false;           // DAT_0046652f (stop-watch): enemies stand still and sparkle
-    int pistonPhase = 0, pistonTick = 0;   // DAT_0046650d / DAT_0046650e: the temple pistons' shared cycle
-    HarryState hstate = HarryState::Normal;
-    bool harryUntouchable = false; // DAT_00465b72 (dying / leaving the level)
-    const char* harrySprite = "";
-    // Whip box (DAT_00465aeb..) while the whip is out, 0 width otherwise.
-    int whipX0 = 0, whipX1 = 0, whipY0 = 0, whipY1 = 0;
+    // DAT_0046652f (the stop-watch's count): enemies stand still and sparkle.  Read as it is
+    // now: a watch picked up earlier in the pass freezes the objects after it.
+    bool frozen() const;
 
     // helpers shared by the handlers (objects.cpp)
     uint32_t rnd();                                    // FUN_0043387e
@@ -130,7 +119,9 @@ struct ObjCtx {
     uint8_t triggerClass(int x, int y, uint8_t* id = nullptr) const;
     Trg trigger(int x, int y) const;                   // FUN_004251f9 with all its results
     Obj* spawn(bool tail = false);                     // FUN_00435905 / FUN_00435780 (nullptr when the pool is full)
-    Obj* spawnFrom(Obj& parent, bool tail = false);    // FUN_004356bc / FUN_0043546e: at the parent's x / y
+    // FUN_004356bc / FUN_0043546e: at the parent's x / y.  With d0.b != 0 (nearly every call
+    // site) the routine also calls the VRAM-slot stub FUN_004263a6, which sets w26 = 0x6663.
+    Obj* spawnFrom(Obj& parent, bool tail = false, int d0 = 1);
     void release(Obj& o);                              // FUN_0043598f
     Obj* spawnEffect(Obj& at, const ph::Sprite* spr, const uint8_t* script, int ticks);   // 0x433914
     void sparkleBurst(Obj& at, const int16_t* offsets);                                    // 0x433747

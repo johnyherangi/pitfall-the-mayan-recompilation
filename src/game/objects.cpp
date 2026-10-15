@@ -42,13 +42,18 @@ uint8_t ObjCtx::triggerClass(int x, int y, uint8_t* id) const {
 
 Trg ObjCtx::trigger(int x, int y) const { return pl.trg(x, y); }
 
+bool ObjCtx::frozen() const { return static_cast<const Harry&>(harry).w(0x46652f) != 0; }
+
 const ph::Sprite* ObjCtx::spr(const char* name) { return g.findSprite(name); }
 
 Obj* ObjCtx::spawn(bool tail) { return tail ? pl.objectSystem().allocTail() : pl.objectSystem().allocHead(); }
-Obj* ObjCtx::spawnFrom(Obj& parent, bool tail) {
+Obj* ObjCtx::spawnFrom(Obj& parent, bool tail, int d0) {
     const int16_t x = parent.x, y = parent.y;          // (the parent may be the record just freed)
     Obj* o = spawn(tail);
-    if (o) { o->x = x; o->y = y; }
+    if (o) {
+        if (uint8_t(d0)) o->w(0x26) = 0x6663;          // FUN_004263a6
+        o->x = x; o->y = y;
+    }
     return o;
 }
 void ObjCtx::release(Obj& o) { pl.objectSystem().free(o); }
@@ -617,7 +622,7 @@ void killObject(ObjCtx& ctx, Obj& o) {
     if (kind == 2) return;
     // 0x4084d0: fxzdeath gets a mirrored second half (type 0) for its frames 1 and 2
     Obj* a3 = e;
-    Obj* half = ctx.spawnFrom(o, true);                         // FUN_0043546e
+    Obj* half = ctx.spawnFrom(o, true, 0);                      // FUN_0043546e(0)
     if (!half) { ctx.release(*a3); return; }
     a3->link = half;
     half->link = a3;

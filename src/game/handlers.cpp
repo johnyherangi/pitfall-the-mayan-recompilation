@@ -150,7 +150,7 @@ void h_item(ObjCtx& ctx, Obj& o) {
     } else if (n == "mi_stone") {
         animStep(ctx, o, o.anim(0x42), kAnim_turn4, 4);
     } else if (n == "fx_hrtbt") {
-        animStep(ctx, o, o.anim(0x42), ctx.boss ? kAnim_heartBoss : kAnim_heart, 6);   // 0x405589: faster beat during a boss fight
+        animStep(ctx, o, o.anim(0x42), ctx.pl.bossActive() ? kAnim_heartBoss : kAnim_heart, 6);   // 0x405589: faster beat during a boss fight
     } else {
         halfMinuteTick(o);                              // 0x4057b0
         if (o.b(0x50) == 0) {
@@ -379,6 +379,7 @@ bool snakeBiteRange(ObjCtx& ctx, Obj& o) {
 void h_snake(ObjCtx& ctx, Obj& o) {
     if (o.b(0x32) == 0) {
         o.b(0x69) = 2;
+        o.w(0x4c) = int16_t((ctx.rnd() & 0x3f) + 0x45);   // (overwritten at once by the speed's high word)
         o.l(0x4a) = -0x1e000;                 // slither speed, 16.16 (negative = left)
         o.facing = 1;
         o.b(0x32) = 0xff;
@@ -387,7 +388,7 @@ void h_snake(ObjCtx& ctx, Obj& o) {
     bool killed = false;
     weaponHits(ctx, o, 10, &killed);
     if (killed) { killObject(ctx, o); return; }
-    if (ctx.freeze) { if (o.frame != 0xff) freezeSparkle(ctx, o); return; }
+    if (ctx.frozen()) { if (o.frame != 0xff) freezeSparkle(ctx, o); return; }
     if (!o.sprite || o.sprite->name() != "snimiss") harryContact(ctx, o, 10);
     if (o.b(0x33) == 0) {
         // Still in the hole: emerge when Harry comes within 0xc0 x / 0xa0 y.
@@ -442,10 +443,12 @@ void h_snake(ObjCtx& ctx, Obj& o) {
         if (o.frame == 6) o.frame = 0;
     }
     moveX(o, o.l(0x4a));
-    if (o.w(0x66)) { o.w(0x66) -= 1; moveX(o, o.l(0x4a)); }   // hurries while Harry is close
+    if (o.w(0x66)) { o.w(0x66) -= 1; moveX(o, o.l(0x4a)); }   // double speed
     {
-        const int dx = ctx.harry.x() - o.x;
-        if (dx < 0x88 && dx >= -0x88) o.w(0x66) = 0x32;
+        // 0x41932d: it hurries while Harry is more than 0x88 px away, and for 0x32 ticks after
+        // he comes nearer.
+        const int16_t dx = int16_t(ctx.harry.x() - o.x);
+        if (int16_t(dx - 0x88) >= 0 || int16_t(dx + 0x88) < 0) o.w(0x66) = 0x32;
     }
     { int y = o.y + 0xe; if (ctx.floorSnap(o.x, y)) o.y = int16_t(y - 0xe); }
     bool turn = false;
@@ -531,7 +534,7 @@ void h_monkey(ObjCtx& ctx, Obj& o) {
         o.b(0x46) = uint8_t((ctx.rnd() & 0xf) + 7);
     }
     { int y = o.y + 0x19; if (ctx.floorSnap(o.x, y)) o.y = int16_t(y - 0x19); }
-    if (ctx.freeze) { freezeSparkle(ctx, o); return; }
+    if (ctx.frozen()) { freezeSparkle(ctx, o); return; }
     if (o.w(0x4a)) {
         // Hop (turn-around bounce, hurts when it was aimed at Harry).
         o.sprite = ctx.spr("mkzbounc");
@@ -632,7 +635,7 @@ void h_fly(ObjCtx& ctx, Obj& o) {
     bool killed = false;
     weaponHits(ctx, o, 9, &killed);
     if (killed) { killObject(ctx, o); return; }
-    if (ctx.freeze) { freezeSparkle(ctx, o); return; }
+    if (ctx.frozen()) { freezeSparkle(ctx, o); return; }
     harryContact(ctx, o, 0xc);
     if (o.b(0x46) == 0) {
         // Resting until Harry comes close.
@@ -884,12 +887,12 @@ void condorStates(ObjCtx& ctx, Obj& o) {
 void condorTick(ObjCtx& ctx, Obj& o) {
     bool killed = false;
     if (weaponHits(ctx, o, 0x14, &killed)) {
-        if (ctx.freeze || killed) { killObject(ctx, o); return; }
+        if (ctx.frozen() || killed) { killObject(ctx, o); return; }
         condorStun(ctx, o);
         condorStates(ctx, o);
         return;
     }
-    if (ctx.freeze) { freezeSparkle(ctx, o); return; }
+    if (ctx.frozen()) { freezeSparkle(ctx, o); return; }
     moveX(o, o.l(0x34));
     condorWallCheck(ctx, o);
     condorStates(ctx, o);
@@ -997,7 +1000,7 @@ void h_rat(ObjCtx& ctx, Obj& o) {
     bool killed = false;
     weaponHits(ctx, o, 9, &killed);
     if (killed) { killObject(ctx, o); return; }
-    if (ctx.freeze) { freezeSparkle(ctx, o); return; }
+    if (ctx.frozen()) { freezeSparkle(ctx, o); return; }
     ratContact(ctx, o);                       // 0x40b84f
     if (o.b(0x38)) {
         o.sprite = ctx.spr("rtzturn");
@@ -1036,7 +1039,7 @@ void h_bat(ObjCtx& ctx, Obj& o) {
     bool killed = false;
     weaponHits(ctx, o, 9, &killed);
     if (killed) { killObject(ctx, o); return; }
-    if (ctx.freeze) { freezeSparkle(ctx, o); return; }
+    if (ctx.frozen()) { freezeSparkle(ctx, o); return; }
     if (o.w(0x5a)) { o.w(0x5a) -= 1; return; }          // settling on the roost
     o.behind = 0xff;
     if (o.b(0x32) == 0) {
@@ -1145,7 +1148,7 @@ void h_spider(ObjCtx& ctx, Obj& o) {
     bool killed = false;
     weaponHits(ctx, o, 9, &killed);
     if (killed) { killObject(ctx, o); return; }
-    if (ctx.freeze) { freezeSparkle(ctx, o); return; }
+    if (ctx.frozen()) { freezeSparkle(ctx, o); return; }
     harryContact(ctx, o, 0xc);
     if (o.w(0x66)) { o.w(0x66) -= 1; exitDespawnFar(ctx, o); return; }
     if (o.b(0x46)) o.b(0x46) -= 1;
@@ -1249,7 +1252,7 @@ void h_spider(ObjCtx& ctx, Obj& o) {
 }
 
 
-// ---------------------------------------------------------------- scorpion (type 133, 0x41baa0)
+// ---------------------------------------------------------------- scorpion (types 132 / 133, 0x41baa0)
 
 void h_scorpion(ObjCtx& ctx, Obj& o) {
     bool killed = false;
@@ -1402,7 +1405,7 @@ void h_leafSpawner(ObjCtx& ctx, Obj& o) {
     if (o.b(0x32) == 0) o.b(0x32) = uint8_t((ctx.rnd() & 0x3f) + 0x40);
     o.b(0x32) -= 1;
     if (o.b(0x32) == 0) {
-        if (Obj* l = ctx.spawnFrom(o, true)) {        // FUN_0043546e(0)
+        if (Obj* l = ctx.spawnFrom(o, true, 0)) {     // FUN_0043546e(0)
             l->w(0x4e) = 0x46;
             l->y = o.y;
             l->x = int16_t(o.x + int(ctx.rnd() & 0x3f) - 0x20);
@@ -1426,21 +1429,20 @@ void h_branch(ObjCtx& ctx, Obj& o) {
     if (o.frame == 0xfe) { o.facing = 1; o.frame = 0xff; }
     if (o.frame == 0xff) {
         o.frame = 0;
-        Obj* tip = ctx.spawnFrom(o, true);            // FUN_0043546e
+        Obj* tip = ctx.spawnFrom(o, true);            // FUN_0043546e(2)
         if (!tip) { ctx.pl.restoreEntry(o); ctx.release(o); return; }
         tip->facing = o.facing;
         tip->sprite = ctx.spr("obrbrnch");
         tip->frame = 1; tip->type = 0x7c; tip->b(0x32) = 0x19;
         tip->x = int16_t(o.x - 6 + (o.facing ? 0xc : 0));
-        tip->y = o.y;
-        tip->flags = o.flags;
-        tip->link = &o; o.link = tip;
+        tip->y = o.y;                                 // (its flags stay 0)
+        tip->link = &o; o.link = tip;                 // (+0x50 both ways)
     }
-    const int dx = o.x - ctx.camX, dy = o.y - ctx.camY;
-    if (dx < -0x78 || dx >= 0x1b8 || dy < -0x82 || dy >= 0x15e) {
+    if (farFromCamera(ctx, o)) {                      // 0x424ec4
         ctx.pl.restoreEntry(o);
-        if (o.link && !o.link->freed && o.link->type == 0x7c && o.link->link == &o) ctx.release(*o.link);
         ctx.release(o);
+        Obj* tip = o.link;                            // (a freed record keeps its fields)
+        if (tip && tip->type == 0x7c && tip->link == &o) ctx.release(*tip);
     }
 }
 
@@ -1451,10 +1453,8 @@ void h_branchTip(ObjCtx& ctx, Obj& o) {
             if (o.frame == 2) {
                 ctx.sound0(4, 0x11);                                   // FUN_0042633d(4, 0x60)
                 if (Obj* p = ctx.spawnFrom(o, true)) {                 // FUN_0043546e(1)
-                    p->w(0x26) = 0x6663;
                     p->facing = o.facing; p->type = 0x7d;
-                    p->sprite = ctx.spr("obrbrnch"); p->frame = 3; p->b(0x32) = 3;
-                    p->flags = o.flags;
+                    p->sprite = ctx.spr("obrbrnch"); p->frame = 3; p->b(0x32) = 3;   // (its flags stay 0)
                 }
             }
             o.frame = 6;
@@ -1556,7 +1556,7 @@ void h_vineMonkey(ObjCtx& ctx, Obj& o) {
     o.behind = 0xff;
     bool killed = false;
     if (weaponHits(ctx, o, 10, &killed) && killed) { killObject(ctx, o); return; }
-    if (ctx.freeze) { freezeSparkle(ctx, o); return; }
+    if (ctx.frozen()) { freezeSparkle(ctx, o); return; }
     if (harryContact(ctx, o, 10)) {                    // 0x414e00: knocked down off his vine or rope
         Harry& h = ctx.harry;
         h.setCont(0x42f88c);
@@ -1615,7 +1615,7 @@ void h_treeSnake(ObjCtx& ctx, Obj& o) {
     }
     auto releaseBoth = [&]() { if (o.link && !o.link->freed) ctx.release(*o.link); };
     if (!weaponHit(ctx, o, 0x14).z) { releaseBoth(); killObject(ctx, o); return; }
-    if (ctx.freeze) { freezeSparkle(ctx, o); return; }
+    if (ctx.frozen()) { freezeSparkle(ctx, o); return; }
     harryContact(ctx, o, 10);                 // 0x417688
     auto leave = [&]() {
         const int dx = o.x - ctx.camX, dy = o.y - ctx.camY;
@@ -1691,42 +1691,47 @@ void h_explodingPlant(ObjCtx& ctx, Obj& o) {
         o.w(0x32) = 1; o.w(0x60) = 0x600;
         if (o.flags != 0x4000) { o.flags = 0x4000; o.vflip = 0xff; }   // hangs from the ceiling
     }
-    auto rearm = [&]() { o.w(0x32) = int16_t((ctx.rnd() & 0x1f) + 0x22); };
-    if (o.w(0x50)) {
-        // Recoiling from a whip hit.
-        o.whipCool = 0;
-        if (!animStep(ctx, o, o.anim(0x50), kAnim_plantHit, 4)) { exitDespawnFar(ctx, o); return; }
-        o.frame = 0; o.w(0x34) = 0; o.w(0x50) = 0;
-        rearm();
-    }
-    if (o.frame == 0 && !between(ctx.harry.x() - o.x, -0xc0, 0xc0)) { exitDespawnFar(ctx, o); return; }
-    bool checkBurst = true;
-    if (o.frame == 0 && o.w(0x64) == 3) {
-        o.w(0x32) = 0x30;                     // three hits: it stays shut
-    } else {
-        o.w(0x32) -= 1;
-        if (o.w(0x32) != 0) {
-            animStep(ctx, o, o.anim(0x60), kAnim_plantBreathe, 7);
-            if (o.w(0x32) == 1 && o.frame != 2) o.w(0x32) = 2;
+    auto rearm = [&]() { o.w(0x32) = int16_t((ctx.rnd() & 0x1f) + 0x22); };   // 0x416c0d
+    // 0x416c32.  Both the recoil's end and the open animation's end rearm and run the
+    // handler again from here on the same tick.
+    for (;;) {
+        if (o.w(0x50)) {
+            // Recoiling from a whip hit.
+            o.whipCool = 0;
+            if (!animStep(ctx, o, o.anim(0x50), kAnim_plantHit, 4)) { exitDespawnFar(ctx, o); return; }
+            o.frame = 0; o.w(0x34) = 0; o.w(0x50) = 0;
+            rearm();
+            continue;
+        }
+        if (o.frame == 0 && !between(ctx.harry.x() - o.x, -0xc0, 0xc0)) { exitDespawnFar(ctx, o); return; }
+        if (o.frame == 0 && o.w(0x64) == 3) {
+            o.w(0x32) = 0x30;                     // three hits: it stays shut
         } else {
-            o.w(0x32) = 1; o.w(0x60) = 0;
-            if (animStep(ctx, o, o.anim(0x34), kAnim_plantOpen, 4)) { rearm(); checkBurst = false; }
-            else if (o.frame == 5) {
-                bool killed = false;
-                const int16_t y0 = o.y;
-                if (o.vflip) o.y += 0x2a;
-                weaponHits(ctx, o, 0, &killed);
-                o.y = y0;
-                if (killed) { o.w(0x50) = 0x100; o.w(0x64) += 1; exitDespawnFar(ctx, o); return; }
+            o.w(0x32) -= 1;
+            if (o.w(0x32) != 0) {
+                animStep(ctx, o, o.anim(0x60), kAnim_plantBreathe, 7);
+                if (o.w(0x32) == 1 && o.frame != 2) o.w(0x32) = 2;
+            } else {
+                o.w(0x32) = 1; o.w(0x60) = 0;
+                if (animStep(ctx, o, o.anim(0x34), kAnim_plantOpen, 4)) { rearm(); continue; }
+                if (o.frame == 5) {
+                    bool killed = false;
+                    const int16_t y0 = o.y;
+                    if (o.vflip) o.y += 0x2a;
+                    weaponHits(ctx, o, 0, &killed);
+                    o.y = y0;
+                    if (killed) { o.w(0x50) = 0x100; o.w(0x64) += 1; exitDespawnFar(ctx, o); return; }
+                }
             }
         }
+        break;
     }
-    if (checkBurst && o.anim(0x34).tick == 0 && o.anim(0x34).pos == 0xd) {
+    if (o.anim(0x34).tick == 0 && o.anim(0x34).pos == 0xd) {     // 0x416dc4
         // Fully open: spikes fly out in six directions.
         ctx.sound1(0x40, 8);
         for (const SpikeShot& sp : kPlantSpikes) {
-            Obj* k = ctx.spawnFrom(o, true);          // FUN_0043546e
-            if (!k) break;
+            Obj* k = ctx.spawnFrom(o, true);          // FUN_0043546e(1)
+            if (!k) break;                            // (the original tries the same entry again: no record frees up)
             k->sprite = ctx.spr("plzspik"); k->frame = sp.frame; k->b(0x5a) = 0xc; k->type = 0x1d; k->b(0x48) = 0xff;
             k->x = int16_t(o.x + sp.dx); k->y = o.y;
             k->l(0x32) = sp.vx; k->l(0x36) = sp.vy;
@@ -1849,7 +1854,7 @@ void h_rat2(ObjCtx& ctx, Obj& o) {
     weaponHits(ctx, o, 9, &killed);
     if (killed) { killObject(ctx, o); return; }
     { int y = o.y + 0x17; if (ctx.floorSnap(o.x - 0xc, y)) o.y = int16_t(y - 0x17); }
-    if (ctx.freeze) { freezeSparkle(ctx, o); return; }
+    if (ctx.frozen()) { freezeSparkle(ctx, o); return; }
     ratContact(ctx, o);                       // 0x40b84f
     moveX(o, o.l(0x32));
     auto reverse = [&]() { o.w(0x36) = 0; o.b(0x38) = 0xff; o.l(0x32) = -o.l(0x32); o.facing ^= 1; };
@@ -1957,14 +1962,13 @@ void h_ceilingDripper(ObjCtx& ctx, Obj& o) {
     o.w(0x32) -= 1;
     if (o.w(0x32) == 0) {
         if (Obj* r = ctx.spawnFrom(o, true)) {        // FUN_0043546e(1)
-            r->w(0x26) = 0x6663;
             ctx.sound0((ctx.rnd() & 0x80) ? 0x29 : 0x2c, 3);   // FUN_0042633d
-            r->type = 0x96; r->x = o.x; r->y = int16_t(o.y - 8);
+            r->type = 0x96; r->y = int16_t(r->y - 8);
             r->sprite = ctx.spr("ob_ceil"); r->frame = 0; r->flags = 0;
             r->x = int16_t(r->x + int(ctx.rnd() & 0x3f) - 0x20);
             r->w(0x32) = 0x14;
-        }
-        o.w(0x32) = int16_t(0x46 + (ctx.rnd() & 0x7f));
+            o.w(0x32) = int16_t(0x46 + (ctx.rnd() & 0x7f));
+        }                                             // (no record: the count stays 0 and restarts next tick)
     }
     exitDespawnFar(ctx, o);
 }
@@ -2015,11 +2019,10 @@ void h_tnt(ObjCtx& ctx, Obj& o) {
     ctx.release(o);
     Obj* e = ctx.spawnFrom(o, true);                           // FUN_0043546e(7): the crate's own record, x / y kept
     if (!e) return;
-    e->w(0x26) = 0x6663;
     ctx.sound0(0x26, 0xa);                                     // FUN_0042633d(0x26, 0x60)
     e->type = 0x32; e->sprite = ctx.spr("fxzexpl2"); e->flags = 0xe000; e->link = nullptr;
     e->frame = 0xff; e->behind = 0xff; e->l(0x3c) = 0; e->facing = 0;
-    if (Obj* half = ctx.spawnFrom(*e, true)) {                 // FUN_0043546e from the explosion: the mirrored half
+    if (Obj* half = ctx.spawnFrom(*e, true, 0)) {              // FUN_0043546e(0) from the explosion: the mirrored half
         e->link = half; half->link = e;
         half->behind = 0xff; half->w(0x26) = 0x6663; half->type = 0;
         half->sprite = ctx.spr("fxzexpl2"); half->flags = 0xe000; half->frame = 0xff; half->facing = 0xff;
@@ -2202,7 +2205,7 @@ void h_projectile(ObjCtx& ctx, Obj& o) {
 // tick), then falls under 0x3800 gravity (6 px terminal); w32 ticks of grace before it
 // looks for the floor (either plane), where it becomes the splash (w40 cursor).
 void h_drip(ObjCtx& ctx, Obj& o) {
-    if (ctx.freeze) { exitDespawnFar(ctx, o); return; }
+    if (ctx.frozen()) { exitDespawnFar(ctx, o); return; }
     if (o.w(0x40) == 0) {
         if (o.frame != 1) {
             moveY(o, 0x5000);
@@ -2227,7 +2230,7 @@ void h_drip(ObjCtx& ctx, Obj& o) {
 
 // 0x415e92: type 82, an unseen dripper that lets a drop (type 0x53) fall every 0x40..0x7f ticks.
 void h_dripper(ObjCtx& ctx, Obj& o) {
-    if (ctx.freeze) { exitDespawnTall(ctx, o); return; }
+    if (ctx.frozen()) { exitDespawnTall(ctx, o); return; }
     if (o.b(0x32) == 0) { o.b(0x32) = 0xff; o.w(0x34) = int16_t((ctx.rnd() & 0x3f) + 0x40); }
     o.w(0x34) -= 1;
     if (o.w(0x34) != 0) { exitDespawnTall(ctx, o); return; }
@@ -2238,7 +2241,10 @@ void h_dripper(ObjCtx& ctx, Obj& o) {
         d->type = 0x53; d->w(0x32) = 0xa;
         d->sprite = ctx.spr("fx_drip1"); d->frame = 0; d->flags = 0x2000;
     }
+    // back to 0x415eb0: a new wait, counted down once at once, and the exit test
     o.w(0x34) = int16_t((ctx.rnd() & 0x3f) + 0x40);
+    o.w(0x34) -= 1;
+    exitDespawnTall(ctx, o);
 }
 
 // ---------------------------------------------------------------- levers, doors and chutes (types 26 / 31 / 33)
@@ -2369,7 +2375,7 @@ void h_door(ObjCtx& ctx, Obj& o) {
 void h_chute(ObjCtx& ctx, Obj& o) {
     if (o.b(0x3c) == 0) {
         o.b(0x3c) = 0xff;
-        Obj* half = ctx.spawnFrom(o, true);                    // FUN_0043546e
+        Obj* half = ctx.spawnFrom(o, true, 0);                 // FUN_0043546e(0)
         if (!half) { ctx.pl.restoreEntry(o); ctx.release(o); return; }
         std::memcpy(half->s + 0x12, o.s + 0x12, 2);
         half->w(0x26) = 0x6663; half->link = &o;
@@ -2511,7 +2517,7 @@ void h_gargoyle(ObjCtx& ctx, Obj& o) {
         gargoyleChip(ctx, o);
         if (killed) { killObject(ctx, o); return; }
     }
-    if (ctx.freeze) { freezeSparkle(ctx, o); return; }
+    if (ctx.frozen()) { freezeSparkle(ctx, o); return; }
     if (o.frame == 5) harryContact(ctx, o, 0x14);
     if (o.frame == 0 && !between(ctx.harry.y() - o.y, -0x60, 0x90)) { exitDespawnFar(ctx, o); return; }
     if (animStep(ctx, o, o.anim(0x36), kAnim_gargoyle, 6)) o.b(0x64) ^= 1;
@@ -2548,7 +2554,7 @@ void h_tonguePlant(ObjCtx& ctx, Obj& o) {
     // 0x417a54
     o.b(0x6d) -= 1;                                    // every 16 ticks to the end of the object list
     if (int8_t(o.b(0x6d)) < 0) { o.b(0x6d) = 0x10; if (!ctx.pl.objectSystem().moveToTail(o)) return; }   // 0x435532
-    if (ctx.boss) { exitDespawnFar(ctx, o); return; }
+    if (ctx.pl.bossActive()) { exitDespawnFar(ctx, o); return; }
     Harry& h = ctx.harry;
     if (h.w(0x465baa) >= 0 && harryOnBox(ctx, o, -16, 19, 0, 30)) {   // 0x417c6d, box 0x45bccd: a somersault
         h.onGround() = 0;
@@ -2641,12 +2647,12 @@ void h_ceilingSpikes(ObjCtx& ctx, Obj& o) {
         }
     }
     if (extend && o.b(0x3c) != 3) {
-        if (o.b(0x3c) == 0) ctx.sound1(0xc6, 8);              // (0x4184fd tests b33, always 0 here)
+        if (o.b(0x33) == 0 && !ctx.channel1Busy()) ctx.sound1(0xc6, 8);   // (b33 stays 0)
         o.b(0x3c) += 1;
         if (o.b(0x3c) == 3) {
-            if (Obj* s = ctx.spawn()) {                       // FUN_004356bc(1): a sparkle at the tips
-                s->x = int16_t(o.x - 1); s->y = int16_t(o.y + 0x19);
-                s->type = 0x10; s->flags = 0x6000; s->b(0x64) = 0xff; s->sprite = ctx.spr("fx_sprk2"); s->w(0x26) = 0x6663;
+            if (Obj* s = ctx.spawnFrom(o)) {                  // FUN_004356bc(1): a sparkle at the tips
+                s->x = int16_t(s->x - 1); s->y = int16_t(s->y + 0x19);
+                s->type = 0x10; s->flags = 0x6000; s->b(0x64) = 0xff; s->sprite = ctx.spr("fx_sprk2");
             }
         }
     } else if (retract && o.b(0x3c)) {
@@ -2718,11 +2724,18 @@ void h_floorSpikes(ObjCtx& ctx, Obj& o) {
 // 0x418834: a fire jet (type 100): frames 6..9 burn for 25.
 void h_fireJet(ObjCtx& ctx, Obj& o) {
     animStep(ctx, o, o.anim(0x32), kAnim_fireJet, 5);
-    if (o.anim(0x32).tick == 0 && o.frame == 3) {
+    // 0x418858 tests byte 0x33 of a0, which still points at the cursor (+0x32): that is
+    // o+0x65, always 0, so the count runs on every tick of frame 3 and the roar comes once a
+    // cycle while channel 0 is free.
+    if (o.b(0x65) == 0 && o.frame == 3) {
         o.b(0x46) += 1;
-        if (o.b(0x46) >= 6) { o.b(0x46) = 0; ctx.sound0(0x27, 5); }   // FUN_0042633d(0x27, 0x60)
+        if (o.b(0x46) >= 6 && !ctx.channel0Busy()) { o.b(0x46) = 0; ctx.sound0(0x27, 5); }   // FUN_0042633d(0x27, 0x60)
     }
-    if (o.frame >= 6 && o.frame < 10) harryContact(ctx, o, 0x19);          // (DAT_0046676d, the mine-cart burn signal, is not ported)
+    if (int8_t(o.frame - 6) >= 0 && int8_t(o.frame - 0xa) < 0) {
+        // Burnt in the air: a fresh press of button B (DAT_0046676d = 1), which lets go of a
+        // vine whose handler runs later in this pass.
+        if (harryContact(ctx, o, 0x19) && ctx.harry.onGround() == 0) ctx.harry.b(0x46676d) = 1;
+    }
     exitDespawnFar(ctx, o);
 }
 
@@ -2733,9 +2746,8 @@ Obj* spawnFromTemplate(ObjCtx& ctx, const Obj& at, int templateId) {
     // FUN_004351c5 with a3 = the .als template: {type, frame, flags, sprite slot, d0} at the
     // parent's x / y, at the tail of the list (FUN_0043546e).
     const ph::ObjectTemplate& t = ph::kObjectTemplates[templateId];
-    Obj* p = ctx.spawnFrom(const_cast<Obj&>(at), true);
+    Obj* p = ctx.spawnFrom(const_cast<Obj&>(at), true, t.soundSlot);   // d0 = template +8
     if (!p) return nullptr;
-    if (t.soundSlot) p->w(0x26) = 0x6663;
     p->type = t.type; p->frame = t.sub; p->flags = t.flags;
     p->sprite = t.sprite[0] ? ctx.spr(t.sprite) : nullptr;
     return p;
@@ -2784,7 +2796,7 @@ void h_pot(ObjCtx& ctx, Obj& o) {
         ctx.sound0(0x26, 0xf);                        // FUN_0042633d(0x26, 0x60)
         o.type = 0x32; o.l(0x56) = 0; o.flags = 0x6000; o.sprite = ctx.spr("fxzexpl2");
         o.frame = 0xff; o.l(0x3c) = 0; o.facing = 0;
-        if (Obj* h = ctx.spawnFrom(o, true)) {        // FUN_0043546e: the mirrored half (type 0)
+        if (Obj* h = ctx.spawnFrom(o, true, 0)) {     // FUN_0043546e(0): the mirrored half (type 0)
             o.link = h; h->link = &o;                 // +0x54 / +0x50
             h->behind = 0xff;
             std::memcpy(h->s + 0x12, o.s + 0x12, 2);
@@ -3018,7 +3030,7 @@ void restart(ObjCtx& ctx, Obj& o) {           // 0x40c84e
 }
 
 void spawnLeaf(ObjCtx& ctx, Obj& o) {         // 0x40cb29
-    Obj* l = ctx.spawnFrom(o, true);           // FUN_0043546e
+    Obj* l = ctx.spawnFrom(o, true, 0);        // FUN_0043546e(0)
     if (!l) return;
     l->w(0x4e) = 0x220;
     l->y = o.w(0x38);
@@ -3050,7 +3062,7 @@ void h_bungee(ObjCtx& ctx, Obj& o) {
         // set up: the top and the stretch piece at the tail of the list, the stub at the head
         o.l(0x5a) = int32_t(0xfffcc000); o.b(0x49) = 1; o.frame = 6;
         o.w(0x38) = o.y; o.w(0x5e) = 0xa;
-        Obj* top = ctx.spawnFrom(o, true);
+        Obj* top = ctx.spawnFrom(o, true, 0);         // FUN_0043546e(0)
         if (!top) { ctx.release(o); return; }
         top->sprite = ctx.spr("ob_bunge"); top->frame = 0; top->y -= 0x1d; top->flags = 0x6000;
         o.link = top;
@@ -3920,7 +3932,7 @@ void h_skullWarrior(ObjCtx& ctx, Obj& o) {
         o.w(0x52) = o.x;                                                  // home
         if (harryDx(ctx, o) >= 0) o.facing = 1;
     }
-    if (ctx.freeze) {                                                     // 0x413065: stop-watch
+    if (ctx.frozen()) {                                                     // 0x413065: stop-watch
         // (d5 is not loaded here: the weapon test runs with whatever value the code before
         // left in it.  0 stands in for it, so any hit kills.)
         if (!weaponHit(ctx, o, 0).z) {
@@ -3990,7 +4002,7 @@ void h_skullWarrior(ObjCtx& ctx, Obj& o) {
 // the 0x45b7c6 table below its home y; frames 2..5 crush Harry for 40.
 void h_dropBall(ObjCtx& ctx, Obj& o) {
     if (o.w(0x5a) == 0) o.w(0x5a) = o.y;                                 // home y
-    if (!ctx.freeze) animStep(ctx, o, o.anim(0x32), kAnim_ballDrop, 4);
+    if (!ctx.frozen()) animStep(ctx, o, o.anim(0x32), kAnim_ballDrop, 4);
     static const int16_t kDrop[6] = {1, 3, 6, 8, 12, 15};                // 0x45b7c6
     o.y = int16_t(o.w(0x5a) + (o.frame < 6 ? kDrop[o.frame] : 0));
     if (o.frame != 0xff && o.frame >= 2) harryContact(ctx, o, 0x28);
@@ -4018,7 +4030,7 @@ void h_swingBall(ObjCtx& ctx, Obj& o) {
         else                 { o.script = kAnim2_ballSwingC; o.b(0x5a) = 1; }
         o.l(0x32) = 0; o.b(0x36) = 0;
     }
-    if (!ctx.freeze) anim2Step(ctx, o, 0x32, 2);
+    if (!ctx.frozen()) anim2Step(ctx, o, 0x32, 2);
     if (o.frame != 0xff) {
         static const uint8_t kChainFrame[12] = {0xff, 0xff, 0xff, 0, 1, 2, 3, 4, 5, 6, 7, 8};   // 0x45b08a
         static const int16_t kSwing[12][2] = {                                                  // 0x45b05a
@@ -4404,7 +4416,7 @@ void h_firePit(ObjCtx& ctx, Obj& o) {
         t->sprite = ctx.spr("fxifirer"); t->flags = 0x2000;
         o.link = t;                                                      // l50
     }
-    if (!ctx.freeze) {
+    if (!ctx.frozen()) {
         o.l(0x5a) -= 0x8800;
         if (o.l(0x5a) < 0) {
             o.l(0x5a) += 0x10000;
@@ -4431,7 +4443,7 @@ void h_firePit(ObjCtx& ctx, Obj& o) {
     o.behind = 0;
     const bool secondSheet = o.sprite && o.sprite->name() == "fx0firep";
     if (!secondSheet && between(tailY, 0xd, 0x11)) o.behind = 0xff;    // (sic: compares the tail's absolute y)
-    if (!ctx.freeze && !secondSheet && int8_t(o.frame - 0xa) >= 0) harryContact(ctx, o, 0x28);
+    if (!ctx.frozen() && !secondSheet && int8_t(o.frame - 0xa) >= 0) harryContact(ctx, o, 0x28);
     const int dx = int16_t(o.x - ctx.camX), dy = int16_t(o.y - ctx.camY);   // 0x40f584: its own window
     if (dx < -0xc8 || dx >= 0x208 || dy < -0xa0 || dy >= 0x17c) {
         ctx.pl.restoreEntry(o); ctx.release(o);
@@ -4529,7 +4541,7 @@ void h_roamingSnake(ObjCtx& ctx, Obj& o) {
     bool killed = false;
     weaponHits(ctx, o, 10, &killed);
     if (killed) { killObject(ctx, o); return; }
-    if (ctx.freeze) {
+    if (ctx.frozen()) {
         if (o.frame == 0xff) return;                                     // (an unseen frozen snake just waits)
         freezeSparkle(ctx, o);
         return;
@@ -4695,7 +4707,7 @@ void h_crocLurker(ObjCtx& ctx, Obj& o) {
         exitDespawnFar(ctx, o);
         return;
     }
-    if (o.frame == 0 && ctx.freeze) { exitDespawnFar(ctx, o); return; }
+    if (o.frame == 0 && ctx.frozen()) { exitDespawnFar(ctx, o); return; }
     if (o.w(0x34)) {                                                     // snapping
         o.sprite = ctx.spr("crzopen");
         if (animStep(ctx, o, o.anim(0x34), kAnim_crocBite, o.anim(0x34).pos < 0xa ? 8 : 2)) o.frame = 0;
@@ -5048,6 +5060,7 @@ Handler ObjectSystem::handler(uint8_t type) {
     case 123:  return h_branch;
     case 124:  return h_branchTip;
     case 125:  return h_branchPiece;
+    case 132:  return h_scorpion;                  // (both types run 0x41baa0)
     case 133:  return h_scorpion;
     case 0x82: return h_deathCloud;
     case 142:  return h_heart;

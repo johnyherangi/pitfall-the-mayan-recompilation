@@ -533,7 +533,6 @@ void PlayLogic::spawnObjects(Game& g) {
 }
 
 void PlayLogic::runObjects(Game& g) {
-    const FrameState& fs = g.state();
     h_.w(0x4658a0) = 0;
     h_.w(0x465bac) = 0;
     h_.b(0x465b74) = 0;
@@ -544,28 +543,7 @@ void PlayLogic::runObjects(Game& g) {
     ObjCtx ctx{g, *this, g.level(), h_};
     ctx.levelNo = level_;
     ctx.camX = h_.w(0x4658b4); ctx.camY = h_.w(0x4658b6);   // DAT_004658b4 / b6
-    ctx.pad = fs.joypad;
-    ctx.padPressed = fs.joypad & ~fs.joypadPrev;
     ctx.hard = g.stats().difficulty != 0;
-    ctx.boss = h_.b(0x466507) != 0;
-    ctx.pistonPhase = h_.b(0x46650d); ctx.pistonTick = h_.b(0x46650e);
-    ctx.freeze = h_.w(0x46652f) != 0;
-    const uint32_t c = h_.cont();
-    const bool gone = h_.b(0x465b72) != 0;
-    ctx.hstate = gone || c == 0x430e3a || c == 0x4311a5 ? (c == 0x427528 ? HarryState::Drowning : HarryState::Dead)
-               : c == 0x427528 ? HarryState::Drowning
-               : c == 0x428625 ? HarryState::Grabbed
-               : c == 0x429fe2 ? HarryState::OnBungee
-               : c == 0x42f88c || c == 0x427207 ? HarryState::Hurt
-               : (c == 0x42bda7 || c == 0x42d781) ? HarryState::Swinging
-               : !h_.onGround() ? HarryState::Jumping : HarryState::Normal;
-    ctx.harryUntouchable = gone || exiting_;
-    ctx.harrySprite = h_.sprite();
-    // The whip box (DAT_00465aeb..af1, FUN_0042b2bc), 0 when the whip is not out.
-    if (h_.w(0x465aeb) != 0) {
-        ctx.whipX0 = h_.w(0x465aeb); ctx.whipX1 = h_.w(0x465aed);
-        ctx.whipY0 = h_.w(0x465aef); ctx.whipY1 = h_.w(0x465af1);
-    }
     objects_.tick(ctx);
 }
 
