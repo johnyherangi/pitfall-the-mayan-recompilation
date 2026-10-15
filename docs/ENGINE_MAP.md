@@ -150,7 +150,12 @@ demo 2 (level 20 — the Atari 2600 easter-egg level), then the intro (21).
 | `0x427167` / `0x427207` | Harry shoved by a boss: 7 px/tick (2 with `DAT_00465b59 = 0xc00`), slowing by `DAT_00465b59` per tick | `PlayLogic::knockBack`, `Harry::knockDecel` |
 | `0x41018c` + `0x4335ce` | boss health meter: three `scoline` digits + `mi_prcnt` at `camX + 0x82`, `camY + 0xde + slide`, `(hp - hits) * 100 / hp` through `FUN_00431a3f` | `h_bossMeter` (type 0x30) |
 | `0x415b92` / `0x415d15` | boss death: score, `fx_deat2` cloud with the pointer script `0x45b323`, then type 0x51 bursts 22 `fx_stone` sparkles | `jaguar::bossDeath`, `h_bossDeathBurst` |
-
+| `0x40528a` / `0x4051ab` / `0x4268b6` | trigger id 2 is class 3 (a wall) for every object handler, set before each dispatch; the thrown things (29, 57, 62 and the unported 4 / 5 / 65) clear it on entry. Id 3 is cleared for the object pass and set to `DAT_00465b70` (on the ground) at the top of Harry's update, so it stops Harry only on foot (level 8's sky barriers for the birds are id-2 cells) | `ObjectSystem::tick`, `PlayLogic::tick / runObjects`, the handlers |
+| `DAT_00465b02` / `DAT_00465b0b` | vertical screen shake (copied to `DAT_004517ec`) / the camera's right limit (narrowed by the pit wheel's arena) | `PlayLogic::setShake`, `lockCameraRight` |
+| `0x427528` | Harry drowning (sinks; the crocodiles let go) | `Harry::drowning`, `HarryState::Drowning` |
+| `FUN_004351c5` | spawn from a 9-byte template `{type, frame, flags, sprite slot, class}` at the parent's position (`FUN_0043546e` copies x / y) | `spawnFromTemplate` |
+| `DAT_00466504` | the level's hidden 1-up has been revealed (types 113 / 174); cleared at the exit trigger and on a new game | `PlayerStats::secret1up` |
+| `FUN_004261e2` / `FUN_004262d9` / `FUN_0042633d` | the two sound channels: 1 (priority `0x4627c0`, skipped while Harry dies or the stop-watch runs) and 0 (priority `0x4627be`, an 8-tick hold `0x4627c2`); a lower-priority sound is dropped while the channel plays | not ported: every sound mixes freely (`ObjCtx::sound`) |
 | `0x45b1fc` | level script table, 12-byte entries `{leverTrgId, doorTrgId, flagAddr, w6, w8, param}`; the lever handler (`FUN_0041804b`) finds the entry by the trigger under the lever and sets its flag, the door / chute handlers look their own trigger up to see whether the flag is set | `kLevelScript[16]`, `scriptByLever / scriptByDoor`, `levelScriptPull` |
 | `DAT_00466510..` | 32 level-script flags (lever pulled, one-way door shut); kept across deaths, cleared with the level (`FUN_00430eb6`) | `Game::levelFlags_[32]` (index = address - 0x466510) |
 | `DAT_004658c0` | runtime copy of the trigger class table, rebuilt from `0x461f8e` at level start and restart (`FUN_00432713`): doors of pulled levers cleared, flag 0x15 clears id 0x5d, one-way doors 0x90..0xaf with flag 3 become class 3 | `PlayLogic::trgClass_`, `triggerClassOf / clearTriggerClass / setTriggerClass` |
@@ -158,27 +163,37 @@ demo 2 (level 20 — the Atari 2600 easter-egg level), then the intro (21).
 | `FUN_00447190` | binds the Genesis sprite slots to the level's sprites by name (slot `obzpit2a` -> `obrpit2a` in level 3, `obtpit2a` in level 4, `obfpit2a` in levels 5 / 8, `fxleaf*2` leaves, the level-8 `obftung2 / fxpltof2 / ob_door2`, ...) | `ph::kSlotBindings` (generated `slot_bindings_data.cpp`), aliased in `ph::loadLevel` |
 | `DAT_00465b41` / `0x42a6e7`, `0x41aaa0` / `0x46168e`, `0x417c93` / `0x42cdb6`, `DAT_00465b9a` | Harry pulling a lever (`hyipull`, 11 steps x 4 ticks, movement frozen), tripping over a skull (`hyitrip1`, 8 frames x 5 ticks), somersaulting off a tongue plant (`hyisomr2`), ticks spent running (>= 0x14 = running) | `Harry::lever / leverTicks / tripTicks / somersault / runTicks`, `PlayLogic::pullLever / trip / somersault / running` |
 
-### Handlers ported (type: address -> function in `handlers.cpp`)
+### Handlers ported (type: name in `handlers.cpp` `PC address`)
 
-2 item `0x405328`, 3 checkpoint marker `0x405aae`, 8 web `0x406bbc`, 10 condor `0x406f62`, 16 sparkle `0x40a2c8`,
-18 bat `0x40a4be`, 23 rat `0x40b5d2`, 26 lever `0x40c2d6` (levels 11..13's vault levers are not ported), 27 bungee vine `0x40c5fe` (Harry state `0x429fe2`; his hanging animation is
-a triple-format script set at `0x45aaa4`, tables `0x45aa54` / `0x45aa88`; releases through `0x42c3bc` / `0x42c2cc`),
-29 thrown cactus / bone / stone / spike `0x40d3b0`, 30 temple piston `0x40d77a` (shared cycle `DAT_0046650d`, phase
-triggers 0xa0..0xa7), 31 door `0x40d9e6`, 32 sticky web `0x40dc2e`, 33 chute `0x40de86`,
-34 TNT `0x40e18d` (+ 50 explosion `0x41052a`), 35 monkey `0x40e394`, 38 clay pot `0x40ed62` (contents by the trigger
-under it, ids 0x34..), 40 tar pit `0x40f620`, 43 sleeping bat
-`0x40f9dc`, 46 wall torch `0x4100a0`, 48 boss meter `0x41018c`, 55 jaguar boss `0x410ce6` (states INTRO `0x411391`, GO `0x41124d`, POUNCE
-`0x411054`, REVERSE `0x41190f`, RUN `0x411651`, CROUCH `0x410f1f`, ROAR `0x41119c`, STOP `0x41156b`; speed
-`0x411a3e / 0x411a7a`), 51 floor spikes `0x41061a`, 59 pit creature `0x412444`, 60 tree-snake body
-`0x412710`, 61 gargoyle `0x41271a` (+ 62 thrown axe `0x412b2c`), 63 leaf spawner `0x412c52`, 64 feather / leaf `0x412d6a`, 70 climbing rat `0x414ab1`, 72 vine monkey
-`0x414dac`, 76 crumbling rock `0x41514e`, 78 bat roost `0x4153e0`, 80 wild boar `0x415640`, 83 drip splash
-`0x415f4a`, 74 pouch respawner `0x415028`, 81 dead boss `0x415d15`, 87 exploding plant `0x416be0`, 91 tongue plant `0x417a54` (somersault launch), 96 ceiling dripper `0x41836e` (+ 150 falling rock `0x41dc50`), 97 ceiling spikes `0x418474`, 100 fire jet `0x418834`, 102
-stinging fly `0x418992`, 104 effect `0x418ec6`, 109 snake `0x418fd0`, 110 spider `0x419622`, 112 fast rat
-`0x419ec8`, 116 floor skull `0x41a9fa` (trips a running Harry), 117 hopping skull `0x41aade`, 118 marker flame `0x41ae9a`, 123/124/125 branch `0x41b2da / 0x41b424 / 0x41b5d8`, 130 death cloud
-`0x41b9d1`, 133 scorpion `0x41baa0`, 142 heart `0x41d520`, 147 coin `0x41d876`, 156 hanging pouch `0x41e132`,
-160 eyes `0x41f2c2`, 161 dot `0x41f320`, 170 1-up flight `0x41fd26`, 172 tree snake `0x420090`, 173 one-way door `0x42068c`.
-Everything else runs `h_default` (drawn, never acts); the biggest remaining ones are the skull warrior (66,
-`0x413084`), the mine-cart ride (15, `0x408f5a`, carts 19 / 98), the stone balls (68 / 9), the turtle (11), the
-vortex (71, `0x414c58`), the water snake (12, `0x407bfc`), the later jaguars (140, `0x41c4c2`; 158, `0x41e462`)
-and the other bosses (the meter handler only reads the level-0 jaguar; its branches for types 0x69 / 0x8c and the
-level-8 boss are not ported).
+1 static `0x405322`, 2 item `0x405328`, 3 checkpoint `0x405aae`, 8 web `0x406bbc`, 9 dropBall `0x406ea6`,
+10 condor `0x406f62`, 11 turtle `0x4078b0`, 12 roamingSnake `0x407bfc`, 13 crocSwimmer `0x4085fe`, 16 sparkle `0x40a2c8`,
+18 bat `0x40a4be`, 20 crocLurker `0x40b08a`, 23 rat `0x40b5d2`, 26 lever `0x40b9e0`, 27 bungee `0x40c5fe`,
+28 spear `0x40d322`, 29 projectile `0x40d3b0`, 30 piston `0x40d77a`, 31 door `0x40d9e6`, 32 verticalWeb `0x40dc2e`,
+33 chute `0x40de86`, 34 tnt `0x40e18d`, 35 monkey `0x40e394`, 36 spit `0x40ebb0`, 38 pot `0x40ed62`, 39 firePit `0x40f2ba`,
+40 pit `0x40f620`, 43 sleepingBat `0x40f9dc`, 44 fireball `0x40fa04`, 45 firePriest `0x40fc84`, 46 torch `0x4100a0`,
+47 fish `0x4100ca`, 48 bossMeter `0x41018c`, 50 explosion `0x41052a`, 51 floorSpikes `0x41061a`, 52 stoneBlock `0x410946`,
+55 jaguar `0x410ce6`, 56 templeArcher `0x411aae`, 57 arrow `0x412124`, 59 pitCreature `0x412444`, 60 treeSnakeBody `0x412710`,
+61 gargoyle `0x41271a`, 62 axe `0x412b2c`, 63 leafSpawner `0x412c52`, 64 feather `0x412d6a`, 66 skullWarrior `0x412fc2`,
+67 wheel `0x414100`, 68 swingBall `0x41479e`, 70 climbingRat `0x414ab1`, 72 vineMonkey `0x414dac`, 74 pouchRespawner `0x415028`,
+76 fallingRock `0x41514e`, 78 batRoost `0x4153e0`, 80 boar `0x415640`, 81 bossDeathBurst `0x415d15`, 82 dripper `0x415e92`,
+83 drip `0x415f4a`, 85 hawk `0x4165f2`, 87 explodingPlant `0x416be0`, 91 tonguePlant `0x417a54`, 96 ceilingDripper `0x41836e`,
+97 ceilingSpikes `0x418474`, 100 fireJet `0x418834`, 102 fly `0x418992`, 104 effect `0x418ec6`, 109 snake `0x418fd0`,
+110 spider `0x419622`, 112 rat2 `0x419ec8`, 113 hidden1up `0x41a092`, 116 floorSkull `0x41a9fa`, 117 hoppingSkull `0x41aade`,
+118 markerFlame `0x41ae9a`, 119 whipLever `0x41aee0`, 123 branch `0x41b2da`, 124 branchTip `0x41b424`, 125 branchPiece `0x41b5d8`,
+129 ripple `0x41b92e`, 130 deathCloud `0x41b9d1`, 133 scorpion `0x41baa0`, 142 heart `0x41d520`, 147 coin `0x41d876`,
+148 pitWheel `0x41d9e6`, 149 wheelSpawner `0x41dbf2`, 150 ceilingRock `0x41dc50`, 156 hangingPouch `0x41e132`, 160 eyes `0x41f2c2`,
+161 dot `0x41f320`, 164 snakeRespawner `0x41f5e6`, 170 oneUpFly `0x41fd26`, 172 treeSnake `0x420090`, 173 oneWayDoor `0x42068c`,
+174 leanLever `0x4208f8`.
+
+Notes on some of them: the jaguar boss's states are INTRO `0x411391`, GO `0x41124d`, POUNCE `0x411054`, REVERSE
+`0x41190f`, RUN `0x411651`, CROUCH `0x410f1f`, ROAR `0x41119c`, STOP `0x41156b`; the bungee vine drives Harry's state
+`0x429fe2` with the triple-format scripts at `0x45aaa4` and releases through `0x42c3bc` / `0x42c2cc`; the condor and the
+hawk share the stun tumble `0x4073d3` / `0x407555`, the wall turn `0x40769b` and the climb `0x40775b`; the vault levers
+of levels 11..13 (the Simon game at `0x40b9e0`'s vault branch) are not ported.
+
+Still `h_default` (drawn in the template frame, never act): the mine-cart ride (15 `0x408f5a`, carts 19 `0x40ab62` /
+98 `0x4185ce`), 41 `0x40f900` (crouch into a hollow: Harry state `0x426fee`), 71 vortex `0x414c58` (Harry warp
+`0x428780`), 84 `0x4160b2` (crzjump), 88 limp snake `0x416f48` (Harry's hang states), 92 push lever `0x417d0e` (Harry's
+push states `0x42f0e1` / `0x42f140`), 103 vault letters `0x418e24`, 105 the Warrior Spirit `0x420bd0`, 115 `0x41a2ae`,
+the later jaguars 140 `0x41c4c2` / 158 `0x41e462`, and Harry's thrown weapons (types 4 `0x405c86`, 5 `0x40613c`,
+65 `0x412f14`).  The boss meter's branches for types 0x69 / 0x8c and the level-8 boss are not ported.

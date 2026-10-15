@@ -175,6 +175,68 @@ void h_item(ObjCtx& ctx, Obj& o) {
     }
 }
 
+// FUN_004351c5: a new object from a 9-byte template {type, frame, flags, sprite slot, class}
+// at the parent's position (FUN_0043546e copies x and y).
+Obj* spawnFromTemplate(ObjCtx& ctx, Obj& parent, uint8_t type, uint8_t frame, uint16_t flags, const char* sprite) {
+    Obj* n = ctx.spawn();
+    if (!n) return nullptr;
+    n->x = parent.x; n->y = parent.y;
+    n->type = type; n->frame = frame; n->flags = flags;
+    n->sprite = ctx.spr(sprite);
+    return n;
+}
+
+// 0x405322: type 1, scenery: only the despawn test.
+void h_static(ObjCtx& ctx, Obj& o) { exitDespawnFar(ctx, o); }
+
+// 0x41a092: type 113, Copan Temple's hidden 1-up.  It turns into an ordinary pickup (sound
+// 0xed, a sparkle burst) once Harry has been off the ground for 600 ticks in a row - the long
+// fall down the temple shaft - unless this level's hidden 1-up has already been revealed.
+void h_hidden1up(ObjCtx& ctx, Obj& o) {
+    if (!ctx.g.stats().secret1up) {
+        if (ctx.harry.onGround) { o.w(0x32) = 0; exitDespawnWide(ctx, o); return; }
+        o.w(0x32) += 1;
+        if (o.w(0x32) >= 0x258) {
+            o.w(0x32) = 0;
+            o.type = 2; o.b(0x6a) = 0xff; o.frame = 0;   // kept far from the view, like a pouch's drop
+            ctx.sound(0xed);                               // FUN_004261e2, priority 0x14
+            o.y -= 10; ctx.sparkleBurst(o, kSparkleOffsetsA); o.y += 10;   // 0x4336fa
+            ctx.g.stats().secret1up = true;
+        }
+    }
+    exitDespawnWide(ctx, o);
+}
+
+// 0x4208f8: type 174, the lean lever of the Lost City of Copan.  When Harry's idle animation
+// leans him back against it (hyilean, from its right) it tips over in three steps and a
+// hidden 1-up appears 0x58 px to the right (template 0x467f34).
+void h_leanLever(ObjCtx& ctx, Obj& o) {
+    if (o.b(0x32) == 0) {
+        o.b(0x32) = 0xff; o.facing = 0xff; o.x -= 0x10;
+        if (ctx.g.stats().secret1up) { o.frame = 3; o.type = 1; exitDespawnFar(ctx, o); return; }
+    }
+    if (o.frame != 0) {
+        o.b(0x33) += 1;
+        if (o.b(0x33) != 4) { exitDespawnFar(ctx, o); return; }
+        o.b(0x33) = 0;
+        o.frame += 1;
+        if (o.frame != 3) { exitDespawnFar(ctx, o); return; }
+        o.type = 1;
+        ctx.g.stats().secret1up = true;
+        Obj* u = spawnFromTemplate(ctx, o, 2, 0, 0x6000, "mi_1up");
+        if (!u) { exitDespawnFar(ctx, o); return; }
+        u->x += 0x58; u->y += 0xb;
+        u->y -= 10; ctx.sparkleBurst(*u, kSparkleOffsetsA); u->y += 10;
+        ctx.sound(0xed);                                   // FUN_004261e2, priority 0x14
+        return;
+    }
+    if (std::strcmp(ctx.harrySprite, "hyilean") == 0 && ctx.harry.x - o.x >= 0) {
+        const int dy = ctx.harry.y - o.y;
+        if (dy < 0x40 && dy >= -0x30) o.frame = 1;
+    }
+    exitDespawnFar(ctx, o);
+}
+
 // 0x41d876: type 147, the plain coin (always on the floor, no settle step).
 void h_coin(ObjCtx& ctx, Obj& o) {
     if (o.w(0x5e) == 0) o.w(0x5e) = int16_t(ctx.rnd() & 0x3f);
@@ -4603,6 +4665,9 @@ Handler ObjectSystem::handler(uint8_t type) {
     case 66:   return h_skullWarrior;
     case 68:   return h_swingBall;
     case 85:   return h_hawk;
+    case 1:    return h_static;
+    case 113:  return h_hidden1up;
+    case 174:  return h_leanLever;
     case 173:  return h_oneWayDoor;
     case 0:    return nullptr;
     default:   return h_default;

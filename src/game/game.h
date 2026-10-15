@@ -61,6 +61,7 @@ struct PlayerStats {
     int weapon = 0;       // DAT_0046650b: 0 sling stones (pouch), 1 boomerang, 2 stone
     int ammoCount[3] = {0, 0, 0};  // DAT_00466528 stones, DAT_00466529 boomerang, DAT_0046652a stone
     int letters = 0;      // DAT_00465896: P-I-T-F-A-L-L letter bits (mi_ptfal frame)
+    bool secret1up = false;   // DAT_00466504: this level's hidden 1-up has been revealed (cleared on a new game and at the level exit)
     int difficulty = 0;
     int damage = 0;       // DAT_00465b19 mirrored for the HUD (FUN_00435c4e)
     bool harryDead = false;

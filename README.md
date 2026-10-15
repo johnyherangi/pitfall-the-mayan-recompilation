@@ -89,12 +89,14 @@ and the Windows-side game flow are reconstructed from the engine half of the
 binary and verified against the original data.  The level tables (collision
 shapes, object placement, triggers) are decoded and Harry's core movement
 runs on them with the original constants, so the levels can be run through
-from start to exit.  The object system and 83 of its behaviour types
-(including the Ceiba Jungle jaguar boss, bungee vines, the skull warriors,
-crocodiles, rolling wheels and the lever / door / chute level script) are
-ported from the Genesis-derived half; the remaining object types (mine cart,
-vortex warps, the later jaguars and bosses), the sling weapons and Harry's
-climbing / swinging states are the next phase.
+from start to exit.  The object system and 92 of its behaviour types
+(the Ceiba Jungle jaguar boss, bungee vines, skull warriors, crocodiles,
+temple archers, fire priests, condors and hawks, rolling and pit wheels, stone
+balls, the lever / door / chute level script and the hidden 1-ups among them)
+are ported from the Genesis-derived half.  Next: Harry's full state machine
+(crouch, climb, hang, swing, swim, push and the thrown weapons), which the
+remaining object types (mine carts, vortex warps, the later jaguars and
+bosses) depend on, the per-level camera and the vault mini-game.
 See `docs/RECONSTRUCTION_LEDGER.md` for the exact status.
 
 ## Legal

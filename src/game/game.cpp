@@ -95,7 +95,10 @@ void Game::startLevel(int level) {
     level_ = std::make_unique<ph::LevelData>(ph::loadLevel(level, dataDir_, palette_));
     fs_ = FrameState{};
     deferred_.clear();
-    if (goneLevel_ != level) { gone_.clear(); checkpoint_ = Checkpoint{}; goneLevel_ = level; std::memset(levelFlags_, 0, sizeof levelFlags_); }
+    if (goneLevel_ != level) {
+        gone_.clear(); checkpoint_ = Checkpoint{}; goneLevel_ = level; std::memset(levelFlags_, 0, sizeof levelFlags_);
+        stats_.secret1up = false;               // 0x43091e: cleared when the exit trigger is taken
+    }
     if (level_->hasBg) {
         // DAT_00450fb8 = (w/2 - 20) * 16, DAT_00450fbc = (h/2 - 14) * 16
         fs_.maxScrollX = std::max(0, (level_->bg.wTiles / 2 - 0x14) * 16);
