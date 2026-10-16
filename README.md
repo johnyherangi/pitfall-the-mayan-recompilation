@@ -137,7 +137,10 @@ typed cheat codes, the waterfalls and water effects, and the original's
 window with its menu, status bar, dialogs and property sheet.  Run side by
 side with the original (under Wine, captured frame by frame for five minutes),
 the whole attract run — the title, the three demos and the intro — matches it
-pixel for pixel but for the time the original's loads take.  What still differs
+pixel for pixel but for the time the original's loads take (and the fades, which
+the original's screen does not show on today's displays), and so do 50-second
+runs of seventeen of the levels picked from the menu, with their deaths,
+restarts and continue screens.  What still differs
 from the original is listed in `docs/RECONSTRUCTION_LEDGER.md` (the platform's
 parts: the mixer for Miles, the ini file for the registry, the full-screen
 modes, WinHelp).

@@ -540,12 +540,13 @@ void PlayLogic::harryDeath() {
     if (h_.spriteIs("hyidie")) return;
     if (h_.spriteIs("hyifcrwl")) { h43118d(); return; }
     if (h_.spriteIs("hyihwall") && h_.frame() == 7) { h43118d(); return; }
-    // 0x430e06: Harry dies (hyidie)
+    // 0x430e06: Harry dies (hyidie), and the code runs on into the state's first tick
     h_.setCont(0x430e3a);
     h_.setSprite("hyidie");
     h_.setUl(0x465b47, 0x4615ab);
     h_.w(0x465b4b) = 0;
     h4310d5();
+    h430e3a();
 }
 
 void PlayLogic::h430e3a() {

@@ -735,8 +735,19 @@ int atari2600Test(const std::string& dir) {
         game::Game g(dir, opts);
         engine::HostInput idle;
         int t = 0;
-        while (!(g.levelNumber() == 20 && g.mode() == game::Mode::Attract && !g.transitionActive()) && t < 16000) { g.tick(idle); ++t; }
+        // On the way, demo 1 throws a sling stone off Xibalba Falls' left edge: past x 8 its floor
+        // probe (x - 8, FUN_0042571f) reads 8 KB past the .det's start, in the parallax map, whose
+        // bytes make a "floor" the stone breaks on, as in the original's demo (ph::Arena).
+        int brokeAt = -1, brokeX = 0;
+        while (!(g.levelNumber() == 20 && g.mode() == game::Mode::Attract && !g.transitionActive()) && t < 16000) {
+            g.tick(idle); ++t;
+            if (brokeAt < 0 && g.levelNumber() == 1 && game::g_debugLogic)
+                for (game::Obj* o : game::g_debugLogic->objectSystem().list())
+                    if (o->type == 5 && o->w(0x40) != 0 && o->x < 16) { brokeAt = t; brokeX = o->x; }
+        }
         if (g.levelNumber() != 20) { fail("the attract mode never reached the 2600 demo"); return fails; }
+        if (brokeAt < 0 || brokeX >= 8) fail("demo 1's sling stone did not break at Xibalba Falls' left edge");
+        std::printf("2600: (on the way, demo 1's stone broke at x %d, tick %d)\n", brokeX, brokeAt);
         while (g.levelNumber() == 20 && demoTicks < 3000) {
             const game::Harry& h = game::g_debugLogic->harry();
             last = Sample{h.uw(0x465ba8), h.x(), h.y(), h.l(0x466172), h.b(0x465e85)};

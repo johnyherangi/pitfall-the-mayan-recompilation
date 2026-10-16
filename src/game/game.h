@@ -68,7 +68,7 @@ struct FrameState {
     int hudScore = 0, hudLives = 0, hudTreasures = 0, hudWeapon = 0, hudAmmo = 0;
     int camX = 0, camY = 0;              // DAT_004658b4 / b6: the logic's camera (scrollY has the shake added)
     int frame = 0;                       // DAT_0045190c (ticks since level start)
-    int globalFrame = 0;                 // DAT_0046fb74
+    int globalFrame = 0;                 // DAT_0046fb74 (from the boot: a level load keeps it)
     // The layers the level has (FUN_004460e0); the cutscenes' 0x40160e turns both off.
     bool mainLayer = true;               // DAT_00450fcc: FUN_00436fb4 draws the map, else clears the view
     bool parallaxLayer = true;           // DAT_00450514: FUN_00436534 draws the parallax map

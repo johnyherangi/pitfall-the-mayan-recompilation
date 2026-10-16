@@ -202,7 +202,11 @@ void Game::startLevel(int level) {
         if (loadingHook) loadingHook(level == kTitleScreen ? 2 : 1);
     }
     level_ = std::make_unique<ph::LevelData>(ph::loadLevel(level, dataDir_, palette_, &arena_));
+    // (DAT_0046fb74, the engine's tick count, runs on from the boot: only the frame rate's text
+    // starts it again, FUN_00443c90; the clouds drift on its fourth ticks)
+    const int globalFrame = fs_.globalFrame;
     fs_ = FrameState{};
+    fs_.globalFrame = globalFrame;
     fs_.mainLayer = level_->hasBg;                       // DAT_00450fcc
     fs_.parallaxLayer = level_->hasParallax;             // DAT_00450514
     cloudDrift_ = 0;                                     // FUN_00442410: DAT_00450f94 = 0

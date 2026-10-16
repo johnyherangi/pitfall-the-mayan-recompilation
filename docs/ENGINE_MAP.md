@@ -97,7 +97,7 @@ function boundaries are unreliable there; the full decompilation is kept in
 | `0x4601d9` / `0x4601d5` | the logic's tick count / the tick of Harry's last landing sound (never reset) | `Game::logicTicks_ / lastLandTick_` |
 | `0x450fa8`   | the timer callbacks (the blink of "PAUSED" and "DEMONSTRATION") | `Game::timerTicks_` |
 | `0x462694`   | hard, set each tick from `DAT_0046fb78` (normal while a demo plays) | `Game::hardMode()` |
-| `0x46fb74`   | global tick counter                      | `FrameState::globalFrame`    |
+| `0x46fb74`   | the engine's tick count, from the boot: a level load keeps it, only the frame rate's text starts it again (`FUN_00443c90`); the cloud levels drift on its fourth ticks | `FrameState::globalFrame`    |
 | `0x46fbbc` / `0x46fb8c` | demo index / demo position     | `Game::demoIndex_/demoPos_`  |
 | `0x46d050`   | paused                                   | `Game::paused_`              |
 | `0x46b1a8`   | pending "*n" level-transition command string | `Game::exitCmd_` (`Game::command`) |
