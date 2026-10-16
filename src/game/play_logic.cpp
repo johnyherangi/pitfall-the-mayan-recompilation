@@ -138,7 +138,7 @@ void PlayLogic::levelVars() {
     ch1Id_ = 0;                                                // DAT_004627c1
     ch0Hold_ = 0;                                              // DAT_004627c2
     h_.b(0x465e64) = 0;
-    for (Killed& k : killed_) k = Killed{};                    // 0x465a40 .. 0x465ad8
+    clearKillList();                                           // 0x465a40 .. 0x465ad8
     h_.uw(0x465e6c) = 0xffff;
     h_.setUl(0x465e68, 0x465e6c);
     resetObjects();                                            // FUN_00435274
@@ -225,7 +225,7 @@ void PlayLogic::resetObjects() {
     for (uint32_t a = 0x465b41; a < 0x465b69; a += 4) h_.l(a) = 0;
     for (uint32_t a = 0x466808; a < 0x46681c; a += 4) h_.l(a) = 0;
     h_.l(0x46681c) = 0;
-    for (Killed& k : killed_) k = Killed{};                // 0x465a40 .. 0x465ad8
+    clearKillList();                                       // 0x465a40 .. 0x465ad8
     h_.b(0x466554) = 0xff;
 }
 
@@ -464,10 +464,10 @@ void PlayLogic::timers() {
     if (int8_t(h_.b(0x465ad8)) < 0) {
         // once a second: killed enemies come back after 15 s
         h_.b(0x465ad8) = 0x3c;
-        for (Killed& k : killed_) {
-            if (k.count == 0) continue;
-            k.count -= 1;
-            if (k.count == 0) restoreId(k.als, k.id);
+        for (uint32_t a = kKillList; a < kKillListEnd; a += 8) {
+            if (h_.b(a) == 0) continue;
+            h_.b(a) -= 1;
+            if (h_.b(a) == 0) putEntryId(h_.ul(a + 2), h_.b(a + 1));
         }
     }
     if (h_.b(0x465b01)) h_.b(0x465b01) -= 1;
@@ -727,14 +727,23 @@ void PlayLogic::markCollected(const Obj& o) { (void)o; }   // the working id sim
 
 void PlayLogic::restoreEntry(const Obj& o) {
     // The handler exits write the saved id (+0x20) back into the working .als copy (+0x1c).
-    restoreId(o.als, o.id);
+    putEntryId(entryAddr(o.als), o.id);
 }
 
-void PlayLogic::restoreId(int als, uint8_t id) {
-    // [entry + 1] = id: an entry of the .als working copy, or for an object that has none the
-    // dummy entry 0x466770 a new record points at.
-    if (als < 0) h_.b(0x466771) = id;
-    else if (size_t(als) + 1 < alsMem_.size()) alsMem_[size_t(als) + 1] = id;
+uint32_t PlayLogic::entryAddr(int als) const {
+    return als < 0 ? 0x466770u : ph::Arena::kAddress + game_->arenaLayout().als + uint32_t(als);
+}
+
+void PlayLogic::putEntryId(uint32_t entry, uint8_t id) {
+    // [entry + 1] = id: an entry of the .als working copy, or the dummy entry 0x466770 a new
+    // record points at, in the logic's memory
+    if (entry >= Harry::kBase && entry + 1 < Harry::kBase + Harry::kSize) { h_.b(entry + 1) = id; return; }
+    const uint32_t base = ph::Arena::kAddress + game_->arenaLayout().als;
+    if (entry >= base && size_t(entry - base) + 1 < alsMem_.size()) alsMem_[size_t(entry - base) + 1] = id;
+}
+
+void PlayLogic::clearKillList() {
+    for (uint32_t a = kKillList; a < kKillListEnd; a += 4) h_.l(a) = 0;
 }
 
 void PlayLogic::markKilled(const Obj& o) {
@@ -742,8 +751,8 @@ void PlayLogic::markKilled(const Obj& o) {
     // on the easy setting the monkeys are not.  (An object with no .als entry takes a place too,
     // with the dummy entry.)
     if (!game_->hardMode() && o.type == 0x23) return;
-    for (Killed& k : killed_)
-        if (k.count == 0) { k.count = 0xf; k.id = o.id; k.als = o.als; return; }
+    for (uint32_t a = kKillList; a < kKillListEnd; a += 8)
+        if (h_.b(a) == 0) { h_.b(a) = 0xf; h_.b(a + 1) = o.id; h_.setUl(a + 2, entryAddr(o.als)); return; }
 }
 
 // ---------------------------------------------------------------- FUN_00434a30: text in letter objects

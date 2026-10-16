@@ -321,6 +321,10 @@ void Game::pollJoypad(const engine::HostInput& host) {
     if (levelNo_ >= kLoltunVault2 && levelNo_ <= kLoltunVault1) pad = engine::Input::pollVaultKeys(host);
     else pad = input_.poll(host, options_.joystick, options_.allowCheat);
     input_.bindings = options_.keys;
+    if (joypadHook) {
+        const int p = joypadHook(fs_.globalFrame + 1);           // (the original polls after the count's step)
+        if (p >= 0) pad = uint32_t(p);
+    }
 
     if (demoPlaying() && engineOn_) {                    // (DAT_0046fbb4: not during a load's engine ticks)
         if (pad != 0) { fs_.joypad = 0xff; return; }
@@ -879,11 +883,13 @@ void Game::completeLevel() {
 }
 
 uint32_t Game::random() {
-    // FUN_0043387e.  s0 = DAT_00466772, s1 = DAT_00466776, s2 = DAT_0046677a (longs, little-endian).
-    auto L = [&](int o) { uint32_t v; std::memcpy(&v, rng_ + o, 4); return v; };
-    auto setL = [&](int o, uint32_t v) { std::memcpy(rng_ + o, &v, 4); };
-    auto W = [&](int o) { uint16_t v; std::memcpy(&v, rng_ + o, 2); return v; };
-    auto setW = [&](int o, uint16_t v) { std::memcpy(rng_ + o, &v, 2); };
+    // FUN_0043387e.  s0 = DAT_00466772, s1 = DAT_00466776, s2 = DAT_0046677a (longs, little-endian),
+    // in the logic's memory.
+    uint8_t* const rng = logicMem_.at(0x466772);
+    auto L = [&](int o) { uint32_t v; std::memcpy(&v, rng + o, 4); return v; };
+    auto setL = [&](int o, uint32_t v) { std::memcpy(rng + o, &v, 4); };
+    auto W = [&](int o) { uint16_t v; std::memcpy(&v, rng + o, 2); return v; };
+    auto setW = [&](int o, uint16_t v) { std::memcpy(rng + o, &v, 2); };
     setL(8, L(8) + 1);
     uint32_t d0 = L(0) + L(4);
     setL(6, L(6) ^ d0);                 // overlaps the high word of s1 and the low word of s2
@@ -898,8 +904,8 @@ uint32_t Game::random() {
 }
 
 void Game::setRandomSeed(uint32_t s0, uint32_t s1) {
-    std::memcpy(rng_ + 0, &s0, 4);
-    std::memcpy(rng_ + 4, &s1, 4);
+    logicMem_.l(0x466772) = int32_t(s0);
+    logicMem_.l(0x466776) = int32_t(s1);
 }
 
 void Game::loseLife() {

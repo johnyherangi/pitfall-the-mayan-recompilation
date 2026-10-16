@@ -548,7 +548,7 @@ void h_monkey(ObjCtx& ctx, Obj& o) {
     if (o.script) {
         // Throwing (mkztoss through the pointer-based interpreter, 4 ticks).
         const bool done = anim2Step(ctx, o, 0x3e, 4);
-        if (o.b(0x42) == 0 && o.l(0x3e) == 0x10) monkeyThrowCactus(ctx, o);
+        if (o.b(0x42) == 0 && anim2Pos(o, 0x3e) == 0x10) monkeyThrowCactus(ctx, o);
         if (!done) { exitDespawnWide(ctx, o); return; }
         o.script = nullptr; o.l(0x3e) = 0;
         o.w(0x46) = 0x40;
@@ -613,7 +613,7 @@ void h_monkey(ObjCtx& ctx, Obj& o) {
         if (!between(dy, -0x40, 0xa0)) { exitDespawnWide(ctx, o); return; }
         // Wind up a throw.
         o.w(0x64) = int16_t((ctx.rnd() & 0x3f) + 8);
-        o.script = kAnim2_monkeyToss; o.l(0x3e) = 0; o.w(0x42) = 0;
+        o.script = kAnim2_monkeyToss; o.l(0x3e) = anim2Start(kAnim2_monkeyToss); o.w(0x42) = 0;
         o.b(0x5e) = 0;
         if (dy >= 0x48) { o.b(0x5e) = 0xff; ctx.sound1((ctx.rnd() & 0x80) ? 0x12 : 0x2b, 4); }
     }
@@ -787,7 +787,7 @@ void condorStates(ObjCtx& ctx, Obj& o) {
             if (animStep(ctx, o, o.anim(0x3c), kAnim_condorTurn, 5)) {
                 o.l(0x38) = kCdDive;
                 o.w(0x6a) = o.y;
-                o.script = kAnim2_condorDive; o.l(0x4c) = 0;
+                o.script = kAnim2_condorDive; o.l(0x4c) = anim2Start(kAnim2_condorDive);
                 o.w(0x3c) = 0;
                 o.sprite = ctx.spr("hkidive"); o.frame = 0;
                 o.facing ^= 1;
@@ -858,7 +858,7 @@ void condorStates(ObjCtx& ctx, Obj& o) {
             if (between(d, -0x10, 0x10)) {
                 o.w(0x6a) = o.y;
                 o.sprite = ctx.spr("hkidive");
-                o.script = kAnim2_hawkDive; o.l(0x4c) = 0;
+                o.script = kAnim2_hawkDive; o.l(0x4c) = anim2Start(kAnim2_hawkDive);
                 o.l(0x38) = kHkDive;
                 continue;
             }
@@ -3863,9 +3863,10 @@ namespace {
 
 void vaultNote(ObjCtx& ctx, int lever) {
     // 0x40b960 copies the lever's palette line (0x45b954 + lever * 0x20) into the Genesis colours
-    // at 0x462654 (DAT_0046654f: changed); the port does not keep those colours, so the flash
-    // is not shown.  Then the lever's note (0x45aa04).
+    // at 0x462654 and marks them changed (DAT_0046654f, which nothing on the PC clears); the port
+    // does not keep those colours, so the flash is not shown.  Then the lever's note (0x45aa04).
     ctx.setA5(0x45b954 + uint32_t(lever) * 0x20 + 0x20);   // (a5 ends past the line it copied)
+    ctx.harry.b(0x46654f) = 0xff;
     static const uint8_t kNote[3] = {0xcc, 0xc5, 0xee};
     ctx.sound1(kNote[lever], 0x12);
 }
@@ -5144,7 +5145,7 @@ void moveClamped(Obj& o) {
 bool aggressive(Obj& o) { return o.w(0x58) == 0x960 || o.hits >= 0xa; }
 
 void startLeap(ObjCtx& ctx, Obj& o) {          // 0x410ff2 / 0x41135c / 0x411629
-    o.script = kAnim2_jaguarLeap; o.l(0x3e) = 0;
+    o.script = kAnim2_jaguarLeap; o.l(0x3e) = anim2Start(kAnim2_jaguarLeap);
     o.sprite = ctx.spr("jguleap");
     o.b(0x32) = kPounce;
 }
@@ -5161,7 +5162,7 @@ void toReverse(ObjCtx& ctx, Obj& o) {          // 0x411070 / 0x4118ea
 }
 void toRoar(Obj& o) {                          // 0x4119a3
     o.b(0x32) = kRoar;
-    o.script = kAnim2_jaguarRoar; o.l(0x46) = 0; o.w(0x4a) = 0;
+    o.script = kAnim2_jaguarRoar; o.l(0x46) = anim2Start(kAnim2_jaguarRoar); o.w(0x4a) = 0;
     o.w(0x4c) = 0;
     o.facing ^= 1;
 }
@@ -5202,11 +5203,12 @@ void bossDeath(ObjCtx& ctx, Obj& o) {
     o.b(0x5a) = 0xff;
     for (const char* n : {"jmzmorf2", "jmzmorfa", "jmzmorfb", "jmzswipe", "jm0swipe", "jm1swipe", "jmzready"})
         if (o.sprite && o.sprite->name() == n) { o.y -= 0x10; o.b(0x5a) = 0; break; }
-    ctx.g.setRandomSeed(0x12d233, 0x84a43c94);  // 0x415c48 (and DAT_0046677e = 0x13477db9, read by nothing)
+    ctx.g.setRandomSeed(0x12d233, 0x84a43c94);  // 0x415c48
+    ctx.harry.l(0x46677e) = 0x13477db9;          // (read by nothing)
     if (Obj* c = ctx.spawn()) {                 // FUN_004356bc(3)
         c->x = o.x; c->y = o.y;                 // (the +8 at 0x415c98 is overwritten right after)
         c->w(0x26) = 0x6663;
-        c->script = kAnim2_bossCloud; c->l(0x64) = 0;
+        c->script = kAnim2_bossCloud; c->l(0x64) = anim2Start(kAnim2_bossCloud);
         c->link = &o; c->b(0x3c) = 1;
         c->type = 0x82; c->behind = 0xff;
         c->flags = uint16_t((o.flags & 0x8000) + 0x6000);
@@ -5368,7 +5370,7 @@ void h_jaguar(ObjCtx& ctx, Obj& o) {
                 }
             }
             // 0x411161: the spring comes at the leap's second frame
-            if (o.l(0x50) >= 0 && o.b(0x42) == 0 && o.l(0x3e) == 1) {
+            if (o.l(0x50) >= 0 && o.b(0x42) == 0 && anim2Pos(o, 0x3e) == 1) {
                 o.l(0x50) = -0x4e000;
                 o.l(0x38) = o.facing ? 0x70000 : -0x70000;
             }
@@ -5413,7 +5415,7 @@ void h_jaguar(ObjCtx& ctx, Obj& o) {
                     o.script = kAnim2_jaguarCrouchA;
                     if (ctx.rnd() & 1) o.script = kAnim2_jaguarCrouchB;
                     if (!(ctx.rnd() & 1)) o.script = kAnim2_jaguarCrouchRoar;
-                    o.l(0x3e) = 0;
+                    o.l(0x3e) = anim2Start(o.script);
                     o.sprite = ctx.spr("jgurn2lo");
                     o.b(0x32) = kCrouch;
                     continue;
@@ -5551,8 +5553,9 @@ void startFight(ObjCtx& ctx, Obj& o) {
     if (Obj* f = ctx.spawnFrom(o, true, 1)) f->type = 0x99;   // FUN_0043546e(1)
     h.b(0x465c60) = 0xff;
     h.setUl(0x465c58, ctx.pl.addrOf(&o));
-    // 0x41c730: the jaguars' colours (0x45b3e4) into the Genesis palette line 2 at 0x462654
-    // (DAT_0046654f: changed); the PC build draws from its own palettes and reads neither.
+    // 0x41c730: the jaguars' colours (0x45b3e4) into the Genesis palette line 2 at 0x462654,
+    // marked changed (DAT_0046654f); the PC build draws from its own palettes and reads neither.
+    h.b(0x46654f) = 0xff;
     o.flags = 0x4000;
     ObjectSystem& os = ctx.pl.objectSystem();
     for (Obj* p = os.first(); p; p = os.nextOf(*p))
@@ -5649,7 +5652,7 @@ void h_stoneJaguar(ObjCtx& ctx, Obj& o) {
             if (pounce) pounce = o.facing ? h.x() < 0x7b5 : h.x() >= 0x860;
             if (pounce) pounce = int16_t(h.x() - o.x) >= 0 ? o.facing != 0 : o.facing == 0;
             if (pounce) {
-                o.script = kAnim2_stoneJagLeap; o.l(0x3e) = 0;
+                o.script = kAnim2_stoneJagLeap; o.l(0x3e) = anim2Start(kAnim2_stoneJagLeap);
                 o.l(0x50) = 0;
                 o.sprite = ctx.spr("jguleap");
                 setState(o, kPounce);
@@ -5707,7 +5710,7 @@ void h_stoneJaguar(ObjCtx& ctx, Obj& o) {
                     bool fast = o.w(0x3a) >= 3;
                     if (!fast && o.w(0x3a) < -3) { fast = true; d = int16_t(-d); }
                     if (fast && d >= 0x50 && d < 0x70) {
-                        o.script = kAnim2_stoneJagCrouch; o.l(0x3e) = 0;
+                        o.script = kAnim2_stoneJagCrouch; o.l(0x3e) = anim2Start(kAnim2_stoneJagCrouch);
                         o.sprite = ctx.spr("jgurn2lo");
                         setState(o, kCrouch);
                         continue;
@@ -5718,7 +5721,7 @@ void h_stoneJaguar(ObjCtx& ctx, Obj& o) {
             if (o.x >= 0x888) { if (o.facing != 0) { toReverse(ctx, o); continue; } return; }
             if (o.x < 0x778) { if (o.facing == 0) { toReverse(ctx, o); continue; } return; }
             if (o.b(0x5c) != 0 && o.facing == 0 && o.x >= 0x81a && o.x < 0x83a) {   // 0x41cfa4: up onto the ledge
-                o.script = kAnim2_stoneJagBigLeap; o.l(0x50) = 0; o.w(0x54) = 0;
+                o.script = kAnim2_stoneJagBigLeap; o.l(0x50) = anim2Start(kAnim2_stoneJagBigLeap); o.w(0x54) = 0;
                 setState(o, kLedgeLeap);
                 o.w(0x36) = 0;
                 o.l(0x5e) = 0;
@@ -5736,7 +5739,7 @@ void h_stoneJaguar(ObjCtx& ctx, Obj& o) {
             moveX(o, o.l(0x38));
             if (o.w(0x3a) != 0) { o.l(0x38) += 0x6000; o.l(0x5e) = int32_t(0xfff83fff); }
             else o.l(0x38) = 0;
-            if (o.l(0x50) < 0x1c) return;            // the leap starts at the script's jguleap frames
+            if (anim2Pos(o, 0x50) < 0x1c) return;    // the leap starts at the script's jguleap frames
             o.x -= 5;
             moveY(o, o.l(0x5e));
             o.l(0x5e) += 0x4200;
@@ -5745,7 +5748,7 @@ void h_stoneJaguar(ObjCtx& ctx, Obj& o) {
             ctx.sound1(0x5a, 9);
             setState(o, kLedge);
             o.w(0x36) = 0;
-            o.script = kAnim2_stoneJagLand; o.l(0x50) = 0; o.l(0x54) = 0;
+            o.script = kAnim2_stoneJagLand; o.l(0x50) = anim2Start(kAnim2_stoneJagLand); o.l(0x54) = 0;
             o.l(0x38) = -0x30000;
             continue;
         }
@@ -5758,7 +5761,7 @@ void h_stoneJaguar(ObjCtx& ctx, Obj& o) {
                 o.l(0x5e) = int32_t(0xfffd8000);
                 setState(o, kJumpDown);
                 o.w(0x36) = 0;
-                o.script = kAnim2_stoneJagHop; o.l(0x50) = 0; o.l(0x54) = 0;
+                o.script = kAnim2_stoneJagHop; o.l(0x50) = anim2Start(kAnim2_stoneJagHop); o.l(0x54) = 0;
                 o.l(0x38) = 0x2a000;
                 ctx.sound0(0xc7, 0xa);               // FUN_004262d9
                 continue;
@@ -5953,17 +5956,17 @@ void toRun(ObjCtx& ctx, Obj& o, int16_t animPos) {
 void toRoar(Obj& o) {
     setState(o, kRoar);
     o.w(0x4c) = 0;
-    o.script = kAnim2_jaguarRoar; o.l(0x46) = 0; o.w(0x4a) = 0;   // 0x45ac6f
+    o.script = kAnim2_jaguarRoar; o.l(0x46) = anim2Start(kAnim2_jaguarRoar); o.w(0x4a) = 0;   // 0x45ac6f
 }
 void toReady(ObjCtx& ctx, Obj& o, uint32_t st) {   // the man form's idle script (0x45b428)
     o.sprite = ctx.spr("jmzready");
     setState(o, st);
-    o.script = kAnim2_jagManReady; o.l(0x50) = 0;
+    o.script = kAnim2_jagManReady; o.l(0x50) = anim2Start(kAnim2_jagManReady);
 }
 // 0x41ea03: back to the jaguar, charging when Harry is 0x80 px away or more.
 void changeBack(ObjCtx& ctx, Obj& o) {
     const int16_t d = int16_t(ctx.harry.x() - o.x);
-    o.script = kAnim2_jagManMorph; o.l(0x50) = 0; o.l(0x54) = 0;   // 0x45b476
+    o.script = kAnim2_jagManMorph; o.l(0x50) = anim2Start(kAnim2_jagManMorph); o.l(0x54) = 0;   // 0x45b476
     const bool far = d >= 0x80 || d < -0x80;
     setState(o, far ? kCharge : kMorph);
     const int32_t v = far ? 0x60000 : 0x30000;
@@ -5979,7 +5982,8 @@ Flow body(ObjCtx& ctx, Obj& o, uint32_t st, uint32_t& next) {
         if (h.y() >= 0xba || h.x() < 0x1640) { exitDespawnTall(ctx, o); return kDone; }
         h.w(0x465b09) = 0x1625;
         // 0x41ecfc: its colours (0x45b4d4) into the Genesis palette line 2 at 0x462654, which the
-        // PC build does not draw from (see the stone jaguars)
+        // PC build does not draw from, marked changed (DAT_0046654f; see the stone jaguars)
+        h.b(0x46654f) = 0xff;
         stoneJaguar::spawnMeter(ctx, o, 0, 0);     // the boss meter (b5a 0, l50 0: the boss at trg+0x1f4)
         o.x += 0xf0;
         o.frame = 0;
@@ -6025,7 +6029,7 @@ Flow body(ObjCtx& ctx, Obj& o, uint32_t st, uint32_t& next) {
             bool fast = o.w(0x3a) >= 3;
             if (!fast && o.w(0x3a) < -3) { fast = true; d = int16_t(-d); }
             if (fast && d >= 0x50 && d < 0x75) {
-                o.script = kAnim2_jagManCrouch; o.l(0x3e) = 0;   // 0x45b404
+                o.script = kAnim2_jagManCrouch; o.l(0x3e) = anim2Start(kAnim2_jagManCrouch);   // 0x45b404
                 o.sprite = ctx.spr("jgurn2lo");
                 setState(o, kCrouch);
                 return kRestart;
@@ -6065,7 +6069,7 @@ Flow body(ObjCtx& ctx, Obj& o, uint32_t st, uint32_t& next) {
         else o.l(0x38) += o.w(0x3a) < 0 ? 0x6000 : -0x6000;
         moveX(o, o.l(0x38));
         if (!anim2Step(ctx, o, 0x3e, 5)) {
-            if (o.b(0x42) == 0 && o.l(0x3e) == 0x20) o.flags = 0x4000;   // (0x45b424: the Genesis palette line)
+            if (o.b(0x42) == 0 && anim2Pos(o, 0x3e) == 0x20) o.flags = 0x4000;   // (0x45b424: the Genesis palette line)
             return kDone;
         }
         toReady(ctx, o, kReady);
@@ -6082,7 +6086,7 @@ Flow body(ObjCtx& ctx, Obj& o, uint32_t st, uint32_t& next) {
             o.facing ^= 1;
             o.w(0x56) = 0;
         } else if (d >= 0 && d < 0x70) {
-            o.script = kAnim2_jagManSwipe; o.l(0x50) = 0; o.l(0x54) = 0;   // 0x45b440
+            o.script = kAnim2_jagManSwipe; o.l(0x50) = anim2Start(kAnim2_jagManSwipe); o.l(0x54) = 0;   // 0x45b440
             setState(o, kSwipe);
             o.l(0x56) = 0;
             o.sprite = ctx.spr("jmzswipe");
@@ -6113,7 +6117,7 @@ Flow body(ObjCtx& ctx, Obj& o, uint32_t st, uint32_t& next) {
         for (int guard = 0; guard < 4; ++guard) {
             done = anim2Step(ctx, o, 0x50, 3);
             // without the claw, straight from the raised paw to the blow (0x45b45c)
-            if (spriteIs(o, "jmzswipe") && o.frame == 3 && o.l(0x56) == 0) { o.l(0x50) = 0x1c; continue; }
+            if (spriteIs(o, "jmzswipe") && o.frame == 3 && o.l(0x56) == 0) { o.l(0x50) = anim2Start(o.script) + 0x1c; continue; }
             break;
         }
         if (!done) return kDone;
@@ -6127,7 +6131,7 @@ Flow body(ObjCtx& ctx, Obj& o, uint32_t st, uint32_t& next) {
     case kMorph:                                   // 0x41eb76: back to the jaguar
         moveX(o, o.l(0x38));
         if (anim2Step(ctx, o, 0x50, 4)) { toRun(ctx, o, 4); return kRestart; }
-        if (o.b(0x54) == 0 && o.l(0x50) == 0x13) o.flags = 0x6000;   // (0x45b489)
+        if (o.b(0x54) == 0 && anim2Pos(o, 0x50) == 0x13) o.flags = 0x6000;   // (0x45b489)
         return kDone;
     case kCharge: {                                // 0x41ebf4: the same, held in the charge until past Harry
         moveX(o, o.l(0x38));
@@ -6138,7 +6142,7 @@ Flow body(ObjCtx& ctx, Obj& o, uint32_t st, uint32_t& next) {
             hold = d < -0x60;
         }
         if (!hold && anim2Step(ctx, o, 0x50, 4)) { toRun(ctx, o, 4); return kRestart; }
-        if (o.b(0x54) == 0 && o.l(0x50) == 0x13) o.flags = 0x6000;
+        if (o.b(0x54) == 0 && anim2Pos(o, 0x50) == 0x13) o.flags = 0x6000;
         return kDone;
     }
     default:
@@ -6911,10 +6915,12 @@ bool spriteIs(const Obj& o, const char* name) { return o.sprite && o.sprite->nam
 // 0x413a5b
 void toTurn(ObjCtx& ctx, Obj& o) { o.b(0x32) = kTurn; o.w(0x34) = 0; exitDespawnWide(ctx, o); }
 
-// 0x413b1e / 0x413b3a: start a pointer script (pc at l34, tick byte at b38).
+// 0x413b1e / 0x413b3a: start a pointer script (its place at l34, the script's address as the
+// original keeps it, tick byte at b38).
 void startScript(Obj& o, uint8_t state, const uint8_t* script) {
-    o.b(0x32) = state; o.script = script; o.l(0x34) = 0; o.w(0x38) = 0;
+    o.b(0x32) = state; o.script = script; o.l(0x34) = anim2Start(script); o.w(0x38) = 0;
 }
+bool stepScript(ObjCtx& ctx, Obj& o, int ticks) { return anim2Step(ctx, o, o.script, 0x34, ticks); }
 
 // 0x414054: the floor ends, or a wall marker stands, 0x30 px ahead.
 bool blockedAhead(ObjCtx& ctx, Obj& o) {
@@ -6930,7 +6936,7 @@ Obj* spawnBone(ObjCtx& ctx, Obj& o) {
     if (!b) return nullptr;
     b->w(0x26) = 0x6663;                        // (d0 != 0: FUN_004263a6)
     b->sprite = ctx.spr("skzbone"); b->frame = 0;
-    b->script = kAnim2_boneTumble; b->l(0x50) = 0;
+    b->script = kAnim2_boneTumble; b->l(0x50) = anim2Start(kAnim2_boneTumble);
     b->b(0x5a) = o.b(0x5c); b->type = 0x1d;
     b->flags = o.flags; b->b(0x46) = 0xff;
     return b;
@@ -7031,7 +7037,7 @@ void roll(ObjCtx& ctx, Obj& o) {
 
 // state 6 (0x413cea): the throw (skirib, then skithrow; pointer script at 3 ticks).
 void throwBone(ObjCtx& ctx, Obj& o) {
-    if (anim2Step(ctx, o, 0x34, 3)) {
+    if (stepScript(ctx, o, 3)) {
         o.b(0x32) = kReady;
         o.b(0x36) = uint8_t((ctx.rnd() & 0x1f) + 0x20);
         ready(ctx, o);
@@ -7046,7 +7052,7 @@ void throwBone(ObjCtx& ctx, Obj& o) {
     // what is reproduced; kGenesisThrow restores the original.
     constexpr bool kGenesisThrow = false;
     const bool release = kGenesisThrow ? o.b(0x38) == 0 : o.b(0x3b) == 0;
-    if (release && o.script == kAnim2_skullThrow && o.l(0x34) == 18) {
+    if (release && o.script == kAnim2_skullThrow && o.l(0x34) == int32_t(anim2Addr(kAnim2_skullThrow) + 18)) {
         if (Obj* b = spawnBone(ctx, o)) {
             b->x = int16_t(o.x - 0x1c); b->y = int16_t(o.y - 0x50);
             o.b(0x68) = 0xff;                                 // (sic: written to the thrower, so the bone keeps b68 = 0 and hurts)
@@ -7070,7 +7076,7 @@ void throwBone(ObjCtx& ctx, Obj& o) {
 // state 7 (0x413f14): the chop (skzarm / skzantic / skichop / sk0chop; pointer script at 4
 // ticks); frame 2 of skichop or sk0chop hits 40 px ahead for 20.
 void chop(ObjCtx& ctx, Obj& o) {
-    if (anim2Step(ctx, o, 0x34, 4)) {
+    if (stepScript(ctx, o, 4)) {
         if (o.b(0x50) == 1) { o.b(0x32) = kWalk; o.w(0x34) = 0; walk(ctx, o); return; }
         o.b(0x32) = kReady; o.b(0x36) = uint8_t((ctx.rnd() & 0x1f) + 0x20); ready(ctx, o);
         return;
@@ -7288,7 +7294,7 @@ void h_swingBall(ObjCtx& ctx, Obj& o) {
         if (id == 0xc7)      { o.script = kAnim2_ballSwingA; o.b(0x5a) = 2; }
         else if (id == 0xc8) { o.script = kAnim2_ballSwingB; o.b(0x5a) = 0; }
         else                 { o.script = kAnim2_ballSwingC; o.b(0x5a) = 1; }
-        o.l(0x32) = 0; o.b(0x36) = 0;
+        o.l(0x32) = anim2Start(o.script); o.b(0x36) = 0;
     }
     if (!ctx.frozen()) anim2Step(ctx, o, 0x32, 2);
     if (o.frame != 0xff) {
@@ -7306,7 +7312,7 @@ void h_swingBall(ObjCtx& ctx, Obj& o) {
                 // 0x414a10: shoved by the swing's direction (b5a; pattern A by its half: pc >= 0x45b0b5)
                 Harry& h = ctx.harry;
                 h.b(0x465b55) = o.b(0x5a);
-                if (o.b(0x5a) == 2) h.b(0x465b55) = o.l(0x32) >= 0x1f ? 1 : 0;
+                if (o.b(0x5a) == 2) h.b(0x465b55) = anim2Pos(o, 0x32) >= 0x1f ? 1 : 0;
                 ctx.hurtHarry(0x28);
                 ctx.pl.harryCall(0x427167);
             }
@@ -7996,8 +8002,8 @@ void h_crocSwimmer(ObjCtx& ctx, Obj& o) {
     Harry& h = ctx.harry;
     auto surface = [&] {                                                 // 0x408663
         o.w(0x32) = 0x90;
-        o.script = kAnim2_crocSwim; o.l(0x3c) = 0;                       // 0x45a9e2 (its tick, b40, is kept)
-        o.l(0x48) = 0;                                                   // the sink script's pc (0x45a9ef)
+        o.script = kAnim2_crocSwim; o.l(0x3c) = anim2Start(kAnim2_crocSwim);   // 0x45a9e2 (its tick, b40, is kept)
+        o.l(0x48) = anim2Start(kAnim2_crocSink);                         // the sink script's place (0x45a9ef)
         o.w(0x44) = o.b(0x56) ? 0x20 : 0x30;
         o.frame = 0xff;
     };
@@ -8017,7 +8023,7 @@ void h_crocSwimmer(ObjCtx& ctx, Obj& o) {
         if (o.w(0x44)) {                                                 // 0x40869f: under water
             o.w(0x44) -= 1;
             if (o.w(0x44) == 0) {
-                o.script = kAnim2_crocSwim; o.l(0x3c) = 0;
+                o.script = kAnim2_crocSwim; o.l(0x3c) = anim2Start(kAnim2_crocSwim);
                 spawnRipple(ctx, o, 0, 0);
                 if (!ctx.channel1Busy()) ctx.sound1(0xbb, 6);
             }
@@ -8148,11 +8154,12 @@ void h_fireball(ObjCtx& ctx, Obj& o) {
 // only sends it back to the start of the fall.  15 contact damage while upright.
 void h_firePriest(ObjCtx& ctx, Obj& o) {
     auto spriteIs = [&](const char* n) { return o.sprite && o.sprite->name() == n; };
+    constexpr uint32_t kMain = 0x45a82f, kRise = 0x45a814;               // the two scripts' addresses
     if (o.frame == 0xfe) {                                               // first tick
         int y = o.y + 0xd; ctx.floorSnap(o.x, y); o.y = int16_t(y - 0xd);
         o.frame = 0xff;
-        o.l(0x36) = 0; o.b(0x3a) = 0;                                    // main script (0x45a82f)
-        o.l(0x46) = 0; o.b(0x4a) = 0; o.b(0x4b) = 0xff;                  // rising script (0x45a814) running
+        o.l(0x36) = int32_t(kMain);                                      // the main script (its tick b3a as it was)
+        o.l(0x46) = int32_t(kRise);                                      // the rising, running while l46 is set
         if (ctx.harry.x() - o.x < 0) o.facing = 1;
     }
     if (!spriteIs("tpzhit")) harryContact(ctx, o, 0xf);
@@ -8163,9 +8170,9 @@ void h_firePriest(ObjCtx& ctx, Obj& o) {
         if (!done) { exitDespawnFar(ctx, o); return; }
         o.sprite = ctx.spr("tprhigh");
     }
-    if (o.b(0x4b)) {                                                     // rising
+    if (o.l(0x46) != 0) {                                                // rising
         if (!anim2Step(ctx, o, kAnim2_priestRise, 0x46, 4)) { exitDespawnFar(ctx, o); return; }
-        o.b(0x4b) = 0;
+        o.l(0x46) = 0;
     }
     auto collapse = [&] {                                                // 0x40fdba
         if (animStep(ctx, o, o.anim(0x34), kData_priestDeath, 4)) {
@@ -8200,7 +8207,7 @@ void h_firePriest(ObjCtx& ctx, Obj& o) {
         o.link2 = nullptr;                                               // (l64 = Harry's record, whose type is 1 or 0xff)
     }
     anim2Step(ctx, o, kAnim2_priestMain, 0x36, 4);
-    if (o.b(0x3a) == 0 && o.l(0x36) == 4) {                              // 0x45a833: the fireball appears
+    if (o.b(0x3a) == 0 && o.l(0x36) == int32_t(kMain + 4)) {             // 0x45a833: the fireball appears
         if (Obj* f = ctx.spawn()) {                                      // FUN_004356bc(3)
             f->w(0x26) = 0x6663;                                         // (d0 != 0: FUN_004263a6)
             o.link2 = f;
@@ -8208,7 +8215,7 @@ void h_firePriest(ObjCtx& ctx, Obj& o) {
             f->type = 0x2c; f->facing = o.facing;
             f->x = int16_t(o.x - 0x1a); f->y = int16_t(o.y - 0x38);
             f->sprite = ctx.spr("fxzfireb"); f->flags = 0x2000;
-            f->script = kAnim2_fireball; f->l(0x36) = 0; f->b(0x3a) = 0;
+            f->script = kAnim2_fireball; f->l(0x36) = anim2Start(kAnim2_fireball); f->b(0x3a) = 0;
             f->l(0x5e) = 0; f->w(0x64) = f->y;
             f->link = &o;
             f->l(0x5a) = 0x60000;
@@ -8288,7 +8295,7 @@ void h_templeArcher(ObjCtx& ctx, Obj& o) {
         if (o.b(0x33)) { o.b(0x33) -= 1; return; }                       // pausing (no exit test)
         bool turn = false;
         if (o.w(0x46)) {                                                 // shooting
-            const bool low = o.l(0x48) == 1;
+            const bool low = o.l(0x48) == 0x45bb42;
             o.sprite = ctx.spr(low ? "tgrlarro" : "tgrharro");
             const bool done = animStep(ctx, o, o.anim(0x46), low ? kAnim_guardShotLow : kAnim_guardShotHigh, 6);
             if (o.w(0x46) == (low ? 0xc : 0xb)) {                        // the arrow leaves the bow
@@ -8360,7 +8367,7 @@ void h_templeArcher(ObjCtx& ctx, Obj& o) {
                 o.w(0x64) -= 1;
                 if (o.w(0x64) < 0) { o.w(0x64) = int16_t((ctx.rnd() & 1) + 3); o.b(0x42) += 0x50; }
                 o.w(0x46) = 1;                                           // (pos 1)
-                o.l(0x48) = (ctx.rnd() & 1) ? 1 : 2;                     // 0x45bb42 low / 0x45bb52 high
+                o.l(0x48) = (ctx.rnd() & 1) ? 0x45bb42 : 0x45bb52;       // the shot's script: low / high
             }
             if (!ledgeEnds()) { exitDespawnMid(ctx, o); return; }
         }

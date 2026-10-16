@@ -407,9 +407,33 @@ bool anim2Step(ObjCtx& ctx, Obj& o, int pcOff, int ticksPerFrame) {
     return anim2Step(ctx, o, o.script, pcOff, ticksPerFrame);
 }
 
+namespace {
+bool anim2StepOffset(ObjCtx& ctx, Obj& o, const uint8_t* script, int pcOff, int ticksPerFrame);
+}
+
 bool anim2Step(ObjCtx& ctx, Obj& o, const uint8_t* script, int pcOff, int ticksPerFrame) {
-    // FUN_004237a5 for objects: pc = o.l(pcOff) (byte offset into the script), tick at pcOff + 4.
-    // Only the opcodes the object scripts use are implemented; the joypad-driven
+    // The original keeps the place as an address in the script, the interpreter here an offset
+    // into it.  (A place under 0x10000 is an offset still: a start written as 0.)
+    const uint32_t base = script ? anim2Addr(script) : 0;
+    FieldRef<int32_t> pc = o.l(pcOff);
+    if (base != 0 && uint32_t(int32_t(pc)) >= 0x10000) pc = int32_t(uint32_t(int32_t(pc)) - base);
+    const bool done = anim2StepOffset(ctx, o, script, pcOff, ticksPerFrame);
+    if (base != 0) pc = int32_t(base + uint32_t(int32_t(pc)));
+    return done;
+}
+
+int32_t anim2Start(const uint8_t* script) { return int32_t(anim2Addr(script)); }
+
+int32_t anim2Pos(const Obj& o, int pcOff) {
+    int32_t v; std::memcpy(&v, o.s + pcOff, 4);
+    const uint32_t base = o.script ? anim2Addr(o.script) : 0;
+    return base != 0 && uint32_t(v) >= 0x10000 ? int32_t(uint32_t(v) - base) : v;
+}
+
+namespace {
+bool anim2StepOffset(ObjCtx& ctx, Obj& o, const uint8_t* script, int pcOff, int ticksPerFrame) {
+    // FUN_004237a5 for objects: pc = o.l(pcOff) (here a byte offset into the script), tick at
+    // pcOff + 4.  Only the opcodes the object scripts use are implemented; the joypad-driven
     // branches (0xf2/0xf4/0xf5) and the sling-swing opcodes are Harry's.
     if (!script) return true;
     FieldRef<int32_t> pc = o.l(pcOff);
@@ -450,6 +474,14 @@ bool anim2Step(ObjCtx& ctx, Obj& o, const uint8_t* script, int pcOff, int ticksP
         }
     }
     return false;
+}
+
+}   // namespace
+
+uint32_t anim2Addr(const uint8_t* script) {
+    for (size_t i = 0; i < kAnim2ScriptCount; ++i)
+        if (kAnim2Scripts[i].script == script) return kAnim2Scripts[i].addr;
+    return 0;
 }
 
 namespace {
@@ -679,7 +711,7 @@ void killObject(ObjCtx& ctx, Obj& o) {
     if (!e) { puff(); return; }
     if (kind == 2) {
         // fx_deat2, then fxzdeath: the pointer script 0x45b323 at +0x64
-        e->script = kAnim2_deathFade; e->l(0x64) = 0; e->b(0x68) = 0;
+        e->script = kAnim2_deathFade; e->l(0x64) = anim2Start(kAnim2_deathFade); e->b(0x68) = 0;
     }
     e->link = &o;
     e->b(0x3c) = 1;

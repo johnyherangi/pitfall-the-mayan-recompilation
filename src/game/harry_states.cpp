@@ -3989,8 +3989,8 @@ void PlayLogic::h4311bf() {
     // The enemies killed in the last 15 s come back, then every object puts its .als entry back
     // and goes, but the sling stones in flight (type 5).  (The stone / boomerang slots keep
     // pointing at their freed records, as in the original.)
-    for (const Killed& k : killed_)
-        if (k.count != 0) restoreId(k.als, k.id);
+    for (uint32_t a = kKillList; a < kKillListEnd; a += 8)
+        if (h_.b(a) != 0) putEntryId(h_.ul(a + 2), h_.b(a + 1));
     for (Obj* p : objects_.list()) {
         Obj& o = *p;
         restoreEntry(o);

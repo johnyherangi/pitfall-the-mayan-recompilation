@@ -17,6 +17,8 @@ CMakeUserPresets.json
 *.user
 
 # Runtime / scratch files
+re/verify/memsample
+verify-out/
 pitfall.ini
 *.ppm
 __pycache__/

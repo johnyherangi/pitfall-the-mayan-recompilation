@@ -261,6 +261,9 @@ public:
     // "Loading..." goes up while the files load, 2 the view cleared without it (the title),
     // 0 the files are in (the dialog goes).  The map screen loads without either.
     std::function<void(int)> loadingHook;
+    // For the comparisons with the original: the joypad of each engine tick (its count, as
+    // FUN_00444940 sees it after the count went up), or -1 for the keys' as usual.
+    std::function<int(uint32_t)> joypadHook;
     // FUN_00443c90's TextOutA texts ("PAUSED", the frame rate / position) for a front end that
     // draws them with the window's own fonts, as the original (20 px, the Roman family, red, see-
     // through): when set they are listed for the frame (view coordinates) instead of being drawn
@@ -313,7 +316,6 @@ private:
     static int preTickCount(int level);   // 0x46ffa0: 13 on levels 0, 2, 5, 8, 16
 
     uint8_t levelFlags_[32] = {};
-    uint8_t rng_[12] = {};             // DAT_00466772: three longs at +0 / +4 / +8 (+6 overlaps them)
     std::string dataDir_;
     engine::Options& options_;
     ph::Palette palette_;

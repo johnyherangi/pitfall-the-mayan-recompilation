@@ -20,6 +20,7 @@ copyrighted software: fine for a private working repository, not for publishing.
 | `genesis_xref.json`, `genesis_handler_map.json` | ROM <-> PC cross-reference (sprite pointers -> sprite names, subroutines -> PC functions, RAM -> PC globals) and the two handler tables (ROM 0x10621e, PC 0x462350) |
 | `pc_dis.py`, `anim_script.py`, `which_func.py` | helper scripts (below) |
 | `drivers/` | scripted headless drivers used to verify each handler (see `drivers/README.md`) |
+| `verify/` | the original run under Wine against the port: its frames and its memory, tick by tick, with the joypad it read replayed to the port (see `verify/README.md`) |
 | `renders/` | frames rendered by the reconstruction during verification (`engine/`: renderer and Harry, `objects/`: the object handlers) |
 
 The per-function decompile files used during the analysis are not included: each one is

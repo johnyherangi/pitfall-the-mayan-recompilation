@@ -229,9 +229,13 @@ bool animStep(ObjCtx& ctx, Obj& o, AnimCursor& cur, const uint8_t* script, int t
 // FUN_00423150: set the frame for the current cursor position without advancing.
 void animPeek(ObjCtx& ctx, Obj& o, AnimCursor& cur, const uint8_t* script);
 // FUN_004237a5 (the pointer-based interpreter used by Harry and a few objects):
-// o.script / o.l(pcOff) hold the script and the position, o.b(pcOff + 4) the tick.
+// o.script / o.l(pcOff) hold the script and the position (its address), o.b(pcOff + 4) the tick.
 bool anim2Step(ObjCtx& ctx, Obj& o, int pcOff, int ticksPerFrame);
 bool anim2Step(ObjCtx& ctx, Obj& o, const uint8_t* script, int pcOff, int ticksPerFrame);   // a second script on the same object
+// The place in a pointer script is kept as the original keeps it, an address in the script: a
+// script starts at anim2Start(script), and anim2Pos gives the offset into o.script at pcOff.
+int32_t anim2Start(const uint8_t* script);
+int32_t anim2Pos(const Obj& o, int pcOff);
 
 // 0x424171: hits from Harry's stones, the boomerang or the whip accumulate in o.hits.
 // d1: something hit this tick; d0: hits + 1 > hitPoints; z: the flag the callers that branch
@@ -352,6 +356,11 @@ extern const uint8_t kAnim2_deathFade[], kAnim2_monkeyToss[], kAnim2_condorDive[
     kAnim2_hawkDive[], kAnim2_stoneJagCrouch[], kAnim2_stoneJagLeap[], kAnim2_stoneJagBigLeap[], kAnim2_stoneJagLand[],
     kAnim2_stoneJagHop[], kAnim2_jagManCrouch[], kAnim2_jagManReady[], kAnim2_jagManSwipe[], kAnim2_jagManMorph[];
 extern const char* const kAnim2Sprites[];        // names for the relocated 0xf1 opcodes
+// Each pointer script with its address in the original, and the lookup (0 for a script not listed).
+struct Anim2Script { const uint8_t* script; uint32_t addr; };
+extern const Anim2Script kAnim2Scripts[];
+extern const size_t kAnim2ScriptCount;
+uint32_t anim2Addr(const uint8_t* script);
 // Sparkle offset tables (handlers.cpp), 0x8000-terminated (dx, dy) pairs.
 extern const int16_t kSparkleOffsetsA[], kSparkleOffsetsB[], kSparkleOffsetsC[];
 

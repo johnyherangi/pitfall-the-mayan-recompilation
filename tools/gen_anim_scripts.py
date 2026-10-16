@@ -109,6 +109,7 @@ for i, b in enumerate(blocks):
     for a, name in b['names']:
         out.append(f'const uint8_t* const kAnim_{name} = kAnimMem{i} + {a - b["start"]:#x};  // {a:#x}, {script_len(a)} bytes')
 sprites = []
+anim2_addrs = []
 for name, addr in scripts['anim2'].items():
     if '+' in addr:                                   # "0xaddr+len": a fixed length (no 0xf0 terminator)
         a, n = (int(x, 0) for x in addr.split('+'))
@@ -117,7 +118,14 @@ for name, addr in scripts['anim2'].items():
         a = int(addr, 16)
         bytes_ = anim2_extract(a, slots, sprites)
     out.extend(byte_array(f'kAnim2_{name}', bytes_, addr))
+    anim2_addrs.append((name, a))
 out.append('const char* const kAnim2Sprites[] = {' + ', '.join(f'"{n}"' for n in sprites) + ', ""};')
+# each pointer script with its address, for the positions kept as the original keeps them
+out.append('const Anim2Script kAnim2Scripts[] = {')
+for name, a in anim2_addrs:
+    out.append(f'    {{kAnim2_{name}, {a:#x}}},')
+out.append('};')
+out.append(f'const size_t kAnim2ScriptCount = {len(anim2_addrs)};')
 for name, spec in scripts.get('raw', {}).items():            # "0xaddr+0xlen": copied verbatim
     addr, n = (int(v, 16) for v in spec.split('+'))
     out.extend(byte_array(f'kData_{name}', rd(addr, n), spec))
