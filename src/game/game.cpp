@@ -415,12 +415,23 @@ void Game::tick(const engine::HostInput& host) {
         audioRem_ %= 1000;
     }
     // WM_KEYDOWN (FUN_004388c0) for any key but F1, Esc and Pause: a key pressed ends a pause;
-    // otherwise any key down is the engine's start key (DAT_0046fb88; a held key repeats).
+    // otherwise it is the engine's start key (DAT_0046fb88).  The messages come from the keyboard's
+    // presses and, for a key held, its repeats after the keyboard's delay (half a second), so a key
+    // down from before the window had the focus (the one that closed the warning, say) sends none
+    // until then; the host's key states give the presses by their edges, and a key down at the
+    // first tick is taken as held from before.  (The states include the mouse buttons, VK_LBUTTON
+    // .. VK_XBUTTON2, which send no WM_KEYDOWN: a click on the window is not a key.)
+    if (firstTick_) {
+        lastHost_ = host; firstTick_ = false;
+        for (int k = 0; k < 256; ++k) keyHeld_[size_t(k)] = host.keyDown[size_t(k)] ? 1 : 0;
+    }
     bool pressed = false, held = false;
-    for (int k = 0; k < 256; ++k) {
-        if (k == 0x70 || k == 0x1b || k == 0x13 || !host.keyDown[size_t(k)]) continue;
-        held = true;
-        if (!lastHost_.keyDown[size_t(k)]) pressed = true;
+    for (int k = 7; k < 256; ++k) {
+        if (k == 0x70 || k == 0x1b || k == 0x13 || !host.keyDown[size_t(k)]) { keyHeld_[size_t(k)] = 0; continue; }
+        const bool edge = !lastHost_.keyDown[size_t(k)];
+        if (edge) { pressed = true; keyHeld_[size_t(k)] = 0; }
+        if (keyHeld_[size_t(k)] < 0xffff) ++keyHeld_[size_t(k)];
+        if (edge || keyHeld_[size_t(k)] > kKeyRepeatTicks) held = true;
     }
     if (host.padBits & ~uint32_t(engine::kJoyDebug)) held = true;   // (the port's gamepad: its buttons as keys)
     if (host.padPressed) pressed = true;

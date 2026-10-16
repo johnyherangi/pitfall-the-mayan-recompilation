@@ -343,6 +343,9 @@ private:
     int levelNo_ = kTitleScreen;
     int demoIndex_ = -1;               // DAT_0046fbbc (-1 in the data section: the first demo is demo 0)
     engine::HostInput lastHost_;       // the host input of the last tick (the pre-ticks poll it again)
+    bool firstTick_ = true;
+    std::array<uint16_t, 256> keyHeld_{};   // ticks each key has been down (the keyboard's repeat)
+    static constexpr int kKeyRepeatTicks = 30;   // the keyboard's repeat delay, 500 ms, in ticks
     uint8_t bigSpace_ = 0;             // DAT_0046a878: which of ltr_lg's two spaces is next
     int tourLevel_ = 0;                // DAT_0046b1ac: the level last completed (the map screen's path)
     int nextLevel_ = 0;                // DAT_0045050c: the level "*1" loads (the map's next one, the one a continue goes back to)

@@ -25,7 +25,7 @@ third_party/stb/ stb_vorbis (public domain / MIT), for Ogg rips of the CD's musi
 ## Building (Visual Studio 2022 or 2026)
 
 ```
-cmake -S . -B build -G "Visual Studio 17 2022" -A x64      (or "Visual Studio 18 2026")
+cmake -S . -B build -G "Visual Studio 18 2026" -A x64
 cmake --build build --config Release
 ctest --test-dir build -C Release
 ```

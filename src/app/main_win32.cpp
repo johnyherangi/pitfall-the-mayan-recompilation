@@ -27,6 +27,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <vector>
 
 #ifdef _MSC_VER
@@ -491,6 +492,16 @@ void hostKeys(engine::HostInput& host) {
     if (GetForegroundWindow() != g_app.hwnd) host.keyDown.fill(false);
     host.padBits = GetForegroundWindow() == g_app.hwnd ? readGamepads(g_app.options.joystick, host.padPressed) : 0;
     if (!host.padBits) host.padPressed = false;
+    // PITFALL_KEYLOG=<file>: each change of the keys and pad buttons seen down, for a key that
+    // seems pressed by itself (a driver's, a stuck one)
+    static FILE* log = nullptr; static bool logTried = false; static std::string last;
+    if (!logTried) { logTried = true; if (const char* f = std::getenv("PITFALL_KEYLOG")) log = std::fopen(f, "w"); }
+    if (log) {
+        std::string now;
+        for (int vk = 0; vk < 256; ++vk) if (host.keyDown[size_t(vk)]) { char b[8]; std::snprintf(b, sizeof b, "%02x ", vk); now += b; }
+        if (host.padBits) { char b[16]; std::snprintf(b, sizeof b, "pad:%x ", host.padBits); now += b; }
+        if (now != last) { std::fprintf(log, "%lu: %s\n", GetTickCount(), now.empty() ? "(none)" : now.c_str()); std::fflush(log); last = now; }
+    }
 }
 
 LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
