@@ -1063,7 +1063,18 @@ void PlayLogic::h4299ad() {
                 for (Obj* p : objects_.list())
                     if (spriteWordIs(*game_, *p, "ltr_sm") && p->frame == c) { p->frame -= 1; break; }
             }
-            h428dfa();
+            // 0x429c8a: standing as 0x428dfa sets it up, but its own copy, which returns: the
+            // standing state runs from the next tick
+            h_.b(0x465b97) = 0;
+            h_.w(0x465b47) = 0;
+            h_.setCont(0x428e50);
+            h429498();
+            h_.b(0x465b71) = 0;
+            h_.vx() = 0;
+            h_.vy() = 0;
+            h_.onGround() = 0xff;
+            h_.setSprite("hyiready");
+            h_.frame() = 0;
             return;
         }
         const int16_t f = h_.w(0x465b49);

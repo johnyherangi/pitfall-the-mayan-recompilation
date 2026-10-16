@@ -76,9 +76,12 @@ them followed on past the level's end, through the map screen into the next leve
 Copan into Copan Temple, Xibalba Falls into Tazamul Mines, Palenque Ruins into the Tomb of Palenque: 5,900 to 10,800
 ticks), match every byte through the map and the next level's start as well; and so do three runs through the vault
 vortices (Tazamul Mines, Copan Temple and the Tikal Ruins into vaults 13, 11 and 12, their Simon games played to the way
-out and back to the vortex: 9,000 ticks each) and two through Copan's into the 2600 level (12,900 ticks of it played at
-random; and run to Harry's deaths, its game's end and back to Copan: 5,000 ticks); the Balankanche Mine's sweep goes on
-through its lives into the continue screen (6,600 ticks); and the Warrior Spirit, shot down from the fly, drops its last
+out and back to the vortex: 9,000 ticks each), two through Copan's into the 2600 level (12,900 ticks of it played at
+random; and run to Harry's deaths, its game's end and back to Copan: 5,000 ticks) and one, with "mijmrowhtrae" typed,
+into Earthworm Jim's level 24, his crate whipped and back to Copan (4,900 ticks); the Balankanche Mine's sweep goes on
+through its lives into the continue screen (6,600 ticks), and Harry dropped out of Xibalba Falls until his lives are
+gone takes its "yes" back to the level and its "no" to the game over, the title and the first demo (2,400 ticks each);
+and the Warrior Spirit, shot down from the fly, drops its last
 letter, which Harry picks up, and the reunion and the end's words and credits play out to their key (17,900 ticks, the
 scenes' data, `0x456000 .. 0x4569df`, compared every tick too).
 

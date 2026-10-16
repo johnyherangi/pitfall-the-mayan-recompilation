@@ -19,6 +19,8 @@
 #   spirit     level 10: the whip and the sling at the Warrior Spirit, under its head
 #   end        level 10: the Warrior Spirit shot down from the fly, the last letter picked up, and on
 #              through the reunion, the end and its credits to the title
+#   continue   level 1: Harry dropped out of the level until his lives are gone, then the continue
+#              screen's "yes" (or with CONT=no its "no", the game over and the title)
 #   sweep      any level: rows across the whole level, top to bottom, ROW px apart (default 160)
 #   vault      levels 11 .. 13: the Simon game played right, round after round
 #   play       any level: dropped at spots across it and played at random there (SEED, PLAY ticks
@@ -431,10 +433,10 @@ def plan_end(s):
 
 
 def plan_ew(s):
-    """level 24 (Copan's vortex with "mijmrowhtrae" typed): let go to the left of the crate that stands
-    for Earthworm Jim (type 34, at 1336, 871), walked up to it and the whip until it blows up; then
-    nothing (200 ticks later the level goes back to Copan)"""
-    yield from fly(s, 1286, 860)
+    """level 24 (Copan's vortex with "mijmrowhtrae" typed): let go to the right of the crate that
+    stands for Earthworm Jim (type 34, at 1336, 871: the floor is there, not before it), walked up to
+    it and the whip until it blows up; then nothing (200 ticks later the level goes back to Copan)"""
+    yield from fly(s, 1400, 840)
     t = 0
     while s.level() == 24:
         crates = [o for o in s.objects() if o.type in (34, 50)]
@@ -472,6 +474,29 @@ def plan_vortex(s):
         yield set()
 
 
+def plan_continue(s):
+    """a level whose bottom is open (level 1 at x 40): Harry flown down there and let go, out of the
+    level, again after each restart, until his lives are gone and the continue screen comes; there,
+    counted in its logic's ticks, with CONT=no Down from the 31st to the 39th, and the whip at the
+    150th: back to the level with four lives and a continue less, or the game over and the title;
+    then nothing"""
+    lv = s.level()
+    bottom = s.size()[1] - 10
+    while s.level() == lv:
+        lives = s.m.u8(0x466527)
+        yield from fly(s, 40, bottom)
+        while s.level() == lv and s.m.u8(0x466527) == lives:  # falling out, a life gone and back
+            yield set()
+        for _ in range(30):                                    # (the restart's first ticks)
+            yield set()
+    if s.level() == 14:
+        no = os.environ.get('CONT') == 'no'
+        for t in range(1, 160):
+            yield {'Down'} if no and 30 < t < 40 else {'q'} if 150 <= t < 153 else set()
+    while True:
+        yield set()
+
+
 def plan_idle(s):
     while True:
         yield set()
@@ -479,7 +504,7 @@ def plan_idle(s):
 
 PLANS = {'jaguar': plan_jaguar, 'stones': plan_stones, 'jaguarman': plan_jaguarman, 'spirit': plan_spirit,
          'sweep': plan_sweep, 'vault': plan_vault, 'play': plan_play, 'vortex': plan_vortex, 'end': plan_end,
-         'idle': plan_idle}
+         'continue': plan_continue, 'idle': plan_idle}
 
 
 def main():

@@ -121,7 +121,8 @@ registry), types its cheats once the level runs (`CHEATS`, by default "vampire":
 | `sweep` | any level: rows across the whole level, top to bottom, `ROW` px apart (160) |
 | `vault` | levels 11 to 13: the Simon game played right, from the combination in memory, round after round |
 | `play` | any level: dropped at spots across it (`PLAYX` x `PLAYY` px apart) and played at random there for `PLAY` ticks each (`SEED`) |
-| `vortex` | levels 2, 3, 4 and 8: dropped onto the level's vortex; through it to a vault (its game played as `vault` plays it, to the way out, back to the level) or, from level 3, to the 2600 level (played at random, `SEED`, until its game is over and back) |
+| `vortex` | levels 2, 3, 4 and 8: dropped onto the level's vortex; through it to a vault (its game played as `vault` plays it, to the way out, back to the level) or, from level 3, to the 2600 level (played at random, `SEED`, or with `A26=left` run to Harry's deaths, until its game is over and back), or with "mijmrowhtrae" typed (`CHEATS`, and `TYPED` for `mkpad.py`) to level 24, where Earthworm Jim's crate is whipped (back to Copan 200 ticks later) |
+| `continue` | level 1: Harry let go at the level's open bottom (x 40) after each restart until his lives are gone, then the continue screen's "yes" (the whip at its 150th tick) or with `CONT=no` its "no" (Down from its 31st tick to its 39th): back to the level, or the game over and the title |
 
 `mkpad.py` turns the cheat's flag in the joypad capture into a line `type <tick> vampire` (the cheat
 came in after that tick: `WM_CHAR` runs between two ticks), and the lives turning 99 into one for

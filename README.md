@@ -162,8 +162,9 @@ with the whip, the sling and the vaults' levers, kills, deaths and restarts
 that play the original from its own memory: the four bosses' fights to their
 ends, sweeps over whole levels, the vaults' Simon games and random play, on
 past a level's end through the map screen into the next level, through the
-vortices into the vaults and the 2600 level and back, into the continue
-screen, and from the Warrior Spirit's death through the reunion and the
+vortices into the vaults, the 2600 level and Earthworm Jim's level and back,
+through the continue screen's "yes" and "no" to the game over, the title and
+a demo, and from the Warrior Spirit's death through the reunion and the
 end's credits.  What still differs
 from the original is listed in `docs/RECONSTRUCTION_LEDGER.md` (the platform's
 parts: the mixer for Miles, the ini file for the registry, the full-screen

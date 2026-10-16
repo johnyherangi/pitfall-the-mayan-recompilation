@@ -267,6 +267,7 @@ void Game::startLevel(int level) {
         demoPos_ = kDemoNotActive;
         mode_ = Mode::Playing;
     }
+    logicMem_.b(0x466500) = demoPos_ < kDemoNotActive ? 1 : 0;   // 0x4461f3: DAT_00466500, a demo plays (the logic reads it)
     if (autoLogic_) {
         // The game logic (FUN_00435fc0) runs every level but the title: the levels with collision
         // data, and the map, the 2600 level and the cutscenes with their own code.  (The explorer,

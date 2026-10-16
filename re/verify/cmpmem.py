@@ -11,7 +11,10 @@
 #                     of the load block in the original (to look past pointers while a port of
 #                     them is under way)
 #   FOLLOW=1          go on past the level's end, through the levels after it (the map, the next
-#                     level, the title), the ticks counted on as the engine's are
+#                     level, the title), the ticks counted on as the engine's are; the tick of a load
+#                     may be sampled with the new level set before the load's own engine tick
+#                     (the title's: no logic tick tells it apart), where the port's line shows
+#                     the old one until that tick: such a tick is left out
 #
 # A capture with a ninth range, the cutscenes' data (WATCH's 456000:2528, memdump's last column),
 # has it compared too ('cut' differences).  Its frame's copy of the actors (0x4564bf .. 0x45673e) and
@@ -72,8 +75,10 @@ for k in sorted(port):
     g = o_start + k
     if g not in orig:
         continue
-    compared += 1
     (olv, om, orr, oc), (t, plv, pm, prr, pc) = orig[g], port[k]
+    if olv != plv and follow and port.get(k + 1, (0, None))[1] == olv and orig.get(g - 1, (None,))[0] == plv:
+        continue                                                # (the load's tick, sampled before its engine tick)
+    compared += 1
     diffs = []
     if olv != plv:
         diffs.append(('level', '%d / %d' % (olv, plv)))

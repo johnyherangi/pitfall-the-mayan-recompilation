@@ -11,6 +11,7 @@
 //                        with the engine's start key as each tick began where it has it (a third number),
 //                        and its "type <tick> <text>" lines: the cheats typed after that tick of the original
 //   KEYS=vk@from-to,...  or keys held (Windows key codes, from one step to before another, -1: on)
+//   HARD=1               the hard difficulty (Option_Difficulty 1, as the original's registry had it)
 //
 // Build it as re/drivers' and run it from the repository root (it loads original/).
 #include "game/game.h"
@@ -25,6 +26,7 @@ namespace game { extern PlayLogic* g_debugLogic; }
 int main(int argc, char** argv) {
     const int t1 = std::atoi(argv[1]);
     engine::Options opts; opts.soundEnabled = false; opts.slow = true;
+    if (const char* h = std::getenv("HARD")) opts.difficulty = std::atoi(h);
     game::Game g("original", opts);
     int menuLevel = -1, menuTick = -1;
     if (const char* m = std::getenv("MENU")) std::sscanf(m, "%d@%d", &menuLevel, &menuTick);
@@ -61,6 +63,7 @@ int main(int argc, char** argv) {
     if (!pad.empty())
         g.joypadHook = [&](uint32_t gf) -> int {          // each engine tick's, the load's ticks too
             if (pStart < 0) return -1;
+            if (g.demoPlaying()) return -1;                // (a demo plays its own joypad, which the original's shows)
             const long og = long(gf) - pStart + oStart;
             if (og >= 0 && size_t(og) < padKey.size() && padKey[size_t(og)] >= 0) g.startKey() = uint8_t(padKey[size_t(og)]);
             return og >= 0 && size_t(og) < pad.size() ? pad[size_t(og)] : 0;

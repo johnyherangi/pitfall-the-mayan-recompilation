@@ -99,6 +99,7 @@ function boundaries are unreliable there; the full decompilation is kept in
 | `0x462694`   | hard, set each tick from `DAT_0046fb78` (normal while a demo plays) | `Game::hardMode()` |
 | `0x46fb74`   | the engine's tick count, from the boot: a level load keeps it, only the frame rate's text starts it again (`FUN_00443c90`); the cloud levels drift on its fourth ticks | `FrameState::globalFrame`    |
 | `0x46fbbc` / `0x46fb8c` | demo index / demo position     | `Game::demoIndex_/demoPos_`  |
+| `0x466500` | a demo plays: the level load sets it from the demo position (0x4461f3: below 0x800); the logic reads it (the random generator's 1, `0x433900`; normal difficulty, `0x43600e` ..) | the logic's memory, set by `Game::startLevel`; `Game::demoPlaying` |
 | `0x46d050`   | paused                                   | `Game::paused_`              |
 | `0x46b1a8`   | pending "*n" level-transition command string | `Game::exitCmd_` (`Game::command`) |
 | `0x46b1b0`   | the logic's palette brightness (0xc0 the big stone's flash; 0x10 back to 0 a tick) | `Game::brightness_` |
@@ -229,7 +230,9 @@ load makes it 0x28 by 0xe cells, 0x446538); its `.als` places the sign (type 157
 in `ltr_sm`, the letters found as type 24) and Harry's state `0x42989c` / `0x4299ad` strikes the match, up / down
 choose, a button confirms and he walks off.  (`0x42989c` copies the long at +0x12 of the lit floor's first half into the
 second's, its word +0x12 and the low word of the first half's list link back, 0xffff, over the second's: the second
-half's link back is 0x0046ffff from then on, which nothing follows while the screen lasts.)  `FUN_00430a69` then takes him at `0x430ca8`: off to the left (0x7e) `*2`;
+half's link back is 0x0046ffff from then on, which nothing follows while the screen lasts.  When the match has burnt
+down, `0x429c8a` stands him up with its own copy of `0x428dfa`'s set-up, which returns: the standing state, `0x428e50`,
+runs from the next tick.)  `FUN_00430a69` then takes him at `0x430ca8`: off to the left (0x7e) `*2`;
 at x 0xc8 or from 0xc0 on, a continue: four lives (three on hard), no score, no treasures, `*1` back to the level;
 otherwise `*0` / `*2` again.  `*2` (0x44423d) plays sound 0x20, clears the screen and writes "[GAME OVER]" in `ltr_lg`
 (`FUN_00431bfb`, centred on x 0xa0 at y 0x5f), waits 3 s and loads the title (a demo goes to the title at once).
