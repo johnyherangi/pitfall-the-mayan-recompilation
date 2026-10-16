@@ -3,7 +3,11 @@
 // Its dialogs, pictures and icon are the original's: they are read from PITSTART.EXE among the
 // CD's files at run time (LoadLibraryEx with LOAD_LIBRARY_AS_DATAFILE), its sound is the CD's
 // pitstart.wav and its intro the CD's intro.avi, played through MCIWnd as the original plays it (on
-// a system that can still decode Indeo 3.2; elsewhere the intro's box stays black until a key).
+// a system that can still decode Indeo 3.2; elsewhere an intro.converted.avi beside it, the same
+// film in a codec the system has, such as Cinepak, which Windows still ships:
+//   ffmpeg -i INTRO.AVI -c:v cinepak -q:v 1 -c:a pcm_s16le intro.converted.avi
+// and without that the intro's box stays black until a key, with MCIWnd's message, as the
+// original's does).
 // The CD's files are where pitfall.exe looks for its data (a folder given on the command line,
 // pitstart.exe's own, or an "original" folder near it); like the original, which made "\assets"
 // its current folder, it works in their ASSETS folder when there is one.
@@ -234,12 +238,12 @@ INT_PTR CALLBACK mainProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM) {
 }
 
 // 0x401c08: an MCIWnd child of `parent` playing nothing yet, `file` opened in it (0 when it cannot be).
-HWND createMovie(HWND parent, int x, int y, int w, int h, const char* file) {
+HWND createMovie(HWND parent, int x, int y, int w, int h, const char* file, bool quiet = false) {
     // (0x4000110b: no MCIWNDF_NOERRORDLG, so a file it cannot play brings up MCIWnd's message)
     HWND mci = MCIWndCreateA(parent, g_inst, WS_CHILD | MCIWNDF_NOTIFYERROR | MCIWNDF_NOTIFYMODE | MCIWNDF_NOMENU |
-                                                 MCIWNDF_NOPLAYBAR | MCIWNDF_NOAUTOSIZEWINDOW, nullptr);
+                                                 MCIWNDF_NOPLAYBAR | MCIWNDF_NOAUTOSIZEWINDOW | (quiet ? MCIWNDF_NOERRORDLG : 0), nullptr);
     MoveWindow(mci, x, y, w, h, FALSE);
-    if (SendMessageA(mci, MCIWNDM_OPENA, 0, LPARAM(file)) != 0) return nullptr;
+    if (SendMessageA(mci, MCIWNDM_OPENA, 0, LPARAM(file)) != 0) { DestroyWindow(mci); return nullptr; }
     RECT r;
     GetClientRect(parent, &r);
     SendMessageA(mci, MCIWNDM_PUT_DEST, 0, LPARAM(&r));
@@ -276,8 +280,12 @@ INT_PTR CALLBACK introProc(HWND hwnd, UINT msg, WPARAM, LPARAM) {
         HWND box = GetDlgItem(hwnd, 124);
         RECT r;
         GetClientRect(box, &r);
-        g_movie = createMovie(box, r.left, r.top, r.right, r.bottom, "intro.avi");
-        playMovie(hwnd, g_movie, true);
+        // The port: the CD's film first, without MCIWnd's message; where its Indeo 3.2 cannot be
+        // decoded, a converted copy beside it; without that, the original's own try and message.
+        g_movie = createMovie(box, r.left, r.top, r.right, r.bottom, "intro.avi", true);
+        if (!g_movie && fileExists("intro.converted.avi")) g_movie = createMovie(box, r.left, r.top, r.right, r.bottom, "intro.converted.avi", true);
+        if (!g_movie) g_movie = createMovie(box, r.left, r.top, r.right, r.bottom, "intro.avi");
+        playMovie(hwnd, g_movie, true);                   // (with no movie it still stops pitstart.wav, as the original)
         g_playing = 1;
         return TRUE;
     }

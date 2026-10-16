@@ -55,9 +55,13 @@ build\Release\pitfall.exe original J            (the original's "J": the joystic
 `pitstart.exe` is the CD's launcher (`PITSTART.EXE`, which `AUTORUN.INF` starts):
 its window, pictures and icon are read from the CD's `PITSTART.EXE` and its
 music is `pitstart.wav`; Play runs the intro (`intro.avi`, through MCIWnd as
-the original does it: it plays only where the system still decodes Indeo 3.2;
-elsewhere MCI says it cannot load the driver and the box stays black until a
-key, as the original's does) and then `pitfall.exe` from the launcher's folder; More...
+the original does it: it plays where the system still decodes Indeo 3.2;
+elsewhere the launcher plays an `intro.converted.avi` beside it if there is
+one, the same film in a codec the system has, made with
+`ffmpeg -i INTRO.AVI -c:v cinepak -q:v 1 -c:a pcm_s16le intro.converted.avi`
+(Cinepak, which Windows still ships), and without that MCI says it cannot load
+the driver and the box stays black until a key, as the original's does) and
+then `pitfall.exe` from the launcher's folder; More...
 offers the CD's registration program, *Technical Help* (`tech.wri` in
 WordPad), the two About pictures and Uninstall (here: the port's
 `pitfall.ini`).  It looks for the CD's files as `pitfall.exe` looks for its data
