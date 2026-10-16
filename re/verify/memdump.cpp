@@ -13,12 +13,27 @@
 //                        and its "type <tick> <text>" lines: the cheats typed after that tick of the original
 //   KEYS=vk@from-to,...  or keys held (Windows key codes, from one step to before another, -1: on)
 //   HARD=1               the hard difficulty (Option_Difficulty 1, as the original's registry had it)
+//   FRAMES=<file> FRAMEPRED=<file> FRAMEOUT=<file> [FRAMEPPM=<prefix>]
+//                        with PAD, the original's pictures (capmem.sh's FRAMES) against the port's:
+//                        framepred.py's lines give each the original's engine ticks while it was on
+//                        the screen, and it is matched with the port's pictures of those ticks and
+//                        the 4 before (what the screen shows trails the tick); "picture first-tick
+//                        last-tick latest-tick tick differing-pixels level load" lines (the original's
+//                        ticks; -1: before the level, which has no match; load 1: the original showed
+//                        a single colour or a load's dark red and black, a load's screen, which the
+//                        port does not take the time to show) and the first picture of
+//                        each run of inexact ones as <prefix>_<picture>.ppm (the original, the port,
+//                        the differing pixels); NOOUT=1 leaves the memory out, FRAMEWIN=<before>,<after>
+//                        sets the ticks around (4,0)
 //
 // Build it as re/drivers' and run it from the repository root (it loads original/).
 #include "game/game.h"
 #include "game/play_logic.h"
+#include <algorithm>
 #include <array>
+#include <cstdint>
 #include <cstdio>
+#include <deque>
 #include <cstdlib>
 #include <cstring>
 #include <string>
@@ -69,6 +84,91 @@ int main(int argc, char** argv) {
             if (og >= 0 && size_t(og) < padKey.size() && padKey[size_t(og)] >= 0) g.startKey() = uint8_t(padKey[size_t(og)]);
             return og >= 0 && size_t(og) < pad.size() ? pad[size_t(og)] : 0;
         };
+    // FRAMES: each of the original's pictures against the port's of the ticks it was on the screen
+    constexpr int FW = 320, FH = 224, FN = FW * FH;
+    struct Pred { int j, g0, g1, gl; };
+    std::vector<Pred> preds;
+    FILE* frames = nullptr; FILE* fout = nullptr;
+    bool framesPiped = false;
+    const char* ppm = std::getenv("FRAMEPPM");
+    int winBefore = 4, winAfter = 0;
+    if (const char* fw = std::getenv("FRAMEWIN")) std::sscanf(fw, "%d,%d", &winBefore, &winAfter);
+    if (const char* fr = std::getenv("FRAMES")) {
+        const std::string name(fr);
+        if (name.size() > 3 && name.compare(name.size() - 3, 3, ".gz") == 0) {
+            frames = popen(("gzip -dc '" + name + "'").c_str(), "r");
+            framesPiped = true;
+        } else frames = std::fopen(fr, "rb");
+        if (FILE* pf = std::fopen(std::getenv("FRAMEPRED") ? std::getenv("FRAMEPRED") : "", "r")) {
+            Pred p{};
+            char line[128];
+            while (std::fgets(line, sizeof line, pf))
+                if (std::sscanf(line, "%d %d %d %d", &p.j, &p.g0, &p.g1, &p.gl) >= 3) preds.push_back(p);
+            std::fclose(pf);
+        }
+        fout = std::fopen(std::getenv("FRAMEOUT") ? std::getenv("FRAMEOUT") : "frames_cmp.txt", "w");
+    }
+    struct PortFrame { int gf; int level; std::vector<uint32_t> rgb; };
+    std::deque<PortFrame> ring;
+    size_t nextPred = 0;
+    int curJ = -1, lastDiff = 0, saved = 0;
+    std::vector<uint8_t> raw(size_t(FN) * 3);
+    std::vector<uint32_t> orig(static_cast<size_t>(FN));
+    auto picture = [&](int j) {                          // (read forward: the predictions come in order)
+        while (curJ < j) {
+            if (std::fread(raw.data(), 1, raw.size(), frames) != raw.size()) return false;
+            ++curJ;
+        }
+        for (int i = 0; i < FN; ++i)
+            orig[size_t(i)] = uint32_t(raw[size_t(i) * 3]) << 16 | uint32_t(raw[size_t(i) * 3 + 1]) << 8 | raw[size_t(i) * 3 + 2];
+        return curJ == j;
+    };
+    auto resolve = [&](bool all) {
+        if (!frames) return;
+        const int gfNow = int(g.state().globalFrame);
+        while (nextPred < preds.size()) {
+            const Pred p = preds[nextPred];
+            const bool aligned = pStart >= 0 && oStart >= 0;
+            const int pg0 = aligned ? p.g0 - oStart + pStart : -1, pg1 = aligned ? p.g1 - oStart + pStart : -1;
+            if (!all && (!aligned || pg1 + winAfter >= gfNow)) break;
+            ++nextPred;
+            int best = -1, bd = FN + 1, lv = -1;
+            const PortFrame* bf = nullptr;
+            bool flat = false;                           // (the original's picture a load's screen)
+            if (aligned && p.g0 >= oStart && picture(p.j)) {
+                // one colour, or the load's dark red (palette entry 0, the font's) being cleared to black
+                flat = std::all_of(orig.begin(), orig.end(), [&](uint32_t c) { return c == orig[0]; }) ||
+                       std::all_of(orig.begin(), orig.end(), [&](uint32_t c) { return c == 0x430000u || c == 0; });
+                const int pgl = p.gl - oStart + pStart;
+                for (const PortFrame& f : ring) {
+                    if (f.gf < pg0 - winBefore || f.gf > pg1 + winAfter) continue;
+                    int d = 0;
+                    for (int i = 0; i < FN && d <= bd; ++i) d += f.rgb[size_t(i)] != orig[size_t(i)];
+                    // a tie (a still scene) goes to the tick nearest the one the count was last seen on
+                    if (d < bd || (d == bd && std::abs(f.gf - pgl) <= std::abs(best - pgl))) { bd = d; best = f.gf; lv = f.level; bf = &f; }
+                }
+            }
+            const int og = best < 0 ? -1 : best - pStart + oStart;
+            std::fprintf(fout, "%d %d %d %d %d %d %d %d\n", p.j, p.g0, p.g1, p.gl, og, best < 0 ? -1 : bd, lv, int(flat));
+            if (bf && bd > 0 && (lastDiff == 0 || std::getenv("FRAMEPPMALL")) && ppm && saved < 60) {
+                char nm[512];
+                std::snprintf(nm, sizeof nm, std::getenv("FRAMEPPMALL") ? "%s_%05d_%d.ppm" : "%s_%05d.ppm", ppm, p.j, og);
+                if (FILE* o = std::fopen(nm, "wb")) {
+                    std::fprintf(o, "P6 %d %d 255\n", FW * 3, FH);
+                    auto put = [&](uint32_t c) { std::fputc(int(c >> 16), o); std::fputc(int(c >> 8 & 0xff), o); std::fputc(int(c & 0xff), o); };
+                    for (int y = 0; y < FH; ++y) {
+                        for (int x = 0; x < FW; ++x) put(orig[size_t(y * FW + x)]);
+                        for (int x = 0; x < FW; ++x) put(bf->rgb[size_t(y * FW + x)]);
+                        for (int x = 0; x < FW; ++x) put(orig[size_t(y * FW + x)] != bf->rgb[size_t(y * FW + x)] ? 0xff0000u : 0u);
+                    }
+                    std::fclose(o);
+                    ++saved;
+                }
+            }
+            if (best >= 0) lastDiff = bd;
+        }
+    };
+    const bool noOut = std::getenv("NOOUT") != nullptr;
     for (int t = 0; t <= t1; ++t) {
         if (t == menuTick) g.menuStart(menuLevel);
         engine::HostInput hi;
@@ -83,6 +183,19 @@ int main(int argc, char** argv) {
                 for (char c : text) g.typeChar(uint8_t(c));
                 at = -1;
             }
+        if (frames) {
+            PortFrame f{int(g.state().globalFrame), g.levelNumber(), std::vector<uint32_t>(size_t(FN))};
+            const uint8_t* src = g.framebuffer().viewBase(g.viewScrollX());
+            uint32_t pal[256];
+            for (int i = 0; i < 256; ++i) { const ph::Rgb c = g.palette().shown(i); pal[i] = uint32_t(c.r) << 16 | uint32_t(c.g) << 8 | c.b; }
+            for (int y = 0; y < FH; ++y) for (int x = 0; x < FW; ++x) f.rgb[size_t(y * FW + x)] = pal[src[size_t(y) * engine::kBufW + size_t(x)]];
+            // every picture of the tick (a fade or a wait draws more than one with the engine standing
+            // still): the original's screen may have held any of them
+            if (ring.empty() || ring.back().gf != f.gf || ring.back().rgb != f.rgb) ring.push_back(std::move(f));
+            while (!ring.empty() && ring.front().gf < int(g.state().globalFrame) - 24) ring.pop_front();
+            resolve(false);
+        }
+        if (noOut) continue;
         std::printf("%d %d %u %d ", t, g.state().globalFrame, g.logicTicks(), g.levelNumber());
         for (int i = 0; i < 12; ++i) std::printf("%02x", *g.logicMemory().at(0x466772 + uint32_t(i)));
         std::printf(" ");
@@ -114,5 +227,10 @@ int main(int argc, char** argv) {
         if (std::getenv("CARTD5"))                    // d5 at the carts' weapon tests (an instrumented original's 0x4627b0)
             for (int i = 0; i < 4; ++i) std::printf(i ? "%02x" : " %02x", (game::g_debugCartD5 >> (8 * i)) & 0xff);
         std::printf("\n");
+    }
+    if (frames) {
+        resolve(true);
+        if (framesPiped) pclose(frames); else std::fclose(frames);
+        std::fclose(fout);
     }
 }

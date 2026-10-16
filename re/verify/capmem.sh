@@ -20,6 +20,10 @@
 #   PF_GAME   the folder with PITFALL.EXE and its files, where it is run (default: original)
 #   WINEPREFIX  a 32-bit prefix whose HKLM\Software\Activision\Pitfall has Option_Slow = 1 (no CD)
 #   PF_DISPLAY  the virtual display (default :91)
+#   FRAMES    a file for the game area's pictures as well (xgrab.c: each new one, 320x224 RGB24, gzip'd
+#             when the name ends in .gz, grabbed every FRAME_MS, 50 by default), with FRAMES.times the
+#             grabs' times and JOYOUT.t0 the joypad sampler's start (both CLOCK_MONOTONIC), for
+#             framepred.py
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
 Y=$1; SECS=$2; OUT=$(realpath -m "$3"); shift 3
@@ -35,6 +39,13 @@ cd "$GAME"
 xdotool mousemove 300 260
 wineserver -k 2>/dev/null
 OLD=$(pgrep -f -i "pitfall.exe" | tr '\n' ' ')
+FPID=""
+if [ -n "${FRAMES:-}" ]; then
+  GRAB=$HERE/xgrab
+  [ -x "$GRAB" ] || gcc -O2 -o "$GRAB" "$HERE/xgrab.c" -lX11 -lXext || exit 1
+  "$GRAB" $((SECS + 3)) "$(realpath -m "$FRAMES")" ${FRAME_MS:-50} &
+  FPID=$!
+fi
 start=$(date +%s.%N)
 wine PITFALL.EXE > /dev/null 2>&1 &
 PID=""
@@ -49,7 +60,7 @@ done
 [ -n "$PID" ] || { echo "PITFALL.EXE did not start" >&2; kill $XPID; exit 1; }
 "$SAMPLER" $PID "$OUT" $SECS $WATCH &
 MPID=$!
-[ -n "${JOYOUT:-}" ] && NAP_US=0 "$SAMPLER" $PID "$(realpath -m "$JOYOUT")" $SECS 46fb74:4 4601d9:4 4517f8:4 46d054:1 466527:1 46fb88:1 466761:8 466796:1 &
+[ -n "${JOYOUT:-}" ] && T0_FILE="$(realpath -m "$JOYOUT").t0" NAP_US=0 "$SAMPLER" $PID "$(realpath -m "$JOYOUT")" $SECS 46fb74:4 4601d9:4 4517f8:4 46d054:1 466527:1 46fb88:1 466761:8 466796:1 &
 for i in 1 2 3 4; do sleep 1; xdotool search --name "^Pitfall$" > /dev/null 2>&1 && xdotool key Return; done
 at() { local now=$(date +%s.%N); local d=$(echo "$1 - ($now - $start)" | bc); [ $(echo "$d > 0" | bc) = 1 ] && sleep $d; }
 at 7
@@ -70,6 +81,7 @@ for step in "$@"; do
 done
 wait $MPID; status=$?
 [ -n "$DPID" ] && kill $DPID 2>/dev/null
+[ -n "$FPID" ] && kill $FPID 2>/dev/null && wait $FPID
 wineserver -k 2>/dev/null
 sleep 1
 kill $XPID 2>/dev/null          # (gone already when another server had the display)

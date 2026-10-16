@@ -147,3 +147,27 @@ A value the logic keeps only in a register at some call (the registers are globa
 uses) and a `jmp` on to the called function; the sampler reads `0x4627b0` with the rest (a
 `WATCH` range `4627b0:4`).  So d5 was read at the mine carts' weapon tests; `memdump` with
 `CARTD5=1` prints the port's d5 at them as a last column to set beside it.
+
+## A driven run's pictures
+
+`capmem.sh` with `FRAMES=<file>` grabs the original's game area as well, every 50 ms (`xgrab.c`,
+`FRAME_MS`), keeping each picture that differs from the one before (RGB24, gzip'd when the name
+ends in `.gz`) and, for every grab, the picture and the times the grab was asked for and came back
+(`<file>.times`, on the samplers' clock; the joypad sampler writes its start to `JOYOUT.t0`).
+`framepred.py <joypad capture> <file>` gives each picture the engine ticks it was on the screen
+between: a joypad record comes when the sampler sees the count change, late when the sampler was
+not running but never early, so a grab falls between the tick of the record before it and that of
+the record after it.  `memdump`, replaying the run (`PAD`) with `FRAMES`, `FRAMEPRED=<framepred.py's
+lines>` and `FRAMEOUT=<file>`, matches each picture shown after the level's start with every
+picture the port drew on those ticks and the four before (the screen trails the count, by more
+when the X server is behind; a fade's and a wait's pictures, drawn with the engine standing still,
+are among them), and writes the best tick and the number of pixels that differ; `FRAMEPPM=<prefix>`
+saves the first picture of each run of inexact ones (the original, the port, the differing
+pixels).  Most pictures match the port's of the tick the count was on when they were grabbed, a
+few the one before (not yet drawn) or one or two earlier (the server behind): the port draws each
+tick's picture as the original does, not a tick early or late.  A picture the original showed in a
+single colour, or in the load's dark red being cleared to black, is a load's screen (its disk time,
+which the port does not take: the last column says so).  Seven runs (Ceiba Jungle's vines, random
+play on Xibalba Falls, its continue screen, the first vault, the vortices to level 24 and to the
+2600 level, the Warrior Spirit's fight): every one of 14,548 pictures exact but 9 load screens and
+one picture of the first runs, grabbed before the grabs' two times were kept.

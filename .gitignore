@@ -18,6 +18,7 @@ CMakeUserPresets.json
 
 # Runtime / scratch files
 re/verify/memsample
+re/verify/xgrab
 verify-out/
 pitfall.ini
 *.ppm

@@ -1,7 +1,8 @@
 // memsample <pid> <out> <seconds> [addr:len[:count:stride] ...]: sample the Wine process's memory (via
 // /proc/<pid>/mem) about every 300 us and write a record whenever any watched range changed: t_us then
 // the ranges in hex (a range with a count is read as count blocks of len bytes, stride apart, joined).
-// The first range should be the engine's tick count: a record a tick tore is dropped.
+// The first range should be the engine's tick count: a record a tick tore is dropped.  T0_FILE=<file>
+// gets the clock's start (CLOCK_MONOTONIC, microseconds).
 #define _GNU_SOURCE
 #include <fcntl.h>
 #include <stdio.h>
@@ -24,6 +25,8 @@ int main(int argc, char** argv) {
     static unsigned char cur[65536], last[65536]; memset(last, 0xee, sizeof last);
     static unsigned char buf[65536];
     const long long t0 = now_us();
+    // T0_FILE: where to write t0 (CLOCK_MONOTONIC, microseconds), to set the records beside another clock
+    if (getenv("T0_FILE")) { FILE* tf = fopen(getenv("T0_FILE"), "w"); if (tf) { fprintf(tf, "%lld\n", t0); fclose(tf); } }
     // NAP_US: the pause between reads (300 us; a sampler of the joypad alone can read far more often)
     const char* napEnv = getenv("NAP_US");
     struct timespec nap = {0, (napEnv ? atol(napEnv) : 300) * 1000L};
