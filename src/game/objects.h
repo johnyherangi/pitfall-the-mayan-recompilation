@@ -67,7 +67,8 @@ struct Obj {
     uint8_t facing = 0;            // +0x0b 1 = faces left (drawn H-flipped)
     uint16_t flags = 0;            // +0x0c 0x8000 = drawn in front of the high-priority tiles
     SpriteRef sprite;              // +0x0e
-    int prev = -1, next = -1;      // +0x14 / +0x18 the object list (record indices, -1 = none)
+    uint32_t prevA = 0xffffffffu;  // +0x14 / +0x18 the object list: the records' addresses as the
+    uint32_t nextA = 0xffffffffu;  // original keeps them (0xffffffff: none; FUN_0043598f tests the high words)
     uint32_t entry = 0;            // +0x1c the address of its .als entry (in the load block; the dummy
                                    // entry 0x466770 for none; 0 in a record never handed out)
     uint8_t id = 0;                // +0x20 the .als id to restore when the object leaves the view
@@ -205,7 +206,8 @@ public:
     // A walk of the list as the handlers do it (DAT_00462848, then +0x18 of each record, which a
     // freed record keeps).
     Obj* first() { return head_ < 0 ? nullptr : &recs_[size_t(head_)]; }
-    Obj* nextOf(const Obj& o) { return o.next < 0 ? nullptr : &recs_[size_t(o.next)]; }
+    Obj* nextOf(const Obj& o) { const int n = indexAt(o.nextA); return n < 0 ? nullptr : &recs_[size_t(n)]; }
+    static int indexAt(uint32_t a);            // the record at an address (-1: none there)
     static Handler handler(uint8_t type);
 
     // The display lists the pass makes, one array as in RAM: from 0x464bfc the objects behind

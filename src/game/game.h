@@ -197,9 +197,8 @@ public:
     struct Warp {
         std::vector<uint8_t> als;      // DAT_004601dd: the level's .als working copy (4 KB)
         uint8_t classes[256] = {};     // DAT_004611dd: its runtime trigger classes (DAT_004658c0)
-        int level = 0;                 // DAT_00465af3: the level left
-        int16_t x = 0, y = 0;          // DAT_00465af7 (Harry's x + 4) / DAT_00465af9
-        uint8_t facing = 0;            // DAT_00465afd
+        // (the level left and Harry's x + 4, y and facing are in the logic's memory, DAT_00465af3 /
+        // f7 / f9 / fd, as the original keeps them)
         int16_t cpX = 0, cpY = 0, cpFacing = 0;   // DAT_0046a860 / 62 / 66: the checkpoint
         int16_t used[3] = {};          // DAT_0046a884 / 86 / 88: the x of the vault vortices taken (they stay shut)
         int returnLevel = 1;           // DAT_00450fc8: the level "*7" goes back to (1: none; 0xb after "*50")

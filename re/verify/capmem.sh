@@ -9,8 +9,9 @@
 #   WATCH     the ranges (memsample's form); the default is what cmpmem.py reads: the engine's tick
 #             count, the logic's, the random generator, the level, a5, the logic's memory, the
 #             object records and the joypad
-#   JOYOUT    a second file: the two tick counts, the joypad, the "vampire" cheat's flag and the
-#             lives alone, read without a pause, so that every tick's joypad is seen (mkpad.py's JOY)
+#   JOYOUT    a second file: the two tick counts, the joypad, the "vampire" cheat's flag, the
+#             lives and the engine's start key (DAT_0046fb88, any key's WM_KEYDOWN) alone, read
+#             without a pause, so that every tick's joypad is seen (mkpad.py's JOY)
 #   DRIVE     "<level> <plan>": drive.py plays the level from its memory once it runs (it needs
 #             Debug_AllowCheat = 1 in the registry; DRIVE_LOG, a file for its keys; CHEATS, the codes
 #             it types first, "vampire" by default)
@@ -46,7 +47,7 @@ done
 [ -n "$PID" ] || { echo "PITFALL.EXE did not start" >&2; kill $XPID; exit 1; }
 "$SAMPLER" $PID "$OUT" $SECS $WATCH &
 MPID=$!
-[ -n "${JOYOUT:-}" ] && NAP_US=0 "$SAMPLER" $PID "$(realpath -m "$JOYOUT")" $SECS 46fb74:4 4601d9:4 4517f8:4 46d054:1 466527:1 &
+[ -n "${JOYOUT:-}" ] && NAP_US=0 "$SAMPLER" $PID "$(realpath -m "$JOYOUT")" $SECS 46fb74:4 4601d9:4 4517f8:4 46d054:1 466527:1 46fb88:1 &
 for i in 1 2 3 4; do sleep 1; xdotool search --name "^Pitfall$" > /dev/null 2>&1 && xdotool key Return; done
 at() { local now=$(date +%s.%N); local d=$(echo "$1 - ($now - $start)" | bc); [ $(echo "$d > 0" | bc) = 1 ] && sleep $d; }
 at 7

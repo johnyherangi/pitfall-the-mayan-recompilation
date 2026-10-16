@@ -8,7 +8,8 @@
 // script's last opcode, then runs one opcode (a pointer to its code, then its arguments; some go
 // on into the next in the same tick, some run again next tick) and the routines of the ten
 // actors at 0x45623f:
-//   +0 x  +4 y (16.16; the texts' are whole)  +8 the sprite slot  +0xc the frame  +0x10 the flags
+//   +0 x  +4 y (16.16; the texts' are whole)  +8 the sprite (its record in the load block, what
+//   its slot holds)  +0xc the frame  +0x10 the flags
 //   +0x14 the frame script's cursor  +0x18 its start  +0x1c the routine  +0x20 a value (the
 //   hand's camera)  +0x24 the text  +0x28 the frame script's speed  +0x29 its count
 // FUN_00443c90 copies them for the frame (0x4564bf) while DAT_0046fb90 is set and draws them in
@@ -96,7 +97,6 @@ void PlayLogic::cutFrame(Game& g, int entry) {
     if (entry != 0) setCl(0x456000, 0);
     cutTick();
     FrameState& fs = g.state();
-    for (size_t i = 0; i < fs.cutActors.size(); ++i) fs.cutActors[i] = cb(kActors + uint32_t(i));
     fs.reunion = cb(0x456049) != 0;
     if (!cutExited_) epilogue(g);
 }
@@ -184,7 +184,7 @@ void PlayLogic::cutScript() {
     // The animated actors' set-ups: the sprite, the first frame, the flags, the frame script, the
     // routine and a speed of 6.
     auto animated = [&](uint32_t a, uint32_t slot, uint32_t frameAt, uint32_t flags, uint32_t script, uint32_t routine) {
-        setCl(a + 8, slot);
+        setCl(a + 8, game_->slotSprite(slot).addr);
         setCl(a + 0xc, cb(frameAt));
         setCl(a + 0x10, flags);
         setCl(a + 0x14, script);
@@ -285,7 +285,7 @@ void PlayLogic::cutScript() {
             const uint32_t a = cutClear(lods());
             setCl(a, 0xa00000);
             setCl(a + 4, 0x8c0000);
-            setCl(a + 8, kHySrG);
+            setCl(a + 8, game_->slotSprite(kHySrG).addr);
             setCl(a + 0xc, 0);
             setCl(a + 0x10, 1);
             setCl(a + 0x1c, 0x401af9);
@@ -326,7 +326,7 @@ void PlayLogic::cutScript() {
                 if (!(uint32_t(game_->stats().letters) & bit & 0xff)) continue;
                 setCw(a + 2, uint16_t(x));
                 setCw(a + 6, 0x52);
-                setCl(a + 8, kMiPtfal);
+                setCl(a + 8, game_->slotSprite(kMiPtfal).addr);
                 setCl(a + 0xc, cb(0x4561b3 + i));
                 setCl(a + 0x10, 1);
                 setCl(a + 0x1c, 0x40181a);
@@ -394,7 +394,7 @@ void PlayLogic::cutScript() {
             const uint32_t a = cutClear(lods());
             setCl(a, 0x1660000);
             setCl(a + 4, 0xa00000);
-            setCl(a + 8, kMi1up);
+            setCl(a + 8, game_->slotSprite(kMi1up).addr);
             setCl(a + 0xc, 0);
             setCl(a + 0x10, 1);
             setCl(a + 0x1c, 0x401c4a);
@@ -406,7 +406,7 @@ void PlayLogic::cutScript() {
             const uint32_t a = cutClear(lods());
             setCl(a, 0xff7e0000);
             setCl(a + 4, 0xbc0000);
-            setCl(a + 8, kFxishado);
+            setCl(a + 8, game_->slotSprite(kFxishado).addr);
             setCl(a + 0xc, 0);
             setCl(a + 0x10, 1);
             setCl(a + 0x14, 0x4561cc);
@@ -456,7 +456,7 @@ void PlayLogic::cutAnim(uint32_t a) {
 void PlayLogic::cutReady(uint32_t a) {
     // An actor done running stands (hyiready) and flag 0 is up.
     cb(0x45622f) = 1;
-    setCl(a + 8, kHyiready);
+    setCl(a + 8, game_->slotSprite(kHyiready).addr);
     setCl(a + 0xc, cb(0x4561db));
     setCl(a + 0x14, 0x4561db);
     setCl(a + 0x18, 0x4561db);
@@ -548,7 +548,7 @@ void PlayLogic::cutRoutine(uint32_t a) {
         const uint32_t r = random() & 0xff;
         setCl(s + 4, cl(s + 4) - ((r & 0xf) << 16));
         setCl(s, cl(s) - ((((r >> 4) & 0xf) - 4) << 16));
-        setCl(s + 8, kFxSprk2);
+        setCl(s + 8, game_->slotSprite(kFxSprk2).addr);
         setCl(s + 0xc, 0);
         setCl(s + 0x10, 1);
         setCl(s + 0x1c, 0x401cd0);

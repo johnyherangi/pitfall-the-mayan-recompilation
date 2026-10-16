@@ -41,9 +41,10 @@ g++ -std=c++20 -O2 -Isrc re/verify/memdump.cpp \
 memory through `/proc/<pid>/mem` about every 300 microseconds (`memsample.c`), a record whenever
 anything changed: the engine's tick count (`0x46fb74`), the logic's (`0x4601d9`), the random
 generator, the level, a5 (`DAT_004601b4`), the logic's memory `0x465800 .. 0x4668ff`, the 80 object
-records and the joypad.  With `JOYOUT=<file>` a second sampler reads the two tick counts, the
-joypad, the "vampire" cheat's flag (`DAT_0046d054`) and the lives alone without a pause, so that
-every tick's joypad is seen.
+records and the joypad (`WATCH` gives other ranges: with `456000:2528` after them, the cutscenes'
+data too, which `cmpmem.py` then compares).  With `JOYOUT=<file>` a second sampler reads the two
+tick counts, the joypad, the "vampire" cheat's flag (`DAT_0046d054`), the lives and the engine's
+start key (`DAT_0046fb88`) alone without a pause, so that every tick's joypad is seen.
 
 `memdump` runs the port with the level picked from the menu (`MENU=<level>@<step>`) and the
 original's joypad given to it tick by tick (`PAD=<file>`, through `Game::joypadHook`), and prints its
@@ -73,11 +74,15 @@ What has to be right for the comparison to mean something:
   else from the tick's last record (the game can stop between the count's step and the poll for tens
   of milliseconds while the keys change; but a 0 there may be a load's clearing, which the records of
   the tick's first 5 ms tell apart), and for a tick the joypad sampler missed, from the main
-  capture's sample of its end.
+  capture's sample of its end.  The engine's start key, which any key's `WM_KEYDOWN` sets between
+  two ticks (a held key's repeats too) and the logic reads and clears (the map, the scenes, the 2600
+  game's end, the title), is replayed as it stood before each tick (`memdump` sets it at the poll).
 * **The level's start.**  The first tick after the one in which the level variable (`0x451a2c`)
   turned to the level; levels 0, 2, 5, 8 and 16 run 13 more ticks in their load (`PRETICKS=13`).
-  The port's menu step for it is that tick less those 13, plus 40: from there the logic's memory,
-  the records and the random generator are the original's, tick for tick.
+  The port's menu step for it is that tick less those 13, and 2 more: the port's intro (which runs
+  tick for tick as the original's from its boot) is left where the original's was, its cutscene's
+  state too, which the next scene starts with, and from there the logic's memory, the records,
+  the random generator and the scenes' data are the original's, the port's ticks the original's.
 * **The pointers.**  The port keeps what the original's memory holds as addresses as those
   addresses: Harry's sprite word and a record's sprite (the sprite's place in the load block, which
   sits where it sat in the original's runs, `ph::Arena::kAddress`), the records' links to each
@@ -112,9 +117,11 @@ registry), types its cheats once the level runs (`CHEATS`, by default "vampire":
 | `stones` | level 3: to the stone jaguars' ledge, the whip at the awake ones, then up the rope their death leaves and out |
 | `jaguarman` | level 8: down beside the arena and back up, the whip at the jaguar man, then into the stone face's mouth |
 | `spirit` | level 10: the whip and the sling at the Warrior Spirit |
+| `end` | level 10: the Warrior Spirit shot down from the fly (Harry let go 27 px under its head and 31 px before it, the sling fired as he falls, left alone while it stuns or holds him), the last letter picked up, the reunion and the end's credits played out (`END` ticks of them, 2000, then a button) |
 | `sweep` | any level: rows across the whole level, top to bottom, `ROW` px apart (160) |
 | `vault` | levels 11 to 13: the Simon game played right, from the combination in memory, round after round |
 | `play` | any level: dropped at spots across it (`PLAYX` x `PLAYY` px apart) and played at random there for `PLAY` ticks each (`SEED`) |
+| `vortex` | levels 2, 3, 4 and 8: dropped onto the level's vortex; through it to a vault (its game played as `vault` plays it, to the way out, back to the level) or, from level 3, to the 2600 level (played at random, `SEED`, until its game is over and back) |
 
 `mkpad.py` turns the cheat's flag in the joypad capture into a line `type <tick> vampire` (the cheat
 came in after that tick: `WM_CHAR` runs between two ticks), and the lives turning 99 into one for

@@ -1114,8 +1114,10 @@ int musicTest(const std::string& dir) {
 // (by the difficulty and the letters found) wait for a key, then the hand rises and the credits
 // scroll ("[THE END]" first), which a key skips.
 namespace {
+// the ten actors at 0x45623f in the scenes' data
+const uint8_t* actorAt(game::Game& g, int i) { return g.cutsceneData().data() + (0x45623f - 0x456000) + i * 0x40; }
 std::string actorText(game::Game& g, int i) {
-    const uint8_t* a = g.state().cutActors.data() + i * 0x40;
+    const uint8_t* a = actorAt(g, i);
     uint32_t r, s;
     std::memcpy(&r, a + 0x1c, 4);
     std::memcpy(&s, a + 0x24, 4);
@@ -1123,7 +1125,7 @@ std::string actorText(game::Game& g, int i) {
 }
 uint32_t actorLong(game::Game& g, int i, int off) {
     uint32_t v;
-    std::memcpy(&v, g.state().cutActors.data() + i * 0x40 + off, 4);
+    std::memcpy(&v, actorAt(g, i) + off, 4);
     return v;
 }
 int cutsceneTest(const std::string& dir) {
@@ -1138,7 +1140,7 @@ int cutsceneTest(const std::string& dir) {
             g.tick(idle);
             if (deep < 0 && actorText(g, 0) == "DEEP IN THE MAYAN JUNGLE") deep = t;
             if (temple < 0 && actorText(g, 1) == "OF UAXACTUN") temple = t;
-            if (oneUp < 0 && actorLong(g, 1, 8) == 0x470248) oneUp = t;
+            if (oneUp < 0 && actorLong(g, 1, 8) == g.slotSprite(0x470248).addr) oneUp = t;   // mi_1up's record
             if (dad < 0 && actorText(g, 2) == "DAD, CHECK IT OUT") dad = t;
             if (g.state().bob != 0) { if (shake < 0) shake = t; ++shakes; }
             if (daaad < 0 && actorText(g, 2) == "DAAAD!") daaad = t;
@@ -1193,7 +1195,7 @@ int cutsceneTest(const std::string& dir) {
         g.startLevel(23);
         for (int t = 0; t < 400; ++t) g.tick(idle);
         int letters = 0;
-        for (int i = 3; i < 10; ++i) letters += actorLong(g, i, 8) == 0x470270;
+        for (int i = 3; i < 10; ++i) letters += actorLong(g, i, 8) == g.slotSprite(0x470270).addr;   // mi_ptfal's
         if (actorText(g, 0) != "you have survived hard mode..." || actorText(g, 1) != "time for a photo to" ||
             actorText(g, 2) != "document your triumph." || letters != 7 || g.levelNumber() != 23 || g.state().camY != 0x20) {
             std::printf("FAIL: end: \"%s\" / \"%s\" / \"%s\", %d letters, level %d, camera y %d\n", actorText(g, 0).c_str(), actorText(g, 1).c_str(),

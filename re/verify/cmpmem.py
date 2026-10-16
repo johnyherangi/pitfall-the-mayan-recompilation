@@ -12,6 +12,12 @@
 #                     them is under way)
 #   FOLLOW=1          go on past the level's end, through the levels after it (the map, the next
 #                     level, the title), the ticks counted on as the engine's are
+#
+# A capture with a ninth range, the cutscenes' data (WATCH's 456000:2528, memdump's last column),
+# has it compared too ('cut' differences).  Its frame's copy of the actors (0x4564bf .. 0x45673e) and
+# the record of the last one drawn (0x45673f .. 0x456752) are the frame's (FUN_00443c90), which the
+# original's main loop composes when it can: on a tick after which it composed none (its copy not
+# its actors), they are left out.
 import os
 import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -24,7 +30,7 @@ fin = finished(samples)
 orig = {}
 for gf, i in fin.items():
     r = samples[i]
-    orig[gf] = (le(r[4]), bytes.fromhex(r[6]), bytes.fromhex(r[7]))
+    orig[gf] = (le(r[4]), bytes.fromhex(r[6]), bytes.fromhex(r[7]), bytes.fromhex(r[9]) if len(r) > 9 else b'')
 o_start = level_start(samples, lv) + int(os.environ.get('PRETICKS', '0'))
 
 follow = bool(os.environ.get('FOLLOW'))
@@ -38,7 +44,8 @@ for line in open(sys.argv[2]):
     gf = int(r[1])
     if p_start is None:
         p_start = gf
-    port[gf - p_start] = (int(r[0]), plv, bytes.fromhex(r[5]), bytes.fromhex(r[6]) if len(r) > 6 else b'')
+    port[gf - p_start] = (int(r[0]), plv, bytes.fromhex(r[5]), bytes.fromhex(r[6]) if len(r) > 6 else b'',
+                          bytes.fromhex(r[7]) if len(r) > 7 else b'')
 print('original level start: tick', o_start, '- port:', p_start)
 
 skip = set()
@@ -66,11 +73,11 @@ for k in sorted(port):
     if g not in orig:
         continue
     compared += 1
-    (olv, om, orr), (t, plv, pm, prr) = orig[g], port[k]
+    (olv, om, orr, oc), (t, plv, pm, prr, pc) = orig[g], port[k]
     diffs = []
     if olv != plv:
         diffs.append(('level', '%d / %d' % (olv, plv)))
-        om = pm = orr = prr = b''
+        om = pm = orr = prr = oc = pc = b''
     md = [i for i in range(len(om)) if om[i] != pm[i] and (0x465800 + i) not in skip]
     groups = []
     for i in md:
@@ -80,6 +87,18 @@ for k in sorted(port):
             groups.append([i, i])
     for a, b in groups:
         diffs.append(('mem %#x' % (0x465800 + a), om[a:b + 1].hex() + ' / ' + pm[a:b + 1].hex()))
+    cgroups = []
+    stale = oc[0x4bf:0x73f] != oc[0x23f:0x4bf]                # (no frame composed after this tick)
+    for i in (range(len(oc)) if oc and pc else ()):
+        if stale and 0x4bf <= i < 0x753:
+            continue
+        if oc[i] != pc[i]:
+            if cgroups and i - cgroups[-1][1] <= 2:
+                cgroups[-1][1] = i
+            else:
+                cgroups.append([i, i])
+    for a, b in cgroups:
+        diffs.append(('cut %#x' % (0x456000 + a), oc[a:b + 1].hex() + ' / ' + pc[a:b + 1].hex()))
     for n in range(0x50 if orr and prr else 0):
         ob, pb = orr[n * 0x6e:(n + 1) * 0x6e], prr[n * 0x6e:(n + 1) * 0x6e]
         rs = recskip.get(ob[8], set()) | recskip.get(pb[8], set())

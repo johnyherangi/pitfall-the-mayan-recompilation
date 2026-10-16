@@ -1000,6 +1000,13 @@ void PlayLogic::h42989c() {
     Obj* a5 = newObjAtHarry(0, true);
     if (a5) {
         a5->flags = 0x6000; a5->sprite = game_->slotSprite("fxifloor");
+        if (a3) {
+            // 0x429917: the long at +0x12 of the other half copied: its word +0x12 and the low word
+            // of its list link back (+0x14), over this one's (a3 was the list's only record:
+            // 0xffff, under this one's link to a3's address)
+            a5->w(0x12) = a3->w(0x12);
+            a5->prevA = (a5->prevA & 0xffff0000u) | (a3->prevA & 0xffffu);
+        }
         a5->l(0x50) = int32_t(addrOf(a3));                  // (the other half)
         a5->w(0x26) = 0x6663;
         a5->facing = 0xff;
@@ -3976,10 +3983,10 @@ void PlayLogic::h4288ec() {
     Game::Warp& wp = game_->warp();
     wp.als.assign(alsMem_.begin(), alsMem_.end());         // [DAT_004504e4] -> 0x4601dd (4 KB)
     std::memcpy(wp.classes, h_.trgClass(), 0x100);        // 0x4658c0 -> 0x4611dd
-    wp.level = level_;                                     // DAT_00465af3
-    wp.x = int16_t(h_.x() + 4);                            // DAT_00465af7
-    wp.y = h_.y();                                         // DAT_00465af9
-    wp.facing = h_.facing();                               // DAT_00465afd
+    h_.l(0x465af3) = h_.l(0x466535);                       // the level (the logic's memory keeps it, and the way back)
+    h_.w(0x465af7) = int16_t(h_.x() + 4);
+    h_.w(0x465af9) = h_.y();
+    h_.b(0x465afd) = h_.facing();
     wp.cpX = h_.w(0x46679e); wp.cpY = h_.w(0x4667a0); wp.cpFacing = h_.w(0x4667a4);   // -> 0x46a860..
 }
 

@@ -1,11 +1,14 @@
 // memdump <ticks>: the port's run as cmpmem.py reads it, a line per engine tick (the driver's loop
 // step): the step, the engine's tick count, the logic's, the level, the random generator, the logic's
 // memory 0x465800 .. 0x4668ff (with the player's numbers the port keeps apart put at their
-// addresses) and the 80 object records, every byte as the original lays them out (recordByte:
-// the sprite's address in the load block, the list's links and the .als entry's address).
+// addresses), the 80 object records, every byte as the original lays them out (recordByte:
+// the sprite's address in the load block, the list's links and the .als entry's address), and the
+// cutscenes' data 0x456000 .. 0x4569df (their scripts' cursor and counts, the texts, the actors).
 //
-//   MENU=<level>@<step>  the level picked from the menu before that step (the original's start + 40)
+//   MENU=<level>@<step>  the level picked from the menu before that step (the original's start less 2,
+//                        less the load's 13 ticks on levels 0, 2, 5, 8 and 16: the port's ticks are the original's)
 //   PAD=<file>           mkpad.py's joypad, replayed tick by tick from the level's start (Game::joypadHook),
+//                        with the engine's start key as each tick began where it has it (a third number),
 //                        and its "type <tick> <text>" lines: the cheats typed after that tick of the original
 //   KEYS=vk@from-to,...  or keys held (Windows key codes, from one step to before another, -1: on)
 //
@@ -36,7 +39,7 @@ int main(int argc, char** argv) {
     }
     // PAD=<file from mkpad.py>: the original's joypad replayed by engine tick from the level's start
     // (the port's first tick on the menu's level against the original's), through the default keys
-    std::vector<int> pad; int oStart = -1, pStart = -1;
+    std::vector<int> pad, padKey; int oStart = -1, pStart = -1;
     std::vector<std::pair<int, std::string>> typed;        // (the original's tick, the text typed after it)
     if (const char* pf = std::getenv("PAD")) {
         FILE* f = std::fopen(pf, "r");
@@ -46,9 +49,11 @@ int main(int argc, char** argv) {
             char text[64];
             if (std::sscanf(line, "start %d", &a) == 1) { oStart = a; continue; }
             if (std::sscanf(line, "type %d %63s", &a, text) == 2) { typed.emplace_back(a, text); continue; }
-            if (std::sscanf(line, "%d %d", &a, &b) == 2 && a >= 0) {
-                if (size_t(a) >= pad.size()) pad.resize(size_t(a) + 1, 0);
+            int c = -1;
+            if (std::sscanf(line, "%d %d %d", &a, &b, &c) >= 2 && a >= 0) {
+                if (size_t(a) >= pad.size()) { pad.resize(size_t(a) + 1, 0); padKey.resize(size_t(a) + 1, -1); }
                 pad[size_t(a)] = b;
+                padKey[size_t(a)] = c;
             }
         }
         if (f) std::fclose(f);
@@ -57,6 +62,7 @@ int main(int argc, char** argv) {
         g.joypadHook = [&](uint32_t gf) -> int {          // each engine tick's, the load's ticks too
             if (pStart < 0) return -1;
             const long og = long(gf) - pStart + oStart;
+            if (og >= 0 && size_t(og) < padKey.size() && padKey[size_t(og)] >= 0) g.startKey() = uint8_t(padKey[size_t(og)]);
             return og >= 0 && size_t(og) < pad.size() ? pad[size_t(og)] : 0;
         };
     for (int t = 0; t <= t1; ++t) {
@@ -97,6 +103,8 @@ int main(int argc, char** argv) {
         else                                                  // (no logic, as on the title: the records as the last left them)
             for (const auto& rec : g.objectRecords())
                 for (uint8_t b : rec) std::printf("%02x", b);
+        std::printf(" ");
+        for (size_t i = 0; i < 0x9e0; ++i) std::printf("%02x", g.cutsceneData()[i]);
         std::printf("\n");
     }
 }

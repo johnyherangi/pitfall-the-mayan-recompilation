@@ -36,5 +36,5 @@ PY
 JOYOUT="$W/joy$LV.txt" bash "$HERE/capmem.sh" $Y 50 "$W/orig$LV.txt" $KEYS
 PRETICKS=$pre python3 "$HERE/mkpad.py" "$W/orig$LV.txt" "$W/joy$LV.txt" $LV > "$W/pad$LV.txt"
 start=$(head -1 "$W/pad$LV.txt" | awk '{print $2}')
-MENU=$LV@$(( start - pre + 40 )) PAD="$W/pad$LV.txt" "$W/memdump" 2500 > "$W/port$LV.txt"
+MENU=$LV@$(( start - pre - 2 )) PAD="$W/pad$LV.txt" "$W/memdump" 2500 > "$W/port$LV.txt"
 PRETICKS=$pre python3 "$HERE/cmpmem.py" "$W/orig$LV.txt" "$W/port$LV.txt" $LV | tee "$W/result$LV.txt"

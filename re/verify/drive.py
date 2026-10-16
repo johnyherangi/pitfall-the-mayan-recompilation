@@ -17,10 +17,17 @@
 #   jaguarman  level 8: down beside the arena and back up, the whip at the jaguar man, then into
 #              the stone face's mouth
 #   spirit     level 10: the whip and the sling at the Warrior Spirit, under its head
+#   end        level 10: the Warrior Spirit shot down from the fly, the last letter picked up, and on
+#              through the reunion, the end and its credits to the title
 #   sweep      any level: rows across the whole level, top to bottom, ROW px apart (default 160)
 #   vault      levels 11 .. 13: the Simon game played right, round after round
 #   play       any level: dropped at spots across it and played at random there (SEED, PLAY ticks
 #              a spot, PLAYX x PLAYY px apart)
+#   vortex     levels 2, 3, 4 and 8: dropped onto the level's vortex, through it to a vault (its
+#              game played as by vault, until it lets Harry out, back to the level) or on level 3
+#              to the 2600 level (played at random, SEED, or with A26=left run to his deaths, until
+#              its game is over and back), or with "mijmrowhtrae" typed (CHEATS) to level 24, where
+#              the crate that stands for Earthworm Jim is whipped (back to Copan 200 ticks later)
 #   idle       nothing (the cheat alone)
 import ctypes
 import os
@@ -349,13 +356,130 @@ def plan_play(s):
         yield set()
 
 
+def plan_a26(s):
+    """the 2600 level: a way and the buttons held at random (SEED) for 4 .. 40 ticks at a time, or with
+    A26=left Left alone held (no jumps: Harry runs into what kills him until the game is over, and the
+    held key, the engine's start key as it repeats, goes on out of it)"""
+    if os.environ.get('A26') == 'left':
+        while True:
+            yield {'Left'}
+    import random
+    rnd = random.Random(int(os.environ.get('SEED', '1')))
+    ways = [(), ('Left',), ('Right',), ('Up',), ('Down',), ('Left', 'Up'), ('Right', 'Up'), ('Left', 'Down'),
+            ('Right', 'Down')]
+    while True:
+        k = set(rnd.choice(ways))
+        for b in 'qwe':
+            if rnd.random() < 0.3:
+                k.add(b)
+        for _ in range(rnd.randint(4, 40)):
+            yield k
+
+
+def plan_end(s):
+    """level 10: the Warrior Spirit shot down from the fly.  Harry is flown to 27 px under its head and
+    31 px before it (by his facing), let go there and the sling fired as he falls (every 4 ticks for 20
+    ticks), again and again, and left alone while he is stunned (0x427316, hyidazed) or held and thrown
+    (0x42c2ff) until he is up again; once it is dead, he walks under the last letter of PITFALL it drops;
+    then nothing: the reunion plays out, and the end's words and credits for END ticks (2000), when a
+    button skips the rest of them (as a key does) and the title comes"""
+    phase, t0, t = 0, 0, 0
+    while s.level() == 10:
+        k = set()
+        objs = s.objects()
+        sp = [o for o in objs if o.type == 0x69]
+        hx, hy = s.hx(), s.hy()
+        if not sp:
+            letter = [o for o in objs if o.type == 0xb0]
+            if letter and abs(hx - letter[0].x) > 7:
+                k.add('Right' if hx < letter[0].x else 'Left')
+        else:
+            a = sp[0].l(0x64)
+            head = Obj(a, s.m.rd(a, 0x6e))
+            cont = s.m.u32(0x465b69)
+            held = cont in (0x427316, 0x42c2ff) or s.m.u32(0x465b1d) == s.m.u32(0x4700e8)
+            if held and phase != 1:
+                phase = 2
+            if phase == 2:
+                if not held and s.on_ground():
+                    phase = 0
+            elif phase == 0:
+                tx = head.x + (31 if s.m.u8(0x465b1a) else -31)
+                ty = head.y + 27
+                k.add(CTRL)
+                if abs(hx - tx) > 7:
+                    k.add('Right' if hx < tx else 'Left')
+                if abs(hy - ty) > 7:
+                    k.add('Down' if hy < ty else 'Up')
+                if (abs(hx - tx) <= 7 and abs(hy - ty) <= 7) or t - t0 > 200:
+                    phase, t0 = 1, t
+            else:
+                if (t - t0) % 4 == 1:
+                    k.add('e')
+                if t - t0 >= 20:
+                    phase, t0 = 0, t
+        t += 1
+        yield k
+    while s.level() != 23:
+        yield set()
+    for _ in range(int(os.environ.get('END', '2000'))):
+        yield set()
+    for _ in range(3):
+        yield {'q'}
+    while True:
+        yield set()
+
+
+def plan_ew(s):
+    """level 24 (Copan's vortex with "mijmrowhtrae" typed): let go to the left of the crate that stands
+    for Earthworm Jim (type 34, at 1336, 871), walked up to it and the whip until it blows up; then
+    nothing (200 ticks later the level goes back to Copan)"""
+    yield from fly(s, 1286, 860)
+    t = 0
+    while s.level() == 24:
+        crates = [o for o in s.objects() if o.type in (34, 50)]
+        k = set()
+        if crates and s.on_ground():
+            dx = crates[0].x - s.hx()
+            if abs(dx) > 48:
+                k.add('Right' if dx > 0 else 'Left')
+            elif t % 3 == 0:
+                k.add('q')
+        t += 1
+        yield k
+    while True:
+        yield set()
+
+
+# the vortices (type 71: the .als id 0x46) by level, where their entries put them
+VORTICES = {2: (4808, 672), 3: (1960, 1360), 4: (2424, 32), 8: (6040, 400)}
+
+
+def plan_vortex(s):
+    """flown to the level's vortex and let go there: Harry falls to the ground in its box and spins
+    away, to a Loltun vault (from levels 2, 4 and 8: its game played as plan_vault plays it, until
+    the way out, or the ceiling, lets him out, back to the level) or to the 2600 level (from level 3:
+    played at random until its game is over and a key goes back); then nothing"""
+    lv = s.level()
+    yield from fly(s, *VORTICES[lv])
+    while s.level() == lv:
+        yield set()
+    there = s.level()
+    gen = plan_vault(s) if there in (11, 12, 13) else plan_ew(s) if there == 24 else plan_a26(s)
+    while s.level() == there:
+        yield next(gen)
+    while True:
+        yield set()
+
+
 def plan_idle(s):
     while True:
         yield set()
 
 
 PLANS = {'jaguar': plan_jaguar, 'stones': plan_stones, 'jaguarman': plan_jaguarman, 'spirit': plan_spirit,
-         'sweep': plan_sweep, 'vault': plan_vault, 'play': plan_play, 'idle': plan_idle}
+         'sweep': plan_sweep, 'vault': plan_vault, 'play': plan_play, 'vortex': plan_vortex, 'end': plan_end,
+         'idle': plan_idle}
 
 
 def main():

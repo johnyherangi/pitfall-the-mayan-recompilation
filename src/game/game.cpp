@@ -784,6 +784,12 @@ void Game::render() {
 void Game::composeFrame() {
     // ---- FUN_00443c90: snapshot the logic state --------------------------
     snap_ = fs_;
+    if (snap_.cutscene) {
+        // DAT_0046fb90: the cutscenes' actors copied for the frame (0x45623f -> 0x4564bf, 0x280
+        // bytes), which their drawing reads
+        std::memcpy(cutData_.data() + (0x4564bf - 0x456000), cutData_.data() + (0x45623f - 0x456000), 0x280);
+        std::memcpy(snap_.cutActors.data(), cutData_.data() + (0x4564bf - 0x456000), 0x280);
+    }
     hostTexts_.clear();
     shownBrightness_ = int32_t(brightness_);                       // DAT_00452770 = DAT_0046b1b0
     if (cdVolumeCmd_ == 1) setCdVolume(options_.cdVolume >> 2);     // DAT_00450500: the stop-watch

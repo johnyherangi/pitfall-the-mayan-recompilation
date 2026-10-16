@@ -243,14 +243,17 @@ void Game::renderActors(bool front) {
             if (front) renderer_.drawText(assets_->font, int32_t(le32(a)), int32_t(le32(a + 4)), cutsceneText(le32(a + 0x24)), snap_.scrollX);
             continue;
         }
-        const uint32_t slot = le32(a + 8);
-        if (slot == 0 || ((le32(a + 0xc) & 0x20) != 0) != front) continue;
+        const uint32_t spr = le32(a + 8);                            // the sprite's record
+        if (spr == 0 || ((le32(a + 0xc) & 0x20) != 0) != front) continue;
         engine::SpriteInstance s;
         s.x = int32_t(le32(a) >> 16);
         s.y = int32_t(le32(a + 4) >> 16);
-        s.sprite = findSprite(spriteSlotName(slot));
+        s.sprite = spriteSlots_.at(spr);
         s.frame = le32(a + 0xc);
         s.flags = le32(a + 0x10);
+        // the record FUN_00438140 draws from, at 0x45673f (the last one drawn stays there)
+        const uint32_t rec[5] = {le32(a) >> 16, le32(a + 4) >> 16, spr, le32(a + 0xc), le32(a + 0x10)};
+        std::memcpy(cutData_.data() + (0x45673f - 0x456000), rec, sizeof rec);
         renderer_.drawSprite(s, view);
     }
 }

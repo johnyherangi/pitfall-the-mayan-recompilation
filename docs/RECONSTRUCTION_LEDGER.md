@@ -71,10 +71,16 @@ ticks), the stone jaguars' up the rope and out of the level (4,974), the jaguar 
 through all twelve of its states (11,189), sweeps over the whole of levels 0 to 9 and 16 to 18 (4,900 to 7,200 ticks
 each, every object of a level met by the camera), the three vaults' Simon games played right round after round (7,800
 ticks each, to the ninth round), and twelve runs of random play on levels 0 to 6, 8, 9 and 16 to 18 (Harry dropped at
-spots across the level and every key pressed at random there: 870 to 6,900 ticks), match every byte too; and four of
+spots across the level and every key pressed at random there: 870 to 6,900 ticks), match every byte too; four of
 them followed on past the level's end, through the map screen into the next level (Ceiba Jungle into Xibalba Falls,
 Copan into Copan Temple, Xibalba Falls into Tazamul Mines, Palenque Ruins into the Tomb of Palenque: 5,900 to 10,800
-ticks), match every byte through the map and the next level's start as well.
+ticks), match every byte through the map and the next level's start as well; and so do three runs through the vault
+vortices (Tazamul Mines, Copan Temple and the Tikal Ruins into vaults 13, 11 and 12, their Simon games played to the way
+out and back to the vortex: 9,000 ticks each) and two through Copan's into the 2600 level (12,900 ticks of it played at
+random; and run to Harry's deaths, its game's end and back to Copan: 5,000 ticks); the Balankanche Mine's sweep goes on
+through its lives into the continue screen (6,600 ticks); and the Warrior Spirit, shot down from the fly, drops its last
+letter, which Harry picks up, and the reunion and the end's words and credits play out to their key (17,900 ticks, the
+scenes' data, `0x456000 .. 0x4569df`, compared every tick too).
 
 ## Approximated
 

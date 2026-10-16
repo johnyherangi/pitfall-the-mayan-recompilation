@@ -114,7 +114,7 @@ function boundaries are unreliable there; the full decompilation is kept in
 | `0x46efe0`   | the property sheet's page last asked for (the menu's Properties opens it) | `App::sheetPage` |
 | `0x46fb84`   | the attract loaded the intro (track 5, the credits after it at twice the speed); only the menu's intro (0x9c64) clears it | `Game::introAfterDemos_` |
 | `0x450fcc` / `0x450514` | the level has a map / a parallax map (`FUN_004460e0`; the cutscenes' `0x40160e` clears both) | `FrameState::mainLayer / parallaxLayer` |
-| `0x456000` .. `0x4569df` | the cutscenes' data: the script's cursor, the wait's count (`0x456004`), the exit's string (`0x456008`), flags, texts, frame scripts, the ten actors (`0x45623f`, the frame's copy at `0x4564bf`), the scripts (`0x456753` ..) | `Game::cutsceneData`, `PlayLogic::cb` |
+| `0x456000` .. `0x4569df` | the cutscenes' data: the script's cursor, the wait's count (`0x456004`, which a scene left in a wait hands on to the next one), the exit's string (`0x456008`), flags, texts, frame scripts, the ten actors (`0x45623f`; an actor's +8 the sprite's record, what its slot holds, `mov eax, [slot]`), the frame's copy of them that `FUN_00443c90` makes while `DAT_0046fb90` is set (`0x4564bf`) and the record of the last actor drawn from it (`0x45673f`: x, y, sprite, frame, flags, `FUN_00401346` / `FUN_004013f8`), the scripts (`0x456753` ..) | `Game::cutsceneData`, `PlayLogic::cb`; the copy and the record in `Game::composeFrame` / `renderActors` |
 | `0x46fb90`   | the cutscenes' actors are drawn | `FrameState::cutscene` |
 | `0x4504dc` / `0x4504e0` | the load block (1.5 MB, `GlobalAlloc`: at `0x016a0020` in every run under Wine) and where a level's records start in it, past INIT.PH's (`docs/FORMATS.md` § 10) | `ph::Arena` (`kAddress`), `ph::ArenaLayout` |
 | `0x450fc4` / `0x450510` / `0x45052c` / `0x450fc0` / `0x450518` / `0x4504e4` / `0x4504c4` / `0x450f90` | in the load block: the background, the triggers and their copy, the collision planes (the probes' `0x46615c` / `0x466160`), the objects' working copy and the level's own, the parallax map | `ArenaLayout::base / trg / det / dt2 / als / parallax`, `PlayLogic::alsMem_ / tb` |
@@ -183,7 +183,7 @@ the title's start key and attract (`0x44476e`), so the stones' clearing of the s
 | `FUN_0040454e` | object init from the `.als` template (`0x4678c4`; byte +9 picks the head or the tail of the list); the entry's id is cleared while the object lives | `PlayLogic::spawnEntry`, `ph::kObjectTemplates` |
 | `FUN_00405114` / `FUN_00433d0b` | the level start's 33-column spawn; the ids without templates placed by the level start (rope spawners 0x15 / 0x16, drifting platforms 0xc9, a pushed mine cart where it was left) | `spawnAll / preSpawn` |
 | `[DAT_004504e4]` | the level's `.als` data (4-byte header, a big-endian word per column with the offset of its `(row, id)` pairs, 0xff ending them), worked on in place; past the data the PC keeps Genesis variables (+0x384) | `PlayLogic::alsMem_` (padded to 4 KB), `alsLong / setAlsLong` |
-| `FUN_00435780` / `FUN_00435905` / `FUN_0043598f` | object pool: a record at the list's tail / head, one freed | `ObjectSystem::allocTail` / `allocHead` / `release` |
+| `FUN_00435780` / `FUN_00435905` / `FUN_0043598f` | object pool: a record at the list's tail / head, one freed (its unlink takes a link whose high word is 0xffff for none, +0x16 / +0x1a) | `ObjectSystem::allocTail` / `allocHead` / `release` (the links kept as the original's addresses, `Obj::prevA` / `nextA`) |
 | `FUN_00434eef` | object → display-list entry (+0x10, flags 0x40 hflip / 0x80 vflip / 0x20 front) | `PlayLogic::displayEntry` |
 | `FUN_004251f9` | trigger lookup at `(x + 0x20, y)` | `PlayLogic::trg`, `ObjCtx::trigger` |
 | `FUN_00430229` | trigger handlers (`_` exit, plane switch, …) | `PlayLogic::h430229` |
@@ -227,7 +227,9 @@ the weapon (pouch, boomerang, stone) and its ammunition.  The demos show the HUD
 else `*2`.  `*0` (0x444200) keeps the level in `DAT_0045050c` and loads level 14, which has no background (the level
 load makes it 0x28 by 0xe cells, 0x446538); its `.als` places the sign (type 157: the camera at y 0x2a, "continues N"
 in `ltr_sm`, the letters found as type 24) and Harry's state `0x42989c` / `0x4299ad` strikes the match, up / down
-choose, a button confirms and he walks off.  `FUN_00430a69` then takes him at `0x430ca8`: off to the left (0x7e) `*2`;
+choose, a button confirms and he walks off.  (`0x42989c` copies the long at +0x12 of the lit floor's first half into the
+second's, its word +0x12 and the low word of the first half's list link back, 0xffff, over the second's: the second
+half's link back is 0x0046ffff from then on, which nothing follows while the screen lasts.)  `FUN_00430a69` then takes him at `0x430ca8`: off to the left (0x7e) `*2`;
 at x 0xc8 or from 0xc0 on, a continue: four lives (three on hard), no score, no treasures, `*1` back to the level;
 otherwise `*0` / `*2` again.  `*2` (0x44423d) plays sound 0x20, clears the screen and writes "[GAME OVER]" in `ltr_lg`
 (`FUN_00431bfb`, centred on x 0xa0 at y 0x5f), waits 3 s and loads the title (a demo goes to the title at once).
@@ -321,7 +323,7 @@ routine, a value, its text, the script's speed and count.
 | `0x401667` / `0x401686` | wait n + 1 ticks (`DAT_00456004`, kept if a key skips the scene) / wait for flag 0 or 1 (`0x45622f`) and go on |
 | `0x401693` | level 22's second room (`DAT_00456049`), the camera at 0 |
 | `0x4016b6` / `0x4016e9` | Harry Sr. (`hy_sr_g` at 160, 140) / his second frame; go on |
-| `0x4016fd` | wait for a key (or the joystick when it is on), then 30 ticks without keys |
+| `0x4016fd` | wait for a key (or the joystick when it is on; the engine's start key, `DAT_0046fb88`, which it clears with the buttons and the joypad), then 30 ticks without keys |
 | `0x401767` | every actor off |
 | `0x401776` .. `0x4017c0` | the end's words by the difficulty (`DAT_0046fb78`) and the letters (all seven: "time for a photo to document your triumph."), and the letters found in `mi_ptfal` at y 0x52 |
 | `0x40181b` .. `0x401a09` | Harry Jr. runs in (camera after him from x 0x50 to 0x10e), looks up (holds the last frame), stands, runs off left; on level 22 runs into the room (up and down its steps, the camera 2 px a tick to x 0x294) |
@@ -388,7 +390,7 @@ which `FUN_0043628c` counts down to `*6` (back to the Lost City of Copan).
 | `FUN_0042e25e` / `FUN_0042ea52` (`0x42e49b..`, `0x42ec8f..`) | invisible walls: `.trg` cells whose class byte has bit 0, probed 8 / 24 px ahead of Harry at y - 4 and 24 px ahead at y - 0x1c; he snaps to `(x & ~15) + 7` (left) / `+ 9` (right) | `PlayLogic::stepHorizontal` |
 | `FUN_00430229` + `FUN_004251f9` | Harry's trigger cell is `((x + 0x10) >> 4, max(4, y - 0x10) >> 4)`; `.trg` range entries `{0xfe, from, to, id}` cover `from <= row < to` | `PlayLogic::checkTriggers`, `ph::ColumnTable` |
 | `0x46679e..a4` | checkpoint: x, y, the lit marker's x, facing; set to the `^` start by `FUN_004331d8` at each level start (unless Harry comes out of a vortex), moved by the fx_mls markers, where `FUN_00432615` puts Harry back | Harry memory (`h_.w(0x46679e)` ..) |
-| `FUN_004288ec` / `0x4288a2`, `0x4601dd` / `0x4611dd`, `0x465af3..afd`, `0x46a860..66`, `0x46a884..88` | a vortex warp's save: the 4 KB `.als` buffer, the 256 runtime trigger classes, the level, Harry's x + 4 / y / facing, the checkpoint, and the x of each vault vortex taken (it stays shut; cleared by a new game) | `Game::Warp` (`warp()`) |
+| `FUN_004288ec` / `0x4288a2`, `0x4601dd` / `0x4611dd`, `0x465af3..afd`, `0x46a860..66`, `0x46a884..88` | a vortex warp's save: the 4 KB `.als` buffer, the 256 runtime trigger classes, the level, Harry's x + 4 / y / facing, the checkpoint, and the x of each vault vortex taken (it stays shut; cleared by a new game) | `Game::Warp` (`warp()`); the level and Harry's place where the original has them, in the logic's memory (`h_.l(0x465af3)` ..), which `FUN_00432615` reads back |
 | `[DAT_00450510] + 0x1f4 ..` | Genesis RAM the PC keeps in the trigger buffer, read big-endian: the boss pointer (+0x1f4, boss levels), the vaults' ceiling (+0x1f4, 16.16) and its speed (+0x1f8), "a round is on" (+0x1fc), a 128-tick timer (+0x1fe), failed / solved (+0x214 / +0x215), timers (+0x21c), Harry's squash script (+0x2f0, native) | `PlayLogic::tb / tw / tl / tln` (`trgRam_`), `boss_` |
 | `FUN_00434a30` / `0x434d2d` | text in letter objects of type `DAT_00465c58` (ltr_lg capitals, ltr_md for type 0x11, ltr_sm small letters and digits; widths `0x46b0d8`), each line centred on x + 0xa0; a space after a capital is one of two random large glyphs | `PlayLogic::spawnText / textGlyph` |
 | `DAT_00450fc8` / `DAT_004504cc` / `DAT_004601c4` / `DAT_0046d05c` | the level `*7` returns to (1: none, 0xb: back from the 2600 level), "coming out of a vault", "coming out of the 2600 level" (Harry at 0x6e5, 0x587 on level 3), the cheat that sends `*50` to level 24 | `Game::Warp::returnLevel / fromVault / fromAtari / cheat` |

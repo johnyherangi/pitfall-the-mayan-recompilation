@@ -148,11 +148,9 @@ uint8_t recordByte(const Obj& o, int off) {
     b[8] = o.type; b[9] = o.frame; b[0xa] = o.hits; b[0xb] = o.facing;
     std::memcpy(b + 0xc, &o.flags, 2);
     const uint32_t spr = o.rawBox ? o.rawBox->va : o.sprite.addr;
-    const uint32_t prev = o.prev < 0 ? 0xffffffffu : kObjPoolAddr + uint32_t(o.prev) * kObjSize;
-    const uint32_t next = o.next < 0 ? 0xffffffffu : kObjPoolAddr + uint32_t(o.next) * kObjSize;
     std::memcpy(b + 0xe, &spr, 4);
-    std::memcpy(b + 0x14, &prev, 4);
-    std::memcpy(b + 0x18, &next, 4);
+    std::memcpy(b + 0x14, &o.prevA, 4);
+    std::memcpy(b + 0x18, &o.nextA, 4);
     std::memcpy(b + 0x1c, &o.entry, 4);
     b[0x20] = o.id;
     b[0x28] = o.behind; b[0x29] = o.vflip; b[0x2d] = o.whipCool; b[0x2e] = o.touchTick;
@@ -177,7 +175,7 @@ void ObjectSystem::reset() {
     for (int i = 0; i < kPoolSize; ++i) {
         stack_[i] = i;
         Obj& o = recs_[size_t(i)];
-        o.next = -1; o.prev = -1;
+        o.nextA = o.prevA = 0xffffffffu;
         o.type = 0;
         o.freed = true;
     }
@@ -208,28 +206,37 @@ void ObjectSystem::init(Obj& o) {
 }
 
 void ObjectSystem::unlink(Obj& o) {
-    // FUN_0043598f / 0x435532 (0x435b55): out of the list by its own prev / next.
-    if (o.next == -1) {
-        if (o.prev == -1) { head_ = tail_ = -1; return; }
-        recs_[size_t(o.prev)].next = -1;
-        tail_ = o.prev;
+    // FUN_0043598f / 0x435532 (0x435b55): out of the list by its own prev / next, "none" being a
+    // link whose high word is 0xffff (+0x16 / +0x1a), as the original tests them; a link that
+    // leads to no record (the continue screen's floor half, 0x429920, has a prev of 0x0046ffff)
+    // would have the original write past the records, which is left out here.
+    auto at = [&](uint32_t a) -> Obj* {
+        const int i = indexAt(a);
+        if (i < 0) std::fprintf(stderr, "objects: a link to %#x followed\n", a);
+        return i < 0 ? nullptr : &recs_[size_t(i)];
+    };
+    const bool noNext = (o.nextA >> 16) == 0xffff, noPrev = (o.prevA >> 16) == 0xffff;
+    if (noNext) {
+        if (noPrev) { head_ = tail_ = -1; return; }
+        if (Obj* p = at(o.prevA)) p->nextA = 0xffffffffu;
+        tail_ = indexAt(o.prevA);
         return;
     }
-    if (o.prev == -1) {
-        recs_[size_t(o.next)].prev = -1;
-        head_ = o.next;
+    if (noPrev) {
+        if (Obj* n = at(o.nextA)) n->prevA = 0xffffffffu;
+        head_ = indexAt(o.nextA);
         return;
     }
-    recs_[size_t(o.prev)].next = o.next;
-    recs_[size_t(o.next)].prev = o.prev;
+    if (Obj* p = at(o.prevA)) p->nextA = o.nextA;
+    if (Obj* n = at(o.nextA)) n->prevA = o.prevA;
 }
 
 void ObjectSystem::linkTail(Obj& o) {
     const int i = indexOf(o);
-    if (tail_ == -1) { head_ = tail_ = i; o.prev = o.next = -1; return; }
-    recs_[size_t(tail_)].next = i;
-    o.prev = tail_;
-    o.next = -1;
+    if (tail_ == -1) { head_ = tail_ = i; o.prevA = o.nextA = 0xffffffffu; return; }
+    recs_[size_t(tail_)].nextA = recordAddr(i);
+    o.prevA = recordAddr(tail_);
+    o.nextA = 0xffffffffu;
     tail_ = i;
 }
 
@@ -240,9 +247,6 @@ void ObjectSystem::loadImage(const Image& img) {
         Obj& o = recs_[size_t(i)];
         const uint8_t* b = img[size_t(i)].data();
         auto u32 = [&](int off) { uint32_t v; std::memcpy(&v, b + off, 4); return v; };
-        auto rec = [&](uint32_t a) {
-            return a < kObjPoolAddr || a >= kObjPoolAddr + uint32_t(kPoolSize) * kObjSize ? -1 : int((a - kObjPoolAddr) / kObjSize);
-        };
         std::memcpy(o.s, b, kObjSize);                 // the state bytes, by their offsets
         std::memcpy(&o.x, b + 0, 2); std::memcpy(&o.xFrac, b + 2, 2);
         std::memcpy(&o.y, b + 4, 2); std::memcpy(&o.yFrac, b + 6, 2);
@@ -250,7 +254,7 @@ void ObjectSystem::loadImage(const Image& img) {
         std::memcpy(&o.flags, b + 0xc, 2);
         o.sprite = nullptr; o.sprite.addr = u32(0xe);
         o.rawBox = nullptr;
-        o.prev = rec(u32(0x14)); o.next = rec(u32(0x18));
+        o.prevA = u32(0x14); o.nextA = u32(0x18);
         o.entry = u32(0x1c);
         o.id = b[0x20];
         o.behind = b[0x28]; o.vflip = b[0x29]; o.whipCool = b[0x2d]; o.touchTick = b[0x2e];
@@ -270,11 +274,11 @@ Obj* ObjectSystem::allocHead() {
     const int i = indexOf(o);
     setA5(kObjPoolAddr + uint32_t(i) * kObjSize);
     if (head_ == -1) {
-        head_ = tail_ = i; o.prev = o.next = -1;
+        head_ = tail_ = i; o.prevA = o.nextA = 0xffffffffu;
     } else {
-        recs_[size_t(head_)].prev = i;
-        o.next = head_;
-        o.prev = -1;
+        recs_[size_t(head_)].prevA = recordAddr(i);
+        o.nextA = recordAddr(head_);
+        o.prevA = 0xffffffffu;
         head_ = i;
     }
     init(o);
@@ -321,11 +325,16 @@ bool ObjectSystem::moveToTail(Obj& o) {
     return true;
 }
 
+int ObjectSystem::indexAt(uint32_t a) {
+    if (a < kObjPoolAddr || a >= kObjPoolAddr + uint32_t(kPoolSize) * kObjSize || (a - kObjPoolAddr) % kObjSize) return -1;
+    return int((a - kObjPoolAddr) / kObjSize);
+}
+
 uint32_t ObjectSystem::recordAddr(int i) { return i < 0 ? 0xffffffffu : kObjPoolAddr + uint32_t(i) * kObjSize; }
 
 std::vector<Obj*> ObjectSystem::list() {
     std::vector<Obj*> v;
-    for (int i = head_; i != -1 && v.size() <= size_t(kPoolSize); i = recs_[size_t(i)].next) v.push_back(&recs_[size_t(i)]);
+    for (int i = head_; i != -1 && v.size() <= size_t(kPoolSize); i = indexAt(recs_[size_t(i)].nextA)) v.push_back(&recs_[size_t(i)]);
     return v;
 }
 
@@ -338,7 +347,7 @@ void ObjectSystem::tick(ObjCtx& ctx) {
     int guard = 0;
     for (int i = head_; i != -1 && guard < 0x1000; ++guard) {
         Obj& o = recs_[size_t(i)];
-        const int pending = o.next;
+        const int pending = indexAt(o.nextA);
         ctx.harry.setUl(0x465888, recordAddr(pending));      // 0x405224
         size_t& n = o.behind ? behindN_ : frontN_;            // 0x405236 (+0x28)
         if (n + 1 < disp_.size()) {                          // (the original would write on past 0x464e7c)

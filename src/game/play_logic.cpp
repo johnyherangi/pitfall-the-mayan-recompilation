@@ -208,9 +208,9 @@ void PlayLogic::restartAtCheckpoint() {
     }
     if (wp.fromVault) {                                        // DAT_004504cc: out of a vault
         if (wp.als.size() == 0x1000) std::copy(wp.als.begin(), wp.als.end(), alsMem_.begin());
-        h_.x() = wp.x;
-        h_.y() = wp.y;
-        h_.facing() = wp.facing;
+        h_.x() = h_.w(0x465af7);                               // where FUN_004288ec left him
+        h_.y() = h_.w(0x465af9);
+        h_.facing() = h_.b(0x465afd);
         h_.b(0x465b39) = 0xff;                                 // he twirls out of the vortex (FUN_0042a064)
         h_.w(0x46679e) = wp.cpX;
         h_.w(0x4667a0) = wp.cpY;
