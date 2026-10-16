@@ -59,6 +59,13 @@ Obj* ObjCtx::spawnFrom(Obj& parent, bool tail, int d0) {
 }
 void ObjCtx::release(Obj& o) { pl.objectSystem().free(o); }
 
+Obj* ObjCtx::linkAt(const Obj& o, int off) {
+    uint32_t a; std::memcpy(&a, o.s + off, 4);
+    return pl.objAt(a);
+}
+
+void ObjCtx::setLink(Obj& o, int off, const Obj* to) { o.l(off) = int32_t(pl.addrOf(to)); }
+
 Obj* ObjCtx::spawnEffect(Obj& at, const ph::Sprite* sprite, const uint8_t* script, int ticks) {
     // 0x433914: a type 0x68 effect at the object's position playing `script`.
     Obj* e = spawn();                                  // FUN_004356bc(2): every caller passes d2 = 2
@@ -66,7 +73,7 @@ Obj* ObjCtx::spawnEffect(Obj& at, const ph::Sprite* sprite, const uint8_t* scrip
     e->w(0x26) = 0x6663;                               // (d0 != 0: FUN_004263a6)
     e->x = at.x; e->y = at.y;
     e->sprite = sprite;
-    e->script = script;
+    e->l(0x3c) = int32_t(animAddr(script));            // the script's address, as the original keeps it
     e->b(0x46) = uint8_t(ticks);
     e->type = 0x68;
     e->flags = uint16_t((at.flags & 0x8000) + 0x6000);
@@ -134,7 +141,13 @@ uint8_t recordByte(const Obj& o, int off) {
     std::memcpy(b + 4, &o.y, 2); std::memcpy(b + 6, &o.yFrac, 2);
     b[8] = o.type; b[9] = o.frame; b[0xa] = o.hits; b[0xb] = o.facing;
     std::memcpy(b + 0xc, &o.flags, 2);
-    std::memset(b + 0xe, 0, 0x20 - 0xe);             // the sprite, the links, the .als entry
+    const uint32_t spr = o.rawBox ? o.rawBox->va : o.sprite.addr;
+    const uint32_t prev = o.prev < 0 ? 0xffffffffu : kObjPoolAddr + uint32_t(o.prev) * kObjSize;
+    const uint32_t next = o.next < 0 ? 0xffffffffu : kObjPoolAddr + uint32_t(o.next) * kObjSize;
+    std::memcpy(b + 0xe, &spr, 4);
+    std::memcpy(b + 0x14, &prev, 4);
+    std::memcpy(b + 0x18, &next, 4);
+    std::memcpy(b + 0x1c, &o.entry, 4);
     b[0x20] = o.id;
     b[0x28] = o.behind; b[0x29] = o.vflip; b[0x2d] = o.whipCool; b[0x2e] = o.touchTick;
     return b[off];
@@ -173,7 +186,7 @@ void ObjectSystem::init(Obj& o) {
     o.type = 0; o.frame = 0xff; o.hits = 0; o.facing = 0; o.flags = 0;
     o.sprite = nullptr; o.rawBox = nullptr;
     std::memset(o.s + 0x12, 0, 2);
-    o.col = o.row = -1; o.als = -1;                    // +0x1c = 0x466770, a dummy .als entry
+    o.entry = 0x466770;                                // +0x1c: a dummy .als entry
     o.id = 0x10;
     o.s[0x21] = 0xff;
     std::memset(o.s + 0x22, 0, 6);                     // +0x22 .. +0x27
@@ -183,8 +196,6 @@ void ObjectSystem::init(Obj& o) {
     o.touchTick = 0xa;
     o.s[0x2f] = 0xff;
     std::memset(o.s + 0x30, 0, 0x3e);                  // +0x30 .. +0x6d
-    o.link = o.link2 = o.link3 = nullptr;
-    o.parts.clear();
     o.script = nullptr;
     o.freed = false;
 }
@@ -215,19 +226,34 @@ void ObjectSystem::linkTail(Obj& o) {
     tail_ = i;
 }
 
-void ObjectSystem::loadPlaces(const Places& p) {
+void ObjectSystem::loadImage(const Image& img) {
+    // Every field from the bytes; the sprite only as its address (the level that loaded it may be
+    // gone: no record holds one until it is handed out again, which clears it).
     for (int i = 0; i < kPoolSize; ++i) {
         Obj& o = recs_[size_t(i)];
-        const ObjPlace& q = p[size_t(i)];
-        o.x = q.x; o.xFrac = q.xFrac; o.y = q.y; o.yFrac = q.yFrac;
+        const uint8_t* b = img[size_t(i)].data();
+        auto u32 = [&](int off) { uint32_t v; std::memcpy(&v, b + off, 4); return v; };
+        auto rec = [&](uint32_t a) {
+            return a < kObjPoolAddr || a >= kObjPoolAddr + uint32_t(kPoolSize) * kObjSize ? -1 : int((a - kObjPoolAddr) / kObjSize);
+        };
+        std::memcpy(o.s, b, kObjSize);                 // the state bytes, by their offsets
+        std::memcpy(&o.x, b + 0, 2); std::memcpy(&o.xFrac, b + 2, 2);
+        std::memcpy(&o.y, b + 4, 2); std::memcpy(&o.yFrac, b + 6, 2);
+        o.type = b[8]; o.frame = b[9]; o.hits = b[0xa]; o.facing = b[0xb];
+        std::memcpy(&o.flags, b + 0xc, 2);
+        o.sprite = nullptr; o.sprite.addr = u32(0xe);
+        o.rawBox = nullptr;
+        o.prev = rec(u32(0x14)); o.next = rec(u32(0x18));
+        o.entry = u32(0x1c);
+        o.id = b[0x20];
+        o.behind = b[0x28]; o.vflip = b[0x29]; o.whipCool = b[0x2d]; o.touchTick = b[0x2e];
+        o.script = nullptr;
     }
 }
 
-void ObjectSystem::savePlaces(Places& p) const {
-    for (int i = 0; i < kPoolSize; ++i) {
-        const Obj& o = recs_[size_t(i)];
-        p[size_t(i)] = ObjPlace{o.x, o.xFrac, o.y, o.yFrac};
-    }
+void ObjectSystem::saveImage(Image& img) const {
+    for (int i = 0; i < kPoolSize; ++i)
+        for (int k = 0; k < int(kObjSize); ++k) img[size_t(i)][size_t(k)] = recordByte(recs_[size_t(i)], k);
 }
 
 Obj* ObjectSystem::allocHead() {
@@ -478,6 +504,24 @@ bool anim2StepOffset(ObjCtx& ctx, Obj& o, const uint8_t* script, int pcOff, int 
 
 }   // namespace
 
+uint32_t animAddr(const uint8_t* script) {
+    if (!script) return 0;
+    for (size_t i = 0; i < kAnimBlockCount; ++i) {
+        const AnimBlock& b = kAnimBlocks[i];
+        if (script >= b.p && script < b.p + b.len) return b.va + uint32_t(script - b.p);
+    }
+    return harryMemAddr(script);
+}
+
+const uint8_t* animPtr(uint32_t va) {
+    if (va == 0) return nullptr;
+    for (size_t i = 0; i < kAnimBlockCount; ++i) {
+        const AnimBlock& b = kAnimBlocks[i];
+        if (va >= b.va && va < b.va + b.len) return b.p + (va - b.va);
+    }
+    return harryMem(va);
+}
+
 uint32_t anim2Addr(const uint8_t* script) {
     for (size_t i = 0; i < kAnim2ScriptCount; ++i)
         if (kAnim2Scripts[i].script == script) return kAnim2Scripts[i].addr;
@@ -713,7 +757,7 @@ void killObject(ObjCtx& ctx, Obj& o) {
         // fx_deat2, then fxzdeath: the pointer script 0x45b323 at +0x64
         e->script = kAnim2_deathFade; e->l(0x64) = anim2Start(kAnim2_deathFade); e->b(0x68) = 0;
     }
-    e->link = &o;
+    ctx.setLink(*e, 0x50, &o);                                  // (the dead object's record)
     e->b(0x3c) = 1;
     e->type = 0x82;
     e->behind = 0xff;
@@ -725,8 +769,8 @@ void killObject(ObjCtx& ctx, Obj& o) {
     Obj* a3 = e;
     Obj* half = ctx.spawnFrom(o, true, 0);                      // FUN_0043546e(0)
     if (!half) { ctx.release(*a3); return; }
-    a3->link = half;
-    half->link = a3;
+    ctx.setLink(*a3, 0x50, half);
+    ctx.setLink(*half, 0x50, a3);
     std::memcpy(half->s + 0x12, a3->s + 0x12, 2);
     half->w(0x26) = 0x6663;
     half->sprite = ctx.spr("fxzdeath");

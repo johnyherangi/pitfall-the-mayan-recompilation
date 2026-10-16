@@ -30,6 +30,29 @@ uint32_t spriteSlotOf(const char* name) {
     return it == map.end() ? 0 : it->second;
 }
 
+SpriteSlots::SpriteSlots() : value_(size_t(kSpriteSlotCount), 0) {}
+
+uint32_t SpriteSlots::of(uint32_t slot) const {
+    int lo = 0, hi = kSpriteSlotCount - 1;
+    while (lo <= hi) {
+        const int mid = (lo + hi) / 2;
+        if (kSpriteSlots[mid].va == slot) return value_[size_t(mid)];
+        if (kSpriteSlots[mid].va < slot) lo = mid + 1; else hi = mid - 1;
+    }
+    return 0;
+}
+
+const ph::Sprite* SpriteSlots::at(uint32_t addr) const {
+    const auto it = at_.find(addr);
+    return it == at_.end() ? nullptr : it->second;
+}
+
+const char* Harry::sprite() const {
+    if (!slots) return spriteSlotName(ul(0x465b1d));
+    const ph::Sprite* s = slots->at(ul(0x465b1d));
+    return s ? s->name().c_str() : "";
+}
+
 // ---------------------------------------------------------------- memory helpers
 
 uint8_t PlayLogic::mb(uint32_t va) const {

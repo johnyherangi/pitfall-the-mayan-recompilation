@@ -1,8 +1,8 @@
 // memdump <ticks>: the port's run as cmpmem.py reads it, a line per engine tick (the driver's loop
 // step): the step, the engine's tick count, the logic's, the level, the random generator, the logic's
 // memory 0x465800 .. 0x4668ff (with the player's numbers the port keeps apart put at their
-// addresses) and the 80 object records in the original's layout (what the port keeps as pointers,
-// +0x0e .. +0x1b, left 0; the .als entry at +0x1c as the original's address).
+// addresses) and the 80 object records, every byte as the original lays them out (recordByte:
+// the sprite's address in the load block, the list's links and the .als entry's address).
 //
 //   MENU=<level>@<step>  the level picked from the menu before that step (the original's start + 40)
 //   PAD=<file>           mkpad.py's joypad, replayed tick by tick from the level's start (Game::joypadHook)
@@ -67,8 +67,6 @@ int main(int argc, char** argv) {
         std::printf(" ");
         uint8_t mem[game::Harry::kSize];
         std::memcpy(mem, g.logicMemory().mem, sizeof mem);
-        const uint32_t alsAddr = ph::Arena::kAddress + g.arenaLayout().als;
-        auto entryAddr = [&](int als) { return als < 0 ? 0x466770u : alsAddr + uint32_t(als); };
         {
             // the player's numbers at their addresses
             auto put = [&](uint32_t a, const void* v, size_t n) { std::memcpy(mem + (a - game::Harry::kBase), v, n); };
@@ -82,19 +80,9 @@ int main(int argc, char** argv) {
         }
         for (uint32_t i = 0; i < game::Harry::kSize; ++i) std::printf("%02x", mem[i]);
         std::printf(" ");
-        if (game::g_debugLogic) {
-            auto& os = game::g_debugLogic->objectSystem();
-            for (int r = 0; r < 0x50; ++r) {
-                const game::Obj& o = os.record(r);
-                uint8_t b[0x6e] = {};
-                std::memcpy(b + 0, &o.x, 2); std::memcpy(b + 2, &o.xFrac, 2); std::memcpy(b + 4, &o.y, 2); std::memcpy(b + 6, &o.yFrac, 2);
-                b[8] = o.type; b[9] = o.frame; b[0xa] = o.hits; b[0xb] = o.facing; std::memcpy(b + 0xc, &o.flags, 2);
-                const uint32_t ent = entryAddr(o.als); std::memcpy(b + 0x1c, &ent, 4); b[0x20] = o.id;
-                b[0x28] = o.behind; b[0x29] = o.vflip; b[0x2d] = o.whipCool; b[0x2e] = o.touchTick;
-                std::memcpy(b + 0x30, o.s + 0x30, 0x6e - 0x30);
-                for (int i = 0; i < 0x6e; ++i) std::printf("%02x", b[i]);
-            }
-        }
+        if (game::g_debugLogic)
+            for (uint32_t a = game::kObjPoolAddr; a < game::kObjPoolAddr + 0x50 * game::kObjSize; ++a)
+                std::printf("%02x", game::g_debugLogic->memByte(a));
         std::printf("\n");
     }
 }

@@ -95,6 +95,7 @@ extern const SlotBinding kSlotBindings[];
 struct SpriteHitbox {
     const char* sprite;
     int16_t dx, w, dy, h;
+    uint32_t va = 0;           // a box record of an object's own: its address in PITFALL.EXE
 };
 extern const SpriteHitbox kHitboxes[];
 extern const int kHitboxCount;

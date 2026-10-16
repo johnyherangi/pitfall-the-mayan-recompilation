@@ -99,6 +99,8 @@ Game::Game(std::string dataDir, engine::Options& options)
     : dataDir_(std::move(dataDir)), options_(options) {
     palette_.setFreeRange(options_.staticColours, 256 - options_.staticColours);    // FUN_0043e1c0
     assets_ = std::make_unique<ph::AssetBank>(ph::loadInit(dataDir_, palette_, &arena_));   // FUN_004457d0
+    fillSpriteSlots(false);
+    logicMem_.slots = &spriteSlots_;
     mixer_.loadBank(*assets_);                                                      // FUN_0043ce10
     mixer_.setEnabled(options_.soundEnabled);
     cd_ = std::make_unique<RippedCd>(dataDir_, mixer_);                             // FUN_00441cf0
@@ -173,6 +175,17 @@ void Game::setCdVolume(int pct) {
 
 void Game::setLogic(std::unique_ptr<LevelLogic> logic) { logic_ = std::move(logic); autoLogic_ = false; }
 
+void Game::fillSpriteSlots(bool level) {
+    // The slots INIT.PH's sprites go to (FUN_004457d0), or a level's (FUN_00447190, the slots
+    // bound to its sprites under other names included); the others keep what they held.
+    auto loaded = [&](auto add) {
+        for (const auto& s : assets_->sprites) add(s.get());
+        if (level_) for (const auto& s : level_->sprites) add(s.get());
+    };
+    if (level) spriteSlots_.fill([&](const char* n) -> const ph::Sprite* { return level_->sprite(n); }, loaded);
+    else spriteSlots_.fill([&](const char* n) -> const ph::Sprite* { return assets_->sprite(n); }, loaded);
+}
+
 const ph::Sprite* Game::findSprite(const std::string& name) const {
     if (level_) if (const ph::Sprite* s = level_->sprite(name)) return s;
     return assets_->sprite(name);
@@ -206,6 +219,7 @@ void Game::startLevel(int level) {
         if (loadingHook) loadingHook(level == kTitleScreen ? 2 : 1);
     }
     level_ = std::make_unique<ph::LevelData>(ph::loadLevel(level, dataDir_, palette_, &arena_));
+    fillSpriteSlots(true);                               // (FUN_00447190's slots)
     // (DAT_0046fb74, the engine's tick count, runs on from the boot: only the frame rate's text
     // starts it again, FUN_00443c90; the clouds drift on its fourth ticks)
     const int globalFrame = fs_.globalFrame;
@@ -244,7 +258,7 @@ void Game::startLevel(int level) {
         logic_.reset();
         if (level == kTitleScreen) {}                       // (FUN_00442410 starts no logic on the title)
         else if (!level_->collision.empty() || level == kAtari2600Level || level == kMapScreen || (level >= kIntro && level <= kCredits))
-            logic_ = std::make_unique<PlayLogic>(logicMem_, objPlaces_);
+            logic_ = std::make_unique<PlayLogic>(logicMem_, objRecords_);
         else logic_ = std::make_unique<ExplorerLogic>();
     }
     // The level's CD tracks (0x470470 / 0x4704d8; the intro after the demos plays track 5).

@@ -3,7 +3,9 @@
 Small headless programs used to verify the object handlers: they start a level, move Harry
 with the debug fly (`allowCheat`), feed scripted input and print object state.  Each port in
 `src/game/handlers.cpp` was checked with one of them.  Run them from the repository root —
-they load the game data from `original/`.
+they load the game data from `original/`.  They are kept as they were when used: the sources
+have moved on since, and `dbg5` .. `dbg11` no longer build as they are (`re/verify` holds the
+checks against the original that are kept up to date).
 
 Build against the static libraries of a CMake/Ninja build (g++ or clang; MSVC needs its own
 link line):

@@ -109,6 +109,11 @@ out.append('    for (const Blob& b : kBlobs) if (va >= b.va && va < b.va + b.len
 out.append('    return nullptr;')
 out.append('}')
 out.append('')
+out.append('uint32_t harryMemAddr(const uint8_t* p) {')
+out.append('    for (const Blob& b : kBlobs) if (p >= b.p && p < b.p + b.len) return b.va + uint32_t(p - b.p);')
+out.append('    return 0;')
+out.append('}')
+out.append('')
 out.append('const SpriteSlot kSpriteSlots[] = {')
 for k, v in sorted(slots.items(), key=lambda kv: int(kv[0], 16)):
     out.append(f'    {{{int(k, 16):#x}, "{v}"}},')

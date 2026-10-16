@@ -157,6 +157,7 @@ public:
     void setMode(Mode m) { mode_ = m; }
     engine::Options& options() { return options_; }
     const ph::Sprite* findSprite(const std::string& name) const;   // level first, then INIT.PH
+    const SpriteSlots& spriteSlots() const { return spriteSlots_; }
     void playSound(int id);                                           // FUN_0043cc10(id, 0)
     bool soundPlaying(int id) const { return mixer_.playing(id); }
     void stopSound(int id) { mixer_.stop(id); }
@@ -286,8 +287,8 @@ public:
     // The load block (ph::Arena) and where the level's records are in it.
     ph::Arena& arena() { return arena_; }
     const ph::ArenaLayout& arenaLayout() const { return level_->arena; }
-    // The object records' places (ObjPlace) while no level's logic holds them.
-    ObjectSystem::Places& objectPlaces() { return objPlaces_; }
+    // The object records while no level's logic holds them.
+    ObjectSystem::Image& objectRecords() { return objRecords_; }
 
 private:
     void computeParallax();            // FUN_00443370 per-level switch
@@ -323,7 +324,7 @@ private:
     std::unique_ptr<ph::AssetBank> assets_;
     std::unique_ptr<ph::LevelData> level_;
     int levelLoads_ = 0;
-    ObjectSystem::Places objPlaces_{};   // (before logic_, which gives them back as it goes)
+    ObjectSystem::Image objRecords_{};   // (before logic_, which gives them back as it goes)
     std::unique_ptr<LevelLogic> logic_;
     bool autoLogic_ = true;            // pick PlayLogic / ExplorerLogic per level
     engine::Framebuffer fb_;
@@ -398,6 +399,7 @@ private:
     };
     void beginCommand();               // the switch on DAT_0046b1a8[1]
     void loadLevel(int level);         // FUN_004460e0 as the switch calls it (with the CD's fade)
+    void fillSpriteSlots(bool level);  // the sprite slots a load fills (INIT.PH's, or the level's)
     void enterStage(const Stage& st);
     void beginStage();
     void runStages(int ms);
@@ -440,6 +442,7 @@ private:
     std::string statusText_ = " ";    // FUN_00440bc0's text
     bool hostText_ = false;
     Harry logicMem_;
+    SpriteSlots spriteSlots_;          // 0x46ffc8 ..: the sprites' addresses in the load block
     std::vector<HostText> hostTexts_;
     int statusSerial_ = 0;
     uint8_t hatman_ = 0;               // DAT_0046d058

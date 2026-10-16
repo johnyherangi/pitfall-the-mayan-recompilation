@@ -1,16 +1,15 @@
 # cmpmem.py <capture> <memdump output> <level> [--all]: the original's logic memory (0x465800 ..
-# 0x4668ff) and object records against the port's, tick by tick from the level's start (each tick's
-# finished state, ticks.py; a tick without one is left out).  Prints each difference's first and
-# last tick, its count and its first values (original / port); --all prints every differing tick.
+# 0x4668ff) and its 80 object records, every byte of each (the free ones too), against the port's,
+# tick by tick from the level's start (each tick's finished state, ticks.py; a tick without one is
+# left out).  Prints each difference's first and last tick, its count and its first values
+# (original / port); --all prints every differing tick.
 #
 #   PRETICKS=13       levels 0, 2, 5, 8 and 16 (their load runs on 13 ticks)
-#   SKIPMEM=a:n,...   memory left out (hex address, byte count); the default is Harry's sprite,
-#                     0x465b1d:4, which the port keeps as the slot's address (the original has the
-#                     sprite's own in the load block)
+#   SKIPMEM=a:n,...   memory left out (hex address, byte count)
 #   RECSKIP=t:o:n,... record bytes left out by type (hex type, offset, count)
-#   NOPTRSKIP=1       compare the records' pointer fields too: by default a 4-byte field holding an
-#                     address of the executable or of the load block is left out where the port
-#                     keeps a reference, an index or nothing
+#   PTRSKIP=1         leave out a record's 4-byte fields that hold an address of the executable or
+#                     of the load block in the original (to look past pointers while a port of
+#                     them is under way)
 import os
 import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -39,7 +38,7 @@ for line in open(sys.argv[2]):
 print('original level start: tick', o_start, '- port:', p_start)
 
 skip = set()
-for spec in os.environ.get('SKIPMEM', '465b1d:4').split(','):
+for spec in os.environ.get('SKIPMEM', '').split(','):
     if spec:
         a, n = spec.split(':')
         skip |= set(range(int(a, 16), int(a, 16) + int(n)))
@@ -48,8 +47,7 @@ for spec in os.environ.get('RECSKIP', '').split(','):
     if spec:
         t, o, n = spec.split(':')
         recskip.setdefault(int(t, 16), set()).update(range(int(o, 16), int(o, 16) + int(n)))
-ptrskip = not os.environ.get('NOPTRSKIP')
-FIELDS = list(range(0, 0xe)) + list(range(0x1c, 0x21)) + [0x28, 0x29, 0x2d, 0x2e] + list(range(0x30, 0x6e))
+ptrskip = bool(os.environ.get('PTRSKIP'))
 
 def is_ptr(rec, j):
     if j < 0x30 or j + 4 > 0x6e:
@@ -77,10 +75,8 @@ for k in sorted(port):
         diffs.append(('mem %#x' % (0x465800 + a), om[a:b + 1].hex() + ' / ' + pm[a:b + 1].hex()))
     for n in range(0x50):
         ob, pb = orr[n * 0x6e:(n + 1) * 0x6e], prr[n * 0x6e:(n + 1) * 0x6e]
-        if ob[8] == 0 and pb[8] == 0:
-            continue
         rs = recskip.get(ob[8], set()) | recskip.get(pb[8], set())
-        idx = [i for i in FIELDS if ob[i] != pb[i] and i not in rs]
+        idx = [i for i in range(0x6e) if ob[i] != pb[i] and i not in rs]
         if ptrskip:
             idx = [i for i in idx if not any(is_ptr(ob, j) for j in (i - (i & 1) - 2, i - (i & 1)))]
         if idx:

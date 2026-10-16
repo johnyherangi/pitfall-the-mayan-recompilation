@@ -100,7 +100,7 @@ namespace { int jaguarTest(const std::string& dir); int bungeeTest(const std::st
             int transitionTest(const std::string& dir); int musicTest(const std::string& dir);
             int cutsceneTest(const std::string& dir); int titleTest(const std::string& dir); int earthwormTest(const std::string& dir);
             int cheatTest(const std::string& dir); int menuTest(const std::string& dir); int exitTest(const std::string& dir);
-            int leftoversTest(const std::string& dir); }
+            int leftoversTest(const std::string& dir); int pointersTest(const std::string& dir); }
 namespace {
 // The engine's blocking parts run out: a command's fades and waits, a level load's fade in.
 int settle(game::Game& g, int cap = 1000) {
@@ -166,6 +166,7 @@ int gameplayTests(const std::string& dir) {
     fails += menuTest(dir);
     fails += exitTest(dir);
     fails += leftoversTest(dir);
+    fails += pointersTest(dir);
     return fails;
 }
 }
@@ -1443,6 +1444,58 @@ int leftoversTest(const std::string& dir) {
         ++fails;
     } else {
         std::printf("leftovers: the spawners' .als address (%#x) kept in DAT_00466788; a whip's hit chips the gargoyle at %d, the chip flying at %#x\n", als, chipAt, high);
+    }
+    return fails;
+}
+
+// The pointers in the records and the logic's memory hold the original's addresses: Harry's sprite
+// word the sprite's place in the load block, the bungee vine its pieces' records (l50 / l54 / l6a)
+// and the stretch piece its rope segments (a word each at +0x32.., the record's address less
+// 0x46284a).
+int pointersTest(const std::string& dir) {
+    int fails = 0;
+    engine::Options opts; opts.allowCheat = true;
+    game::Game g(dir, opts);
+    g.startLevel(0); g.setMode(game::Mode::Playing); settle(g);
+    game::PlayLogic* pl = game::g_debugLogic;
+    if (!pl) return 1;
+    const game::Harry& h = pl->harry();
+    const ph::Sprite* hs = h.spriteRecord();
+    const bool harry = hs && h.ul(0x465b1d) == hs->arenaAddr() && hs->arenaAddr() > ph::Arena::kAddress;
+    for (int i = 0; i < 3000; ++i) {                      // fly to the branch with the vine
+        if (std::abs(h.x() - 24) <= 7 && std::abs(h.y() - 650) <= 7) break;
+        engine::HostInput fly; fly.ctrlDown = true;
+        fly.keyDown[h.x() < 24 ? 0x27 : 0x25] = std::abs(h.x() - 24) > 7;
+        fly.keyDown[h.y() < 650 ? 0x28 : 0x26] = std::abs(h.y() - 650) > 7;
+        g.tick(fly);
+    }
+    engine::HostInput idle;
+    for (int i = 0; i < 4; ++i) g.tick(idle);
+    int pieces = 0, segments = -1;
+    for (game::Obj* o = pl->objectSystem().first(); o; o = pl->objectSystem().nextOf(*o)) {
+        if (o->type != 27) continue;
+        const game::Obj* top = pl->objAt(uint32_t(o->l(0x50)));
+        const game::Obj* body = pl->objAt(uint32_t(o->l(0x54)));
+        const game::Obj* stub = pl->objAt(uint32_t(o->l(0x6a)));
+        auto named = [](const game::Obj* r, const char* n) { return r && r->sprite && r->sprite->name() == n; };
+        pieces = named(top, "ob_bunge") + named(body, "ob_bunge") + named(stub, "ob_bungs");
+        if (!body) break;
+        segments = 0;
+        for (int k = 0; k < 23; ++k) {
+            uint16_t w; std::memcpy(&w, body->s + 0x32 + 2 * k, 2);
+            if (w == 0) break;
+            if (!named(pl->objAt(0x46284au + w), "ob_bunge")) { segments = -1; break; }
+            ++segments;
+        }
+        break;
+    }
+    if (!harry || pieces != 3 || segments <= 0) {
+        std::printf("FAIL: pointers: Harry's sprite word %#x (%s), the vine's pieces %d, its segments %d\n",
+                    h.ul(0x465b1d), hs ? hs->name().c_str() : "-", pieces, segments);
+        ++fails;
+    } else {
+        std::printf("pointers: Harry's sprite word %#x (%s in the load block); the bungee vine's 3 pieces and %d rope segment%s by their records' addresses\n",
+                    h.ul(0x465b1d), hs->name().c_str(), segments, segments == 1 ? "" : "s");
     }
     return fails;
 }

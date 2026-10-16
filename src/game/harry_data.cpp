@@ -485,6 +485,11 @@ const uint8_t* harryMem(uint32_t va) {
     return nullptr;
 }
 
+uint32_t harryMemAddr(const uint8_t* p) {
+    for (const Blob& b : kBlobs) if (p >= b.p && p < b.p + b.len) return b.va + uint32_t(p - b.p);
+    return 0;
+}
+
 const SpriteSlot kSpriteSlots[] = {
     {0x46ffc8, "abc"},
     {0x46ffcc, "abc1"},

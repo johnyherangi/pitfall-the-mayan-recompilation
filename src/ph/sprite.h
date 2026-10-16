@@ -53,6 +53,11 @@ public:
     // Apply a local->global palette remap to every literal pixel (FUN_004453a0 loop).
     void remapInPlace(const uint8_t remap[256]);
 
+    // Where the record sits in the original's load block (Arena::kAddress + its offset), the
+    // address its sprite slot and the records that show it hold; 0 when not loaded there.
+    uint32_t arenaAddr() const { return arenaAddr_; }
+    void setArenaAddr(uint32_t a) { arenaAddr_ = a; }
+
     // Decode a frame into an 8-bit index bitmap; 0xff marks transparent pixels.
     std::vector<uint8_t> decode(int frame) const;
 
@@ -62,6 +67,7 @@ private:
     std::vector<SpriteFrame> frames_;
     uint32_t palOff_ = 0;
     int ncolors_ = 0;
+    uint32_t arenaAddr_ = 0;
 };
 
 class RawImage {

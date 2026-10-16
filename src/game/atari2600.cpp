@@ -34,7 +34,7 @@
 namespace game {
 
 namespace {
-const ph::SpriteHitbox kHarryBox{"", -2, 9, -0x1b, 0x16};   // 0x4024dc
+const ph::SpriteHitbox kHarryBox{"", -2, 9, -0x1b, 0x16, 0x4024dc};
 constexpr uint32_t kAls2600 = 0x47044c;                     // the sprite slot of als2600
 int16_t le16(const uint8_t* p) { return int16_t(p[0] | p[1] << 8); }
 }

@@ -46,10 +46,12 @@ joypad alone without a pause, so that every tick's joypad is seen.
 `memdump` runs the port with the level picked from the menu (`MENU=<level>@<step>`) and the
 original's joypad given to it tick by tick (`PAD=<file>`, through `Game::joypadHook`), and prints its
 memory and records in the original's layout; `cmpmem.py` compares the two tick by tick from the
-level's start.  `verify_level.sh <level> <menu-item-y>` does all of it for one level, with 50 s of
-play: the right arrow held from 14 s, the whip every 0.6 s, a jump every 2.3 s and four sling shots
-(in the vaults, 11 to 13, the three levers in turn every 0.9 s).  Every level of the menu came out
-the same as the original's, byte for byte, on every tick whose end the sampler saw (97 to 100%).
+level's start, every byte of the logic's memory and of every record, the free ones included.
+
+`verify_level.sh <level> <menu-item-y>` does all of it for one level, with 50 s of play: the right
+arrow held from 14 s, the whip every 0.6 s, a jump every 2.3 s and four sling shots (in the vaults,
+11 to 13, the three levers in turn every 0.9 s).  Every level of the menu came out the same as the
+original's, every byte, on every tick whose end the sampler saw (97 to 100%).
 
 What has to be right for the comparison to mean something:
 
@@ -67,11 +69,12 @@ What has to be right for the comparison to mean something:
   turned to the level; levels 0, 2, 5, 8 and 16 run 13 more ticks in their load (`PRETICKS=13`).
   The port's menu step for it is that tick less those 13, plus 40: from there the logic's memory,
   the records and the random generator are the original's, tick for tick.
-* **What the port keeps differently.**  Harry's sprite word (`0x465b1d`: the port's is the slot's
-  address, the original's the sprite's own in the load block), the records' sprite and list
-  pointers (`+0x0e .. +0x1b`) and, by default, the records' other pointer fields (`cmpmem.py`'s
-  `NOPTRSKIP` compares them).  The player's numbers the port keeps in `PlayerStats` and the
-  level-script flags in `Game::levelFlags_` are put at their addresses by `memdump`.
+* **The pointers.**  The port keeps what the original's memory holds as addresses as those
+  addresses: Harry's sprite word and a record's sprite (the sprite's place in the load block, which
+  sits where it sat in the original's runs, `ph::Arena::kAddress`), the records' links to each
+  other and their scripts, the list's links and the .als entries, so they are compared like the
+  rest (`PTRSKIP=1` looks past such fields).  The player's numbers the port keeps in `PlayerStats`
+  and the level-script flags in `Game::levelFlags_` are put at their addresses by `memdump`.
 
 ## By frames
 

@@ -33,7 +33,7 @@ void PlayLogic::setFixed(uint32_t a, uint32_t v) { h_.uw(a) = uint16_t(v >> 16);
 void PlayLogic::listAll() {
     // FUN_00435174: Harry's display entry, then every object's from the tail of the list.
     h_.w(0x465886) = 0x7000;
-    displayEntry(h_.x(), h_.y(), h_.frame(), h_.facing(), h_.b(0x465b38), h_.flags(), game_->findSprite(h_.sprite()));
+    displayEntry(h_.x(), h_.y(), h_.frame(), h_.facing(), h_.b(0x465b38), h_.flags(), h_.spriteRecord());
     const std::vector<Obj*> objs = objects_.list();
     for (auto it = objs.rbegin(); it != objs.rend(); ++it) displayEntry(**it);
 }

@@ -19,6 +19,8 @@
 
 #include <cstdint>
 #include <cstring>
+#include <unordered_map>
+#include <vector>
 
 namespace game {
 
@@ -28,11 +30,35 @@ class PlayLogic;
 // The bytes of PITFALL.EXE that Harry's code reads at their original addresses (animation
 // scripts, tables), or nullptr when the address was not extracted.
 const uint8_t* harryMem(uint32_t va);
+uint32_t harryMemAddr(const uint8_t* p);   // the address of bytes harryMem gave (0: not theirs)
 struct SpriteSlot { uint32_t va; const char* name; };
 extern const SpriteSlot kSpriteSlots[];   // 0x46ffc8..0x470470: slot address -> sprite name
 extern const int kSpriteSlotCount;
 const char* spriteSlotName(uint32_t va);  // "" when unknown
 uint32_t spriteSlotOf(const char* name);  // 0 when unknown
+
+// The sprite slots' contents: each holds the address of a sprite in the load block, as the
+// loads fill them (FUN_004457d0 the INIT.PH sprites', FUN_00447190 a level's; a slot the level
+// does not fill keeps what an earlier load put there), and the sprites now at those addresses.
+class SpriteSlots {
+public:
+    SpriteSlots();
+    uint32_t of(uint32_t slot) const;                  // the slot's content (0 for an unknown slot)
+    uint32_t of(const char* name) const { return of(spriteSlotOf(name)); }
+    const ph::Sprite* at(uint32_t addr) const;         // the sprite at that address (nullptr: none)
+    // A load: each slot the finder knows a sprite for takes its address; `loaded` are the
+    // sprites now in the block (INIT.PH's and the level's).
+    template <class Find, class Each> void fill(Find find, Each loaded) {
+        for (size_t i = 0; i < value_.size(); ++i)
+            if (const ph::Sprite* s = find(kSpriteSlots[i].name)) value_[i] = s->arenaAddr();
+        at_.clear();
+        loaded([&](const ph::Sprite* s) { if (s->arenaAddr()) at_.emplace(s->arenaAddr(), s); });
+    }
+
+private:
+    std::vector<uint32_t> value_;
+    std::unordered_map<uint32_t, const ph::Sprite*> at_;
+};
 
 constexpr uint32_t kHarryAddr = 0x465b0f;     // Harry's record (a6 in his state code)
 constexpr uint32_t kObjPoolAddr = 0x462854;   // the object records (0x50 x 0x6e bytes)
@@ -86,12 +112,16 @@ struct Harry {
     void setCont(uint32_t a) { setUl(0x465b69, a); }
     bool gone() const { return b(0x465b72) != 0; }          // DAT_00465b72: dying / leaving (0x80 = restart)
 
-    // The sprite (+0xe, DAT_00465b1d): the original stores the sprite slot's address.
-    uint32_t spriteSlot() const { return ul(0x465b1d); }
-    const char* sprite() const { return spriteSlotName(ul(0x465b1d)); }
-    void setSprite(const char* name) { setUl(0x465b1d, spriteSlotOf(name)); }
-    void setSpriteSlot(uint32_t slot) { setUl(0x465b1d, slot); }
-    bool spriteIs(const char* name) const { return ul(0x465b1d) == spriteSlotOf(name); }
+    // The sprite (+0xe, DAT_00465b1d): the sprite's address in the load block, a slot's content
+    // (without the slots, as in a test of the memory alone, the slot's own address).
+    const SpriteSlots* slots = nullptr;
+    uint32_t slotContent(uint32_t slot) const { return slots ? slots->of(slot) : slot; }
+    const char* sprite() const;                        // its name ("" when none)
+    const ph::Sprite* spriteRecord() const { return slots ? slots->at(ul(0x465b1d)) : nullptr; }
+    void setSprite(const char* name) { setUl(0x465b1d, slotContent(spriteSlotOf(name))); }
+    void setSpriteSlot(uint32_t slot) { setUl(0x465b1d, slotContent(slot)); }
+    bool spriteIs(const char* name) const { return ul(0x465b1d) == slotContent(spriteSlotOf(name)); }
+    bool spriteSlotIs(uint32_t slot) const { return ul(0x465b1d) == slotContent(slot); }
 
     // The runtime trigger class table (DAT_004658c0, 256 bytes).
     uint8_t* trgClass() { return at(0x4658c0); }

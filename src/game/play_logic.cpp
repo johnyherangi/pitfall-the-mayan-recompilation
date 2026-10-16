@@ -30,8 +30,10 @@ uint32_t PlayLogic::addrOf(const Obj* o) const {
 }
 
 uint8_t PlayLogic::memByte(uint32_t addr) {
-    if (addr >= kObjPoolAddr && addr < kObjPoolAddr + uint32_t(ObjectSystem::kPoolSize) * kObjSize)
-        return recordByte(objects_.record(int((addr - kObjPoolAddr) / kObjSize)), int((addr - kObjPoolAddr) % kObjSize));
+    if (addr >= kObjPoolAddr && addr < kObjPoolAddr + uint32_t(ObjectSystem::kPoolSize) * kObjSize) {
+        const Obj& o = objects_.record(int((addr - kObjPoolAddr) / kObjSize));
+        return recordByte(o, int((addr - kObjPoolAddr) % kObjSize));
+    }
     if (addr >= Harry::kBase && addr < Harry::kBase + Harry::kSize) return *h_.at(addr);
     if (const uint8_t* p = harryMem(addr)) return *p;
     return 0;
@@ -727,11 +729,7 @@ void PlayLogic::markCollected(const Obj& o) { (void)o; }   // the working id sim
 
 void PlayLogic::restoreEntry(const Obj& o) {
     // The handler exits write the saved id (+0x20) back into the working .als copy (+0x1c).
-    putEntryId(entryAddr(o.als), o.id);
-}
-
-uint32_t PlayLogic::entryAddr(int als) const {
-    return als < 0 ? 0x466770u : ph::Arena::kAddress + game_->arenaLayout().als + uint32_t(als);
+    putEntryId(o.entry, o.id);
 }
 
 void PlayLogic::putEntryId(uint32_t entry, uint8_t id) {
@@ -752,7 +750,7 @@ void PlayLogic::markKilled(const Obj& o) {
     // with the dummy entry.)
     if (!game_->hardMode() && o.type == 0x23) return;
     for (uint32_t a = kKillList; a < kKillListEnd; a += 8)
-        if (h_.b(a) == 0) { h_.b(a) = 0xf; h_.b(a + 1) = o.id; h_.setUl(a + 2, entryAddr(o.als)); return; }
+        if (h_.b(a) == 0) { h_.b(a) = 0xf; h_.b(a + 1) = o.id; h_.setUl(a + 2, o.entry); return; }
 }
 
 // ---------------------------------------------------------------- FUN_00434a30: text in letter objects
@@ -881,8 +879,10 @@ void PlayLogic::hudPlacement() {
         case 0x7e: o.x = int16_t(cx - o.w(0x32)); break;
         case 0x4b: o.x = int16_t(cx - 0x10); o.y = int16_t(cy + 0x50); break;
         case 0x30: {                                                        // 0x4335ce: the boss meter
-            Obj* d2 = o.link; Obj* d3 = o.link2; Obj* pct = o.link3;      // l32 / l36 / l60
-            game_->regA5() = addrOf(d2);                                   // 0x4335e1: a5 = l32
+            Obj* d2 = objAt(uint32_t(o.l(0x32)));                          // its digits and its % sign
+            Obj* d3 = objAt(uint32_t(o.l(0x36)));
+            Obj* pct = objAt(uint32_t(o.l(0x60)));
+            game_->regA5() = uint32_t(o.l(0x32));                          // 0x4335e1: a5 = l32
             int16_t x = int16_t(cx + 0x82);
             if (o.b(0x5a) == 1) x = int16_t(x - 0x1c);
             if (o.b(0x5a) == 2) x = int16_t(x + 0x14);
@@ -977,7 +977,7 @@ void PlayLogic::displayList(Game& g) {
             if (!neg(h_.w(0x4658a6) - 0x40)) h_.w(0x4658a6) = 0x40;
         }
         if ((h_.spriteIs("hyihang") || c == 0x42dd10 || c == 0x42ddc8) && h_.facing()) x += 3;
-        displayEntry(x, y, h_.frame(), h_.facing(), h_.b(0x465b38), h_.flags(), g.findSprite(h_.sprite()));
+        displayEntry(x, y, h_.frame(), h_.facing(), h_.b(0x465b38), h_.flags(), h_.spriteRecord());
     }
     objs(ObjectSystem::kFront);
 }

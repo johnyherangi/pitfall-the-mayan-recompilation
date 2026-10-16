@@ -1000,7 +1000,7 @@ void PlayLogic::h42989c() {
     Obj* a5 = newObjAtHarry(0, true);
     if (a5) {
         a5->flags = 0x6000; a5->sprite = game_->findSprite("fxifloor");
-        a5->link = a3;
+        a5->l(0x50) = int32_t(addrOf(a3));                  // (the other half)
         a5->w(0x26) = 0x6663;
         a5->facing = 0xff;
     }
@@ -1560,11 +1560,11 @@ void PlayLogic::h42acc2() {
                 a5->l(0x36) = int32_t(r);
                 if (r & 1) {
                     a5->sprite = game_->findSprite("fx_leaf1");
-                    a5->script = harryMem(0x4619df);
+                    a5->l(0x32) = 0x4619df;           // its script, where a feather keeps it
                     a5->l(0x36) += 0x6000;
                 } else {
                     a5->sprite = game_->findSprite("fxzleaf2");
-                    a5->script = harryMem(0x4619e8);
+                    a5->l(0x32) = 0x4619e8;
                     a5->l(0x36) += 0x10000;
                 }
             }
@@ -1686,7 +1686,7 @@ void PlayLogic::h42b2bc() {
     for (int guard = 0; guard < 64; ++guard) {
         const uint32_t slot = ml(a0);
         a0 += 4;
-        if (slot == h_.spriteSlot()) {
+        if (h_.spriteSlotIs(slot)) {                       // (the slot's content against Harry's)
             for (; mw(a0) != 0xffff; a0 += 0xa) {
                 if (mb(a0) != h_.frame()) continue;
                 const int16_t dx0 = int16_t(mw(a0 + 2)), dy0 = int16_t(mw(a0 + 4));
@@ -3869,11 +3869,11 @@ void PlayLogic::h42bda7() {
                         a5->l(0x36) = int32_t(r);
                         if (r & 1) {
                             a5->sprite = game_->findSprite("fx_leaf1");
-                            a5->script = harryMem(0x4619df);
+                            a5->l(0x32) = 0x4619df;           // its script, where a feather keeps it
                             a5->l(0x36) += 0x6000;
                         } else {
                             a5->sprite = game_->findSprite("fxzleaf2");
-                            a5->script = harryMem(0x4619e8);
+                            a5->l(0x32) = 0x4619e8;
                             a5->l(0x36) += 0x10000;
                         }
                     }

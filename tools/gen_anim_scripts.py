@@ -108,6 +108,12 @@ for i, b in enumerate(blocks):
     out.append('};')
     for a, name in b['names']:
         out.append(f'const uint8_t* const kAnim_{name} = kAnimMem{i} + {a - b["start"]:#x};  // {a:#x}, {script_len(a)} bytes')
+# the blocks with their addresses, for a script's address where a record keeps it
+out.append('const AnimBlock kAnimBlocks[] = {')
+for i, b in enumerate(blocks):
+    out.append(f'    {{kAnimMem{i}, {b["start"]:#x}, {b["end"] - b["start"]:#x}}},')
+out.append('};')
+out.append(f'const size_t kAnimBlockCount = {len(blocks)};')
 sprites = []
 anim2_addrs = []
 for name, addr in scripts['anim2'].items():

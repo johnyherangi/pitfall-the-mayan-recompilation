@@ -145,7 +145,7 @@ restarts and continue screens.  Read while it runs, the original's memory (the
 logic's variables, the object records, the random generator) matches the
 port's byte for byte, tick by tick, on every one of those levels, through runs
 with the whip, the sling and the vaults' levers, kills, deaths and restarts
-(but for the pointers the port keeps as references).  What still differs
+(the pointers in it too, kept as the original's addresses).  What still differs
 from the original is listed in `docs/RECONSTRUCTION_LEDGER.md` (the platform's
 parts: the mixer for Miles, the ini file for the registry, the full-screen
 modes, WinHelp).

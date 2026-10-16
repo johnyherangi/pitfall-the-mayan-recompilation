@@ -28,9 +28,9 @@ constexpr LevelScriptEntry kLevelScript[] = {
 class PlayLogic : public LevelLogic {
 public:
     // mem: the logic's memory (0x465800 .. 0x4668ff), the Game's, kept from level to level;
-    // places: the object records' places (ObjPlace), the Game's too, taken and given back.
-    PlayLogic(Harry& mem, ObjectSystem::Places& places) : h_(mem), places_(places) { objects_.loadPlaces(places_); }
-    ~PlayLogic() override { objects_.savePlaces(places_); }
+    // records: the object records (the Game's while no logic holds them), taken and given back.
+    PlayLogic(Harry& mem, ObjectSystem::Image& records) : h_(mem), records_(records) { objects_.loadImage(records_); }
+    ~PlayLogic() override { objects_.saveImage(records_); }
     PlayLogic(const PlayLogic&) = delete;
     PlayLogic& operator=(const PlayLogic&) = delete;
     void enter(Game& g) override;               // FUN_00435fc0 / FUN_0043256f: a level starts
@@ -76,9 +76,7 @@ public:
     void markCollected(const Obj& o);          // the .als entry stays cleared (it comes back after a death unless special)
     void markKilled(const Obj& o);             // 0x4081fc: the 0x465a40 list brings the entry back after 15 s
     void restoreEntry(const Obj& o);           // put the .als id back: the entry respawns when it scrolls back in
-    // The .als entry's address as the original keeps it (in the load block; the dummy 0x466770
-    // for an object without one), and [entry + 1] = id.
-    uint32_t entryAddr(int als) const;
+    // [entry + 1] = id: an .als entry's (in the load block), or the dummy 0x466770's.
     void putEntryId(uint32_t entry, uint8_t id);
     bool freezeSparkleBlocked() const { return h_.b(0x465d4b) != 0; }   // DAT_00465d4b
     bool harryBusy() const { return h_.ul(0x465b7e) != 0; }             // DAT_00465b7e: on a bungee vine
@@ -279,7 +277,7 @@ private:
     Game* game_ = nullptr;
     int level_ = 0;                  // DAT_00466535
     Harry& h_;                       // 0x465800 .. 0x4668ff (Game::logicMemory)
-    ObjectSystem::Places& places_;   // the records' places between levels (Game::objectPlaces)
+    ObjectSystem::Image& records_;   // the records between levels (Game::objectRecords)
     ObjectSystem objects_;
     std::span<uint8_t> alsMem_;      // [DAT_004504e4], 4 KB of the load block: the level's .als data as the spawner works on it (an id is 0 while its object lives, or once collected or killed), then at +0x800 the level's own copy ([DAT_004504c4])
     // The kill list in the logic's memory, 0x465a40 .. 0x465ad7: 19 places of {seconds left, id,

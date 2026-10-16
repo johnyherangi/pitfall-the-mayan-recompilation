@@ -44,6 +44,16 @@ struct FieldRef {
 // Animation cursor of the FUN_00423134 interpreter: script position and tick.
 struct AnimCursor { uint8_t pos = 0, tick = 0; };
 
+// A record's sprite: the sprite, and its address in the load block, which the record keeps at
+// +0x0e (and keeps when the level that loaded the sprite is gone, as a freed record's bytes stay).
+struct SpriteRef {
+    const ph::Sprite* p = nullptr;
+    uint32_t addr = 0;
+    SpriteRef& operator=(const ph::Sprite* s) { p = s; addr = s ? s->arenaAddr() : 0; return *this; }
+    operator const ph::Sprite*() const { return p; }
+    const ph::Sprite* operator->() const { return p; }
+};
+
 struct Obj {
     // --- fields with a fixed meaning (original offset in the comment) ---
     int16_t x = 0;                 // +0x00 position (the sprite is drawn at x + 0x10, y + 0x10)
@@ -55,10 +65,10 @@ struct Obj {
     uint8_t hits = 0;              // +0x0a damage taken from the whip / stones
     uint8_t facing = 0;            // +0x0b 1 = faces left (drawn H-flipped)
     uint16_t flags = 0;            // +0x0c 0x8000 = drawn in front of the high-priority tiles
-    const ph::Sprite* sprite = nullptr;   // +0x0e
+    SpriteRef sprite;              // +0x0e
     int prev = -1, next = -1;      // +0x14 / +0x18 the object list (record indices, -1 = none)
-    int col = -1, row = -1;        // +0x1c pointer to the .als entry (col, row here)
-    int als = -1;                  // ... and its index in the level's .als table (-1: the dummy entry 0x466770)
+    uint32_t entry = 0;            // +0x1c the address of its .als entry (in the load block; the dummy
+                                   // entry 0x466770 for none; 0 in a record never handed out)
     uint8_t id = 0;                // +0x20 the .als id to restore when the object leaves the view
     uint8_t behind = 0;            // +0x28 drawn behind Harry
     uint8_t vflip = 0;             // +0x29 drawn V-flipped
@@ -66,12 +76,9 @@ struct Obj {
     uint8_t touchTick = 0;         // +0x2e Harry contact is tested every 6th tick
     // --- per-type state (+0x30 .. +0x6d), addressed by the original offsets ---
     uint8_t s[0x70] = {};
-    // Pointers that the original kept inside the state area.
-    Obj* link = nullptr;           // +0x50 / +0x5c: a related object
-    Obj* link2 = nullptr;          // +0x40 in the bat roost: a second related object
-    Obj* link3 = nullptr;          // +0x60 in the boss meter: the % sign
-    std::vector<Obj*> parts;       // +0x32.. in the bungee body: pool slots of the rope segments
-    const uint8_t* script = nullptr;   // +0x3c / +0x3e / +0x64: an animation script
+    // (The links to other records the original keeps in the state area are there too, as the
+    // records' addresses: ObjCtx::linkAt / setLink.)
+    const uint8_t* script = nullptr;   // a pointer script (FUN_004237a5) the record runs
     const ph::SpriteHitbox* rawBox = nullptr;   // +0xe pointing at a box record instead of a sprite (FUN_00424af1)
     bool freed = true;             // on the free stack (FUN_0043598f), not in the list
 
@@ -82,8 +89,9 @@ struct Obj {
     void setSprite(const ph::Sprite* spr) { sprite = spr; rawBox = nullptr; }
 };
 
-// The record's byte at +off as the original lays it out (0x6e bytes; the pointer fields, which
-// the port keeps as pointers, read as 0).
+// The record's byte at +off as the original lays it out (0x6e bytes): its sprite's address in
+// the load block (or its box record's) and the list's links as record addresses (-1: none)
+// where the port keeps references.
 uint8_t recordByte(const Obj& o, int off);
 
 // FUN_004251f9: the trigger under (x, y).  cls = the class byte (0 when >= 0xf0, d2),
@@ -131,18 +139,16 @@ struct ObjCtx {
     // site) the routine also calls the VRAM-slot stub FUN_004263a6, which sets w26 = 0x6663.
     Obj* spawnFrom(Obj& parent, bool tail = false, int d0 = 1);
     void release(Obj& o);                              // FUN_0043598f
+    // A record's link to another as the original keeps it, the other's address at +off (0: none;
+    // followed whether that record still lives or not, as the original follows the pointer).
+    Obj* linkAt(const Obj& o, int off);
+    void setLink(Obj& o, int off, const Obj* to);
     Obj* spawnEffect(Obj& at, const ph::Sprite* spr, const uint8_t* script, int ticks);   // 0x433914
     void sparkleBurst(Obj& at, const int16_t* offsets);                                    // 0x433747
     const ph::Sprite* spr(const char* name);
 };
 
 using Handler = void (*)(ObjCtx&, Obj&);
-
-// The first eight bytes of an object record (x, its fraction, y, its fraction), which neither the
-// pool's reset (FUN_00435274) nor a new record (0x43582b) writes: the original never clears its
-// records (0x462854, zero at the start), so a record handed out on a new level starts from what
-// the last level left in it, its fractions included.
-struct ObjPlace { int16_t x = 0; uint16_t xFrac = 0; int16_t y = 0; uint16_t yFrac = 0; };
 
 // The object records and their list (FUN_00435274 / FUN_00435905 / FUN_00435780 /
 // FUN_0043598f): 0x50 records of 0x6e bytes at 0x462854, a stack of free records
@@ -155,12 +161,16 @@ public:
     static constexpr int kPoolSize = 0x50;
     static constexpr int kReserve = 8;       // 0x464ad4 - 0x464ab4 = 8 entries never handed out
 
-    using Places = std::array<ObjPlace, 0x50>;
+    // The records' bytes as the original lays them out, kept while no level's logic holds them:
+    // the original never clears its records (0x462854, zero at the start), neither the pool's
+    // reset (FUN_00435274) nor a new record (0x43582b) writes the first eight bytes (x, y and
+    // their fractions), and a freed record keeps all of them.
+    using Image = std::array<std::array<uint8_t, 0x6e>, 0x50>;
 
     ObjectSystem() { reset(); }
     void reset();                              // FUN_00435274: every record free (0x4f on top), empty list
-    void loadPlaces(const Places& p);          // the records' places as the last level left them
-    void savePlaces(Places& p) const;
+    void loadImage(const Image& img);          // the records as the last level left them
+    void saveImage(Image& img) const;
     Obj* allocHead();                          // FUN_00435905 (nullptr when no record is left)
     Obj* allocTail();                          // FUN_00435780
     // Where the allocators leave the record they hand out (a5, DAT_004601b4: -1 when none is left).
@@ -356,6 +366,13 @@ extern const uint8_t kAnim2_deathFade[], kAnim2_monkeyToss[], kAnim2_condorDive[
     kAnim2_hawkDive[], kAnim2_stoneJagCrouch[], kAnim2_stoneJagLeap[], kAnim2_stoneJagBigLeap[], kAnim2_stoneJagLand[],
     kAnim2_stoneJagHop[], kAnim2_jagManCrouch[], kAnim2_jagManReady[], kAnim2_jagManSwipe[], kAnim2_jagManMorph[];
 extern const char* const kAnim2Sprites[];        // names for the relocated 0xf1 opcodes
+// The byte scripts' blocks of PITFALL.EXE's memory with their addresses; a byte script's address
+// (where a record keeps it; 0 for none) and the bytes at an address (nullptr for none).
+struct AnimBlock { const uint8_t* p; uint32_t va, len; };
+extern const AnimBlock kAnimBlocks[];
+extern const size_t kAnimBlockCount;
+uint32_t animAddr(const uint8_t* script);
+const uint8_t* animPtr(uint32_t va);
 // Each pointer script with its address in the original, and the lookup (0 for a script not listed).
 struct Anim2Script { const uint8_t* script; uint32_t addr; };
 extern const Anim2Script kAnim2Scripts[];

@@ -40,31 +40,32 @@ inline bool between(int v, int lo, int hi) { return v >= lo && v < hi; }   // [l
 void h_sparkle(ObjCtx& ctx, Obj& o) {
     if (o.b(0x57) && (priorityTrigger(ctx, o, 0).cls & 1)) { ctx.release(o); return; }   // 0x4301ce
     if (o.w(0x60)) { o.w(0x60) -= 1; return; }
-    if (o.link && o.link->type != 5) { ctx.release(o); return; }   // +0x5c: dies once that record is no longer a stone
+    if (Obj* st = ctx.linkAt(o, 0x5c); st && st->type != 5) { ctx.release(o); return; }   // +0x5c: dies once that record is no longer a stone
     moveX(o, o.l(0x32));
     moveY(o, o.l(0x36));
     if (animStep(ctx, o, o.anim(0x3c), o.b(0x64) ? kAnim_sparkle2 : kAnim_sparkle1, 3)) ctx.release(o);
 }
 
-// 0x418ec6: type 0x68 one-shot animation (o.script at b(0x46) ticks).
+// 0x418ec6: type 0x68 one-shot animation (the script at l3c, b46 ticks a frame).
 void h_effect(ObjCtx& ctx, Obj& o) {
-    if (!o.script || animStep(ctx, o, o.anim(0x32), o.script, o.b(0x46))) ctx.release(o);
+    const uint8_t* script = animPtr(uint32_t(o.l(0x3c)));
+    if (!script || animStep(ctx, o, o.anim(0x32), script, o.b(0x46))) ctx.release(o);
 }
 
 // 0x41b9d1: type 0x82 death cloud; a linked second object shows the body.
 void h_deathCloud(ObjCtx& ctx, Obj& o) {
     // 0x41b9d1: type 0x82, an enemy's death cloud (killObject).
-    if (o.script) {                            // a pointer script at +0x64 (fx_deat2, the boss deaths)
+    if (o.l(0x64) != 0) {                      // a pointer script's place at +0x64 (fx_deat2, the boss deaths)
         if (anim2Step(ctx, o, 0x64, 4)) ctx.release(o);
         return;
     }
     if (animStep(ctx, o, o.anim(0x32), kAnim_death14, 4)) {   // 0x461866
         ctx.release(o);
-        if (o.link) ctx.release(*o.link);
+        if (Obj* half = ctx.linkAt(o, 0x50)) ctx.release(*half);
         return;
     }
     // the mirrored half (+0x50) shows frames 1 and 2 only
-    if (o.link) o.link->frame = (o.frame == 1 || o.frame == 2) ? o.frame : 0xff;
+    if (Obj* half = ctx.linkAt(o, 0x50)) half->frame = (o.frame == 1 || o.frame == 2) ? o.frame : 0xff;
 }
 
 // ---------------------------------------------------------------- items
@@ -545,8 +546,8 @@ void h_monkey(ObjCtx& ctx, Obj& o) {
         o.facing ^= 1; o.w(0x36) = 2;
     }
     harryContact(ctx, o, 10);
-    if (o.script) {
-        // Throwing (mkztoss through the pointer-based interpreter, 4 ticks).
+    if (o.l(0x3e) != 0) {
+        // Throwing (mkztoss through the pointer-based interpreter, 4 ticks; its place at l3e).
         const bool done = anim2Step(ctx, o, 0x3e, 4);
         if (o.b(0x42) == 0 && anim2Pos(o, 0x3e) == 0x10) monkeyThrowCactus(ctx, o);
         if (!done) { exitDespawnWide(ctx, o); return; }
@@ -759,7 +760,7 @@ void condorStun(ObjCtx& ctx, Obj& o) {
         f->type = 0x40; f->flags = 0x6000;
         f->l(0x36) = int32_t(ctx.rnd() & 0x7fff) + 0x6000;
         f->sprite = ctx.spr("fxifeath");
-        f->script = kAnim_feather;
+        f->l(0x32) = 0x4619df;                // its script (kAnim_feather), where a feather keeps it
     }
 }
 
@@ -955,7 +956,7 @@ void h_feather(ObjCtx& ctx, Obj& o) {
     }
     moveY(o, o.l(0x50) >= 0 ? -o.l(0x50) : o.l(0x50));
     moveY(o, o.l(0x36));
-    if (o.script) animStep(ctx, o, o.anim(0x3a), o.script, 7);
+    if (const uint8_t* script = animPtr(uint32_t(o.l(0x32)))) animStep(ctx, o, o.anim(0x3a), script, 7);   // (l32: its script)
     if (o.w(0x64)) { o.w(0x64) -= 1; return; }
     if (o.w(0x46)) { o.w(0x46) -= 1; if (o.w(0x46) == 0) { ctx.release(o); return; } }
     exitDespawnFar(ctx, o);
@@ -1000,7 +1001,7 @@ void h_slingStone(ObjCtx& ctx, Obj& o) {
                 o.b(0x55) = 2;
                 if (Obj* s = ctx.spawnFrom(o, true, 0)) {          // FUN_0043546e(0)
                     s->type = 0x10; s->b(0x57) = 0xff; s->flags = o.flags;
-                    s->link = &o;                                  // (+0x5c: it goes when this is no longer a stone)
+                    ctx.setLink(*s, 0x5c, &o);                     // (it goes when this is no longer a stone)
                     s->sprite = ctx.spr("fx_sprk1");
                     s->l(0x32) = o.l(0x32) >> 2; s->l(0x36) = o.l(0x36) >> 2;
                 }
@@ -1141,7 +1142,8 @@ void stoneBlast(ObjCtx& ctx) {
             if (int16_t(a0->x - 0xbd0) < 0 && int16_t(a0->x - 0xa30) >= 0) a0->w(0x6a) += 0x1e;
             continue;
         }
-        if ((t == 0x20 || t == 0xac) && a0->link) ctx.release(*a0->link);   // the web's half (+0x5a), the snake's body (+0x6a)
+        if (t == 0x20 || t == 0xac)                               // the web's half (+0x5a), the snake's body (+0x6a)
+            if (Obj* p = ctx.linkAt(*a0, t == 0x20 ? 0x5a : 0x6a)) ctx.release(*p);
         deathFxAdjust(*a0);                                       // 0x40855e
         debrisPuff(ctx, *a0);                                     // 0x433725
         ctx.release(*a0);
@@ -1430,7 +1432,7 @@ void h_pushLever(ObjCtx& ctx, Obj& o) {
 // with 50 damage (and 120 ticks of invulnerability).  Weapons meet a box of its own (0x4186b4),
 // Harry another (0x4186bc): FUN_00424af1 takes these two addresses as box records.
 void h_runawayCart(ObjCtx& ctx, Obj& o) {
-    static const ph::SpriteHitbox kWeaponBox{"", -0x20, 0x3e, -0xf, 0x24}, kHarryBox{"", 0xd, 0x10, -0x14, 0x27};
+    static const ph::SpriteHitbox kWeaponBox{"", -0x20, 0x3e, -0xf, 0x24, 0x4186b4}, kHarryBox{"", 0xd, 0x10, -0x14, 0x27, 0x4186bc};
     o.rawBox = &kWeaponBox;
     weaponHit(ctx, o, 0);                     // (with whatever d5 holds; nothing tests the result)
     o.setSprite(ctx.spr("ob_mcar"));
@@ -1856,7 +1858,7 @@ void h_pushCart(ObjCtx& ctx, Obj& o) {
     Harry& h = ctx.harry;
     if (int16_t(o.x - 0x500) < 0) h.w(0x46589c) = o.x;
     else h.w(0x46589e) = o.x;
-    static const ph::SpriteHitbox kWeaponBox{"", -0x20, 0x3e, -0xf, 0x24};
+    static const ph::SpriteHitbox kWeaponBox{"", -0x20, 0x3e, -0xf, 0x24, 0x4186b4};
     o.rawBox = &kWeaponBox;
     weaponHit(ctx, o, 0);                     // (with whatever d5 holds; nothing tests the result)
     o.setSprite(ctx.spr("ob_mcar"));
@@ -2718,24 +2720,28 @@ void h_fallingRock(ObjCtx& ctx, Obj& o) {
 // ---------------------------------------------------------------- spider web (type 8, 0x406bbc)
 
 void h_web(ObjCtx& ctx, Obj& o) {
+    // l48: the bounce's script (its address), l5a: the mirrored half
     if (o.frame == 0xff) {                    // angled web, bounces to the right
-        o.frame = 0; o.b(0x46) = 0xff; o.facing = 0xff; o.script = kAnim_webBounceA;
+        o.frame = 0; o.b(0x46) = 0xff; o.facing = 0xff; o.l(0x48) = int32_t(animAddr(kAnim_webBounceA));
     }
     if (o.frame == 0xfe) {                    // angled web, bounces to the left
-        o.frame = 0; o.b(0x47) = 0xff; o.script = kAnim_webBounceA;
+        o.frame = 0; o.b(0x47) = 0xff; o.l(0x48) = int32_t(animAddr(kAnim_webBounceA));
     }
     if (o.frame == 0xfd) {                    // wide horizontal web: two mirrored halves
-        o.frame = 0; o.script = kAnim_webBounceH;
+        o.frame = 0; o.l(0x48) = int32_t(animAddr(kAnim_webBounceH));
         Obj* half = ctx.spawnFrom(o, true);   // FUN_0043546e(1)
         if (!half) { ctx.pl.restoreEntry(o); ctx.release(o); return; }
         half->facing = 0xff;
         std::memcpy(half->s + 0x12, o.s + 0x12, 2);
         half->sprite = o.sprite;
         half->flags = 0x6000;                 // (type 0: drawn only; the owner animates it)
-        half->link = &o;                      // (+0x50)
-        o.link = half;                        // (+0x5a)
+        ctx.setLink(*half, 0x50, &o);
+        ctx.setLink(o, 0x5a, half);
     }
-    if (o.w(0x36)) animStep(ctx, o, o.anim(0x36), o.script ? o.script : kAnim_webBounceH, 1);
+    if (o.w(0x36)) {                          // (a web with none of the three starts has no script)
+        const uint8_t* sc = animPtr(uint32_t(o.l(0x48)));
+        animStep(ctx, o, o.anim(0x36), sc ? sc : kAnim_webBounceH, 1);
+    }
     if (o.w(0x46)) webHit(ctx, o, nullptr);                 // 0x406cc7: the angled webs give under the whip
     Harry& h = ctx.harry;
     if (!ctx.pl.harryOnPlatform() && !ctx.pl.harryBusy() && h.w(0x465baa) >= 0 && harryOnBox(ctx, o, -40, 40, 12, 28)) {
@@ -2770,12 +2776,12 @@ void h_web(ObjCtx& ctx, Obj& o) {
             h.b(0x465bb2) = 0x60;
         }
     }
-    if (o.link) {                                     // 0x406e3f: the mirrored half (+0x5a)
-        o.link->frame = o.frame;
+    if (Obj* half = ctx.linkAt(o, 0x5a)) {            // 0x406e3f: the mirrored half
+        half->frame = o.frame;
         if (farFromCamera(ctx, o)) {                  // 0x424ec4
             ctx.pl.restoreEntry(o);
             ctx.release(o);
-            ctx.release(*o.link);
+            ctx.release(*half);
         }
         return;
     }
@@ -2814,8 +2820,8 @@ void h_leafSpawner(ObjCtx& ctx, Obj& o) {
             l->type = 0x40; l->flags = 0;
             const int32_t r = int32_t(ctx.rnd() & 0x7fff);
             l->l(0x36) = r;
-            if (r & 1) { l->sprite = ctx.spr("fx_leaf1"); l->script = kAnim_feather; l->l(0x36) += 0x6000; }
-            else { l->sprite = ctx.spr("fxzleaf2"); l->script = kAnim_turn4; l->l(0x36) += 0x10000; }   // (0x4619e8: kAnim_turn4's bytes)
+            if (r & 1) { l->sprite = ctx.spr("fx_leaf1"); l->l(0x32) = 0x4619df; l->l(0x36) += 0x6000; }   // (kAnim_feather)
+            else { l->sprite = ctx.spr("fxzleaf2"); l->l(0x32) = 0x4619e8; l->l(0x36) += 0x10000; }       // (kAnim_turn4's bytes)
         }
         // back to 0x412c5e: a new wait, counted down once at once
         o.b(0x32) = uint8_t((ctx.rnd() & 0x3f) + 0x40);
@@ -2838,13 +2844,13 @@ void h_branch(ObjCtx& ctx, Obj& o) {
         tip->frame = 1; tip->type = 0x7c; tip->b(0x32) = 0x19;
         tip->x = int16_t(o.x - 6 + (o.facing ? 0xc : 0));
         tip->y = o.y;                                 // (its flags stay 0)
-        tip->link = &o; o.link = tip;                 // (+0x50 both ways)
+        ctx.setLink(*tip, 0x50, &o); ctx.setLink(o, 0x50, tip);   // (+0x50 both ways)
     }
     if (farFromCamera(ctx, o)) {                      // 0x424ec4
         ctx.pl.restoreEntry(o);
         ctx.release(o);
-        Obj* tip = o.link;                            // (a freed record keeps its fields)
-        if (tip && tip->type == 0x7c && tip->link == &o) ctx.release(*tip);
+        Obj* tip = ctx.linkAt(o, 0x50);               // (a freed record keeps its fields)
+        if (tip && tip->type == 0x7c && uint32_t(tip->l(0x50)) == ctx.pl.addrOf(&o)) ctx.release(*tip);
     }
 }
 
@@ -3009,12 +3015,12 @@ void h_treeSnake(ObjCtx& ctx, Obj& o) {
         o.w(0x32) = 0x40;
         Obj* body = ctx.spawnFrom(o);                 // FUN_004356bc(2)
         if (!body) { ctx.pl.restoreEntry(o); ctx.release(o); return; }
-        o.link = body;                                // (+0x6a)
+        ctx.setLink(o, 0x6a, body);
         body->y = int16_t(body->y - 2); body->flags = 0x6000;
         body->sprite = ctx.spr("tszbody1"); body->type = 0x3c; body->frame = 0;
         o.sprite = ctx.spr("tszhang"); o.frame = 0;
     }
-    auto releaseBoth = [&]() { if (o.link) ctx.release(*o.link); };   // (FUN_0043598f ignores a null record)
+    auto releaseBoth = [&]() { if (Obj* b = ctx.linkAt(o, 0x6a)) ctx.release(*b); };   // (FUN_0043598f ignores a null record)
     if (!weaponHit(ctx, o, 0x14).z) { releaseBoth(); killObject(ctx, o); return; }
     if (ctx.frozen()) { freezeSparkle(ctx, o); return; }
     // 0x417688: meant to move the box 0x12 px while the snake hangs facing right, but it
@@ -3091,7 +3097,7 @@ void h_limpSnake(ObjCtx& ctx, Obj& o) {
         o.w(0x32) = 0x40; o.behind = 0xff;
         Obj* body = ctx.spawnFrom(o);                             // FUN_004356bc(2)
         if (!body) { ctx.pl.restoreEntry(o); ctx.release(o); return; }
-        o.link = body;                                            // (+0x6a)
+        ctx.setLink(o, 0x6a, body);
         body->y = int16_t(body->y - 2); body->flags = 0x6000;
         body->sprite = ctx.spr("tszbody1"); body->type = 0x3c; body->frame = 0; body->behind = 0xff;
     }
@@ -3104,11 +3110,11 @@ void h_limpSnake(ObjCtx& ctx, Obj& o) {
         return int16_t(dx - 0x20) < 0 && int16_t(dx + 0x20) >= 0 && int16_t(dy - 6) >= 0 && int16_t(dy - 0x88) < 0;
     };
     auto hangTest = [&]() {                                       // the box test as tszlimp against hyihang
-        const uint32_t hs = h.spriteSlot();
+        const uint32_t hs = h.ul(0x465b1d);
         const ph::Sprite* os = o.sprite;
         o.sprite = ctx.spr("tszlimp"); h.setSprite("hyihang");
         const bool r = ctx.touchesHarry(o);
-        o.sprite = os; h.setSpriteSlot(hs);
+        o.sprite = os; h.setUl(0x465b1d, hs);
         return r;
     };
     auto knockOff = [&]() {
@@ -3191,14 +3197,15 @@ void h_limpSnake(ObjCtx& ctx, Obj& o) {
         }
     }
     if (farFromCamera(ctx, o)) {                                  // 0x424ec4
-        if (o.link) ctx.release(*o.link);
+        if (Obj* b = ctx.linkAt(o, 0x6a)) ctx.release(*b);
         ctx.pl.restoreEntry(o);
         ctx.release(o);
     }
 }
 
-// 0x412710: type 0x3c, the tree snake's body (static).
-void h_treeSnakeBody(ObjCtx& ctx, Obj& o) { (void)ctx; (void)o; }
+// 0x412710: type 0x3c, a part that stands still (the tree snake's body, a mine cart's wheels and
+// lever): only its count of 30 ticks (FUN_004057b0) runs.
+void h_treeSnakeBody(ObjCtx& ctx, Obj& o) { (void)ctx; halfMinuteTick(o); }
 
 
 // ---------------------------------------------------------------- exploding plant (type 87, 0x416be0)
@@ -3429,7 +3436,7 @@ void h_batRoost(ObjCtx& ctx, Obj& o) {
         for (int i = 0; i < 2; ++i) {
             Obj* b = ctx.spawnFrom(o, true);          // FUN_0043546e(3)
             if (!b) break;
-            if (i == 0) o.link = b; else o.link2 = b; // l3c / l40
+            ctx.setLink(o, i == 0 ? 0x3c : 0x40, b);  // l3c / l40
             b->w(0x26) = 0x6663;                      // (d0 != 0: FUN_004263a6)
             b->type = 0x2b; b->flags = 0x6000; b->sprite = ctx.spr("btfhang"); b->frame = 0; b->behind = 0xff;
             if (i == 1) b->x = int16_t(b->x + 0x10);
@@ -3441,8 +3448,8 @@ void h_batRoost(ObjCtx& ctx, Obj& o) {
     if (o.w(0x34)) {                                  // the second bat follows 0x32 ticks later
         o.w(0x34) -= 1;
         if (o.w(0x34) == 0) {
-            ctx.setA5(o.link2);                       // 0x415491: a5 = l40
-            if (asleep(o.link2)) wake(o.link2);
+            ctx.setA5(uint32_t(o.l(0x40)));           // 0x415491: a5 = l40
+            if (Obj* b = ctx.linkAt(o, 0x40); asleep(b)) wake(b);
             ctx.release(o);
             return;
         }
@@ -3455,16 +3462,16 @@ void h_batRoost(ObjCtx& ctx, Obj& o) {
         else {
             const int16_t dy = int16_t(o.y - ctx.harry.y());
             if (dy >= -0xc8 && dy < 0x14) {
-                ctx.setA5(o.link);                    // 0x415537: a5 = l3c
-                if (asleep(o.link)) { Obj* b = o.link; o.link = nullptr; wake(b); }
+                ctx.setA5(uint32_t(o.l(0x3c)));       // 0x415537: a5 = l3c
+                if (Obj* b = ctx.linkAt(o, 0x3c); asleep(b)) { o.l(0x3c) = 0; wake(b); }
                 o.w(0x34) = 0x32;
                 return;
             }
         }
     }
     if (farFromCamera(ctx, o)) {                      // 0x424ec4: both bats still asleep go with it
-        if (asleep(o.link)) ctx.release(*o.link);
-        if (asleep(o.link2)) ctx.release(*o.link2);
+        if (Obj* b = ctx.linkAt(o, 0x3c); asleep(b)) ctx.release(*b);
+        if (Obj* b = ctx.linkAt(o, 0x40); asleep(b)) ctx.release(*b);
         ctx.pl.restoreEntry(o);
         ctx.release(o);
     }
@@ -3551,15 +3558,15 @@ void h_tnt(ObjCtx& ctx, Obj& o) {
         }
     }
     ctx.g.stats().score += scoreForType(o.type);              // 0x40e28f: 0x4081ae
-    o.link = nullptr;
+    o.l(0x54) = 0;
     ctx.release(o);
     Obj* e = ctx.spawnFrom(o, true);                           // FUN_0043546e(7): the crate's own record, x / y kept
     if (!e) return;
     ctx.sound0(0x26, 0xa);                                     // FUN_0042633d(0x26, 0x60)
-    e->type = 0x32; e->sprite = ctx.spr("fxzexpl2"); e->flags = 0xe000; e->link = nullptr;
+    e->type = 0x32; e->sprite = ctx.spr("fxzexpl2"); e->flags = 0xe000; e->l(0x54) = 0;
     e->frame = 0xff; e->behind = 0xff; e->l(0x3c) = 0; e->facing = 0;
     if (Obj* half = ctx.spawnFrom(*e, true, 0)) {              // FUN_0043546e(0) from the explosion: the mirrored half
-        e->link = half; half->link = e;                        // (+0x54 / +0x50)
+        ctx.setLink(*e, 0x54, half); ctx.setLink(*half, 0x50, e);
         half->behind = 0xff;
         std::memcpy(half->s + 0x12, e->s + 0x12, 2);
         half->w(0x26) = 0x6663; half->type = 0;
@@ -3572,11 +3579,11 @@ void h_tnt(ObjCtx& ctx, Obj& o) {
 void h_explosion(ObjCtx& ctx, Obj& o) {
     if (animStep(ctx, o, o.anim(0x3c), kAnim_marker, 4)) {    // 0x4619cf
         ctx.release(o);
-        if (o.link) ctx.release(*o.link);                     // (+0x54, the mirrored half)
+        if (Obj* half = ctx.linkAt(o, 0x54)) ctx.release(*half);   // (the mirrored half)
         return;
     }
-    ctx.setA5(o.link);                                        // 0x410582: a5 = +0x54
-    if (o.link) o.link->frame = o.frame;
+    ctx.setA5(uint32_t(o.l(0x54)));                           // 0x410582: a5 = +0x54
+    if (Obj* half = ctx.linkAt(o, 0x54)) half->frame = o.frame;
     if (int8_t(o.frame - 3) >= 0) {
         o.touchTick = 0;
         if (harryContact(ctx, o, 0x28)) {
@@ -3592,21 +3599,21 @@ void h_explosion(ObjCtx& ctx, Obj& o) {
 // ---------------------------------------------------------------- sticky web across a passage (type 32, 0x40dc2e)
 
 void h_verticalWeb(ObjCtx& ctx, Obj& o) {
-    if (!o.link) {
+    if (o.l(0x5a) == 0) {                                      // l5a: the mirrored half
         Obj* half = ctx.spawnFrom(o, true);                    // FUN_0043546e(1)
         if (!half) { ctx.pl.restoreEntry(o); ctx.release(o); return; }
         half->vflip = 0xff;
         std::memcpy(half->s + 0x12, o.s + 0x12, 2);
         half->flags = 0x6000; half->sprite = o.sprite;
-        half->link = &o;                                       // (+0x50)
-        o.link = half;                                         // (+0x5a)
+        ctx.setLink(*half, 0x50, &o);
+        ctx.setLink(o, 0x5a, half);
     }
     bool cut = false;
     if (webHit(ctx, o, &cut)) {                                // 0x40dcc5
         o.w(0x3c) = 1;
         o.facing = int16_t(o.x - ctx.harry.x()) >= 0 ? 0xff : 0;
         if (cut) {                                             // torn through
-            if (o.link) ctx.release(*o.link);
+            if (Obj* half = ctx.linkAt(o, 0x5a)) ctx.release(*half);
             killObject(ctx, o);
             return;
         }
@@ -3623,11 +3630,12 @@ void h_verticalWeb(ObjCtx& ctx, Obj& o) {
         ctx.pl.harryCall(0x427148);
         o.w(0x3c) = 1;
     }
-    if (o.link) { o.link->frame = o.frame; o.link->facing = o.facing; }
+    Obj* half = ctx.linkAt(o, 0x5a);
+    if (half) { half->frame = o.frame; half->facing = o.facing; }
     if (farFromCamera(ctx, o)) {
         ctx.pl.restoreEntry(o);
         ctx.release(o);
-        if (o.link) ctx.release(*o.link);
+        if (half) ctx.release(*half);
     }
 }
 
@@ -3642,7 +3650,7 @@ void h_pit(ObjCtx& ctx, Obj& o) {
         half->flags = o.flags; half->sprite = ctx.spr("obrpit1"); half->facing = 0xff;
         std::memcpy(half->s + 0x12, o.s + 0x12, 2);
         half->w(0x26) = 0x6663;
-        half->link = &o; o.link = half;
+        ctx.setLink(*half, 0x50, &o); ctx.setLink(o, 0x50, half);   // (+0x50 both ways)
         o.w(0x5a) = int16_t((ctx.rnd() & 0x1f) + 0xc);
         o.w(0x60) = int16_t((ctx.rnd() & 0x7f) + 0x80);
     }
@@ -3653,10 +3661,10 @@ void h_pit(ObjCtx& ctx, Obj& o) {
             if (o.w(0x5a)) o.w(0x5a) -= 1;
             const bool looped = animStep(ctx, o, o.anim(0x32), kAnim_pit, 4);
             if (o.w(0x32) == 0xc && o.w(0x5a)) o.w(0x32) = 0;             // keep bubbling until the timer runs out
-            ctx.setA5(o.link);                                                // 0x40f764: a5 = l50
-            if (o.link) {
-                o.link->frame = o.frame;
-                if (int8_t(o.link->frame - 3) < 0) o.link->frame = 0xff;
+            ctx.setA5(uint32_t(o.l(0x50)));                                   // 0x40f764: a5 = l50
+            if (Obj* half = ctx.linkAt(o, 0x50)) {
+                half->frame = o.frame;
+                if (int8_t(half->frame - 3) < 0) half->frame = 0xff;
             }
             if (looped) {
                 o.w(0x5a) = int16_t((ctx.rnd() & 0x3f) + 0x40);
@@ -3680,7 +3688,7 @@ void h_pit(ObjCtx& ctx, Obj& o) {
     if (farFromCamera(ctx, o)) {
         ctx.pl.restoreEntry(o);
         ctx.release(o);
-        if (o.link) ctx.release(*o.link);
+        if (Obj* half = ctx.linkAt(o, 0x50)) ctx.release(*half);
     }
 }
 
@@ -3703,7 +3711,7 @@ void h_drip(ObjCtx& ctx, Obj& o);
 
 void h_projectile(ObjCtx& ctx, Obj& o) {
     ctx.pl.setTriggerClass(2, 0);            // 0x40d3b0: trigger id 2 does not stop thrown things
-    if (o.script) {
+    if (o.l(0x50) != 0) {                    // a tumbling bone's pointer script (its place at l50)
         anim2Step(ctx, o, 0x50, 3);
         if (!weaponHit(ctx, o, 0).z) { ctx.sound1(0xcd, 9); projectileShatter(ctx, o); return; }
     }
@@ -4219,12 +4227,12 @@ void h_chute(ObjCtx& ctx, Obj& o) {
         Obj* half = ctx.spawnFrom(o, true, 0);                 // FUN_0043546e(0)
         if (!half) { ctx.pl.restoreEntry(o); ctx.release(o); return; }
         std::memcpy(half->s + 0x12, o.s + 0x12, 2);
-        half->w(0x26) = 0x6663; half->link = &o;
+        half->w(0x26) = 0x6663; ctx.setLink(*half, 0x50, &o);
         half->flags = o.flags;
-        o.link = half;                                         // (+0x46)
+        ctx.setLink(o, 0x46, half);
         half->facing = 0xff; half->sprite = ctx.spr("ob_chute");
     }
-    Obj* half = o.link;
+    Obj* half = ctx.linkAt(o, 0x46);
     if (o.b(0x32) == 0) {
         o.b(0x32) = 0xff;
         o.frame = 0;
@@ -4248,8 +4256,8 @@ void h_chute(ObjCtx& ctx, Obj& o) {
             o.frame -= 1;
         }
     }
-    ctx.setA5(half);                                           // 0x40e0b9: a5 = +0x46
-    half->frame = o.frame;
+    ctx.setA5(uint32_t(o.l(0x46)));                            // 0x40e0b9: a5 = +0x46
+    if (half) half->frame = o.frame;
     if (o.frame == 0 && !ctx.pl.harryOnPlatform() && !ctx.pl.harryBusy() && h.w(0x465baa) >= 0 && harryOnBox(ctx, o, -48, 48, -11, 7)) {
         // 0x40e10a: Harry stands on the closed hatch (box 0x45ba36); no landing
         h.y() = int16_t(o.y - 6);
@@ -4259,8 +4267,7 @@ void h_chute(ObjCtx& ctx, Obj& o) {
     if (farFromCamera(ctx, o)) {
         ctx.pl.restoreEntry(o);
         ctx.release(o);
-        ctx.release(*half);
-        ctx.pl.restoreEntry(*half);
+        if (half) { ctx.release(*half); ctx.pl.restoreEntry(*half); }
     }
 }
 
@@ -4451,8 +4458,9 @@ void h_pitCreature(ObjCtx& ctx, Obj& o) {
         o.facing = uint8_t(o.x & 1);              // the parity of the new x
         const uint32_t v = ctx.rnd();
         o.b(0x33) = uint8_t((v & 7) + 8);
-        if (v & 1) { o.sprite = ctx.spr("obzpit2b"); o.script = kAnim_condorTurn; }
-        else { o.sprite = ctx.spr("obzpit2a"); o.script = kAnim_run10; }
+        // (from the pairs at 0x45acb4: a sprite slot and the script, kept at l3c)
+        if (v & 1) { o.sprite = ctx.spr("obzpit2b"); o.l(0x3c) = int32_t(animAddr(kAnim_condorTurn)); }
+        else { o.sprite = ctx.spr("obzpit2a"); o.l(0x3c) = int32_t(animAddr(kAnim_run10)); }
     };
     if (o.b(0x32) == 0) {
         o.b(0x32) = 0xff;
@@ -4468,7 +4476,8 @@ void h_pitCreature(ObjCtx& ctx, Obj& o) {
         const uint32_t r = ctx.rnd();
         if ((r & 2) == 0) ctx.sound0(0x14 + int(r & 1), 0);   // FUN_0042633d
     }
-    if (animStep(ctx, o, o.anim(0x36), o.script, o.script == kAnim_run10 ? 4 : 3)) {
+    const uint8_t* script = animPtr(uint32_t(o.l(0x3c)));
+    if (script && animStep(ctx, o, o.anim(0x36), script, uint32_t(o.l(0x3c)) == animAddr(kAnim_run10) ? 4 : 3)) {
         ctx.pl.objectSystem().cancelCurrentDisplay();   // [DAT_00465b8e] = -2
         o.frame = 0xff;
         reposition();
@@ -4526,6 +4535,7 @@ void h_floorSpikes(ObjCtx& ctx, Obj& o) {
         for (int i = 0; i < 3; ++i) {
             parts[i] = ctx.spawnFrom(o, true);        // FUN_0043546e
             if (!parts[i]) { for (int k = 0; k < i; ++k) ctx.release(*parts[k]); ctx.pl.restoreEntry(o); ctx.release(o); return; }
+            ctx.setLink(o, 0x3c + 4 * i, parts[i]);   // l3c / l40 / l44
             parts[i]->x = o.x; parts[i]->y = o.y; parts[i]->frame = 0; parts[i]->type = 0;
             parts[i]->sprite = ctx.spr(i == 1 ? "ob_spik1" : "ob_spik2"); parts[i]->flags = 0x4000;
             parts[i]->w(0x26) = 0x6663;
@@ -4534,11 +4544,10 @@ void h_floorSpikes(ObjCtx& ctx, Obj& o) {
         parts[0]->x -= 4; parts[0]->y += 6; parts[0]->facing = 0xff; parts[0]->behind = 0xff;
         ctx.setA5(parts[2]);                                       // 0x410711: a5 = l44
         parts[2]->x += 4; parts[2]->y -= 6;
-        o.link = parts[0]; o.link2 = parts[1]; o.link3 = parts[2];
         exitDespawnFar(ctx, o);
         return;
     }
-    Obj* parts[3] = {o.link, o.link2, o.link3};                 // l3c / l40 / l44
+    Obj* parts[3] = {ctx.linkAt(o, 0x3c), ctx.linkAt(o, 0x40), ctx.linkAt(o, 0x44)};
     for (Obj* p : parts) if (!p) { ctx.release(o); return; }
     o.b(0x34) -= 1;
     if (int8_t(o.b(0x34)) < 0) {
@@ -4650,7 +4659,7 @@ void h_pot(ObjCtx& ctx, Obj& o) {
         o.type = 0x32; o.l(0x56) = 0; o.flags = 0x6000; o.sprite = ctx.spr("fxzexpl2");
         o.frame = 0xff; o.l(0x3c) = 0; o.facing = 0;
         if (Obj* h = ctx.spawnFrom(o, true, 0)) {     // FUN_0043546e(0): the mirrored half (type 0)
-            o.link = h; h->link = &o;                 // +0x54 / +0x50
+            ctx.setLink(o, 0x54, h); ctx.setLink(*h, 0x50, &o);
             h->behind = 0xff;
             std::memcpy(h->s + 0x12, o.s + 0x12, 2);
             h->w(0x26) = 0x6663;
@@ -4745,7 +4754,7 @@ void h_hoppingSkull(ObjCtx& ctx, Obj& o) {
     };
     if (o.w(0x60) == 0) {
         { int y = o.y + 0xd; ctx.floorSnap(o.x, y); o.y = int16_t(y - 0xd); }
-        o.script = kAnim_skullChatter;            // l50
+        o.l(0x50) = int32_t(animAddr(kAnim_skullChatter));   // l50: the jaw's script
         o.w(0x60) = o.x;
     }
     if (o.l(0x5a) != 0) o.facing = o.l(0x5a) >= 0 ? 0xff : 0;
@@ -4764,15 +4773,16 @@ void h_hoppingSkull(ObjCtx& ctx, Obj& o) {
             o.b(0x46) = 0;
             driftHome(ctx.rnd());
             o.w(0x32) = int16_t((ctx.rnd() & 0x3f) + 0x28);
-            o.script = kAnim_skullChatter; o.w(0x34) = 0;
+            o.l(0x50) = int32_t(animAddr(kAnim_skullChatter)); o.w(0x34) = 0;
             o.b(0x64) -= 1;
-            if (int8_t(o.b(0x64)) < 0) { o.b(0x64) = 2; o.w(0x32) = 6; o.script = kAnim_skullQuiet; }
+            if (int8_t(o.b(0x64)) < 0) { o.b(0x64) = 2; o.w(0x32) = 6; o.l(0x50) = int32_t(animAddr(kAnim_skullQuiet)); }
             else ctx.sound1(0xcf, 2);
         }
     }
     if (ground) {                                 // 0x41acb7: on the ground
         o.sprite = ctx.spr("skijaw");
-        animStep(ctx, o, o.anim(0x34), o.script ? o.script : kAnim_skullChatter, 4);
+        const uint8_t* jaw = animPtr(uint32_t(o.l(0x50)));
+        animStep(ctx, o, o.anim(0x34), jaw ? jaw : kAnim_skullChatter, 4);
         if (o.frame != 0) moveX(o, o.l(0x5a));
         o.w(0x32) -= 1;
         if (o.w(0x32) < 0) {                      // spring
@@ -4807,15 +4817,15 @@ void h_hoppingSkull(ObjCtx& ctx, Obj& o) {
 // from template 7 (mi_pouc2) at its own position.  The pouch has no .als entry, so it comes
 // back every time; l50 remembers it until it is picked up.
 void h_pouchRespawner(ObjCtx& ctx, Obj& o) {
-    if (!o.link) {
+    if (o.l(0x50) == 0) {
         if (offScreen(ctx, o) && int8_t(ctx.g.stats().ammoCount[0] - 10) < 0) {     // 0x424f40
             if (Obj* p = spawnFromTemplate(ctx, o, 7))   // FUN_004351c5 from the template at 0x467fe4
-                o.link = p;                               // l50
+                ctx.setLink(o, 0x50, p);
         }
-    } else if (o.link->type != 2) {                       // picked up (or anything else now)
-        o.link = nullptr;
+    } else if (Obj* p = ctx.linkAt(o, 0x50); !p || p->type != 2) {   // picked up (or anything else now)
+        o.l(0x50) = 0;
     }
-    if (!o.link) exitDespawnFar(ctx, o);
+    if (o.l(0x50) == 0) exitDespawnFar(ctx, o);
 }
 
 // ---------------------------------------------------------------- bungee vine (type 27, 0x40c5fe)
@@ -4823,8 +4833,9 @@ void h_pouchRespawner(ObjCtx& ctx, Obj& o) {
 // A vine Harry grabs in mid-air and bounces on.  The record is the end Harry hangs from
 // (its x / y are Harry's while he hangs).  It owns a top piece (l50, `ob_bunge` 0), a
 // second piece whose frame shows the stretch (l54, `ob_bunge` 1..3) and whose state area
-// +0x32.. lists the records of the rope segments drawn every 32 px down to the end
-// (`parts` here), and a stub (l6a, `ob_bungs`) that sways while nobody hangs on it.
+// +0x32.. lists the records of the rope segments drawn every 32 px down to the end (a word
+// each, the record's address less 0x46284a, the Genesis RAM's; 0 ends the list), and a stub
+// (l6a, `ob_bungs`) that sways while nobody hangs on it.
 // State: w38 rest y, l34 velocity (w36 its integer part), b32 phase (0 stretching, 1 / 2
 // rebounding, 6 recoiling after a release), b3a re-grab cooldown, l5a Harry's launch speed,
 // w5e leaf timer, b66 "bounced once", b67 "rose fast", l42 / l4c / b48 / b49 the cursor over
@@ -4892,17 +4903,27 @@ void spawnLeaf(ObjCtx& ctx, Obj& o) {         // 0x40cb29
     l->flags = 0; l->type = 0x40;
     const uint32_t r = ctx.rnd() & 0x7fff;
     l->l(0x36) = int32_t(r);
-    if (r & 1) { l->sprite = ctx.spr("fx_leaf1"); l->script = kAnim_feather; l->l(0x36) += 0x6000; }   // 0x4619df
-    else { l->sprite = ctx.spr("fxzleaf2"); l->script = harryMem(0x4619e8); l->l(0x36) += 0x10000; }
+    if (r & 1) { l->sprite = ctx.spr("fx_leaf1"); l->l(0x32) = 0x4619df; l->l(0x36) += 0x6000; }   // (kAnim_feather)
+    else { l->sprite = ctx.spr("fxzleaf2"); l->l(0x32) = 0x4619e8; l->l(0x36) += 0x10000; }
+}
+
+// The rope segment the stretch piece's list holds at +0x32 + 2i (nullptr past its end).
+constexpr int kSegments = (0x60 - 0x32) / 2;     // (one more would be an engine exit, 0x40d12a)
+uint16_t segWord(const Obj& body, int i) { uint16_t v; std::memcpy(&v, body.s + 0x32 + 2 * i, 2); return v; }
+Obj* segment(ObjCtx& ctx, const Obj& body, int i) {
+    const uint16_t v = segWord(body, i);
+    return v ? ctx.pl.objAt(0x46284au + v) : nullptr;
 }
 
 void teardown(ObjCtx& ctx, Obj& o) {          // 0x40d21f (Harry is not let go here)
-    if (o.link3) ctx.release(*o.link3);
+    if (Obj* stub = ctx.linkAt(o, 0x6a)) ctx.release(*stub);
     ctx.pl.restoreEntry(o);
-    if (o.link2) for (Obj* p : o.link2->parts) ctx.release(*p);
+    if (Obj* body = ctx.linkAt(o, 0x54))
+        for (int i = 0; i < kSegments && segWord(*body, i) != 0; ++i)    // (the list itself is left)
+            if (Obj* p = segment(ctx, *body, i)) ctx.release(*p);
     ctx.release(o);
-    if (o.link2) ctx.release(*o.link2);
-    if (o.link) ctx.release(*o.link);
+    if (Obj* body = ctx.linkAt(o, 0x54)) ctx.release(*body);
+    if (Obj* top = ctx.linkAt(o, 0x50)) ctx.release(*top);
 }
 } // namespace bungee
 
@@ -4916,21 +4937,21 @@ void h_bungee(ObjCtx& ctx, Obj& o) {
         Obj* top = ctx.spawnFrom(o, true, 0);         // FUN_0043546e(0)
         if (!top) { ctx.release(o); return; }
         top->sprite = ctx.spr("ob_bunge"); top->frame = 0; top->y -= 0x1d; top->flags = 0x6000;
-        o.link = top;
+        ctx.setLink(o, 0x50, top);
         Obj* body = ctx.spawnFrom(o, true);
         if (!body) { ctx.release(o); ctx.release(*top); return; }   // 0x40c6f0 (the .als entry stays cleared)
         body->w(0x26) = 0x6663;
         body->sprite = ctx.spr("ob_bunge"); body->frame = 1; body->y -= 0x1d; body->flags = 0x6000;
-        o.link2 = body;
+        ctx.setLink(o, 0x54, body);
         if (Obj* stub = ctx.spawnFrom(o)) {
             stub->w(0x26) = 0x6663;
             stub->sprite = ctx.spr("ob_bungs"); stub->frame = 0xff;
             stub->x += 1; stub->y -= 0x10; stub->flags = 0x6000;
             stub->w(0x50) = stub->x;
-            o.link3 = stub;
+            ctx.setLink(o, 0x6a, stub);
         }
     }
-    Obj* top = o.link; Obj* body = o.link2; Obj* stub = o.link3;
+    Obj* top = ctx.linkAt(o, 0x50); Obj* body = ctx.linkAt(o, 0x54); Obj* stub = ctx.linkAt(o, 0x6a);
     if (!top || !body) { teardown(ctx, o); return; }
 
     bool physics = true;
@@ -5089,24 +5110,28 @@ void h_bungee(ObjCtx& ctx, Obj& o) {
         body->frame = uint8_t(f + 1);
     }
     int16_t d1 = int16_t(o.w(0x38) - 0xa);
-    size_t used = 0;
+    int used = 0;
     do {
-        if (used >= body->parts.size()) {
-            Obj* p = ctx.spawn();                 // FUN_00435905
+        Obj* p = segment(ctx, *body, used);
+        if (!p) {
+            p = ctx.spawn();                      // FUN_00435905
             if (!p) { teardown(ctx, o); return; }   // 0x40d0af
-            body->parts.push_back(p);
+            body->w(0x32 + 2 * used) = int16_t(uint16_t(ctx.pl.addrOf(p) - 0x46284a));
             p->sprite = ctx.spr("ob_bunge"); p->flags = 0x6000; p->x = o.x;
         }
-        Obj* p = body->parts[used++];
+        ++used;
         ctx.setA5(p);                             // 0x40d09c (or the record FUN_00435905 just gave)
         p->frame = still ? 0xff : segFrame;
         p->y = d1;
         if (int16_t(d0 - 0x20) < 0) p->y = int16_t(p->y + d0 - 0x20);
         d1 = int16_t(d1 + 0x20);
         d0 = int16_t(d0 - 0x20);
-    } while (d0 >= 0);
-    for (size_t i = used; i < body->parts.size(); ++i) ctx.release(*body->parts[i]);   // 0x40d1a6: the pieces no longer needed
-    body->parts.resize(used);
+    } while (d0 >= 0 && used < kSegments);
+    for (; used < kSegments && segWord(*body, used) != 0; ++used) {   // 0x40d1a6: the pieces no longer needed
+        Obj* p = segment(ctx, *body, used);
+        body->w(0x32 + 2 * used) = 0;
+        if (p) ctx.release(*p);
+    }
     if (farFromCamera(ctx, *top) && farFromCamera(ctx, o)) teardown(ctx, o);
 }
 
@@ -5190,7 +5215,7 @@ void spawnMeter(ObjCtx& ctx, Obj& boss) {
         d[i]->frame = 0xff;
     }
     d[0]->type = 0x30;
-    d[0]->link = d[1]; d[0]->link2 = d[2]; d[0]->link3 = d[3];
+    ctx.setLink(*d[0], 0x32, d[1]); ctx.setLink(*d[0], 0x36, d[2]); ctx.setLink(*d[0], 0x60, d[3]);
     // 0x411499: the Genesis boss music (0x42); FUN_004263a2 is a stub in the PC build.
 }
 
@@ -5209,7 +5234,7 @@ void bossDeath(ObjCtx& ctx, Obj& o) {
         c->x = o.x; c->y = o.y;                 // (the +8 at 0x415c98 is overwritten right after)
         c->w(0x26) = 0x6663;
         c->script = kAnim2_bossCloud; c->l(0x64) = anim2Start(kAnim2_bossCloud);
-        c->link = &o; c->b(0x3c) = 1;
+        ctx.setLink(*c, 0x50, &o); c->b(0x3c) = 1;
         c->type = 0x82; c->behind = 0xff;
         c->flags = uint16_t((o.flags & 0x8000) + 0x6000);
         c->sprite = ctx.spr("fx_deat2");
@@ -5239,8 +5264,8 @@ void h_bossDeathBurst(ObjCtx& ctx, Obj& o) {
 // 0x41018c (+ the screen placement at 0x4335ce): the boss health meter, type 0x30.
 void h_bossMeter(ObjCtx& ctx, Obj& o) {
     ctx.pl.hudAdd(o);                                                   // 0x4150a2: placed by FUN_0043348e
-    Obj* d2 = o.link; Obj* d3 = o.link2; Obj* pct = o.link3;            // l32 / l36 / l60
-    ctx.setA5(d2);                                                      // 0x41019a: a5 = l32
+    Obj* d2 = ctx.linkAt(o, 0x32); Obj* d3 = ctx.linkAt(o, 0x36); Obj* pct = ctx.linkAt(o, 0x60);
+    ctx.setA5(uint32_t(o.l(0x32)));                                     // 0x41019a: a5 = l32
     if (!d2 || !d3 || !pct) return;
     o.behind = d2->behind = d3->behind = pct->behind = 0xff;
     pct->frame = 0;
@@ -5533,12 +5558,11 @@ void spawnMeter(ObjCtx& ctx, Obj& from, uint32_t jag, uint8_t side) {
     m->b(0x5a) = side;
     m->l(0x50) = int32_t(jag);
     m->type = 0x30;
-    Obj** links[3] = {&m->link, &m->link2, &m->link3};   // l32 / l36 / l60
-    for (int i = 0; i < 3; ++i) {
+    for (int off : {0x32, 0x36, 0x60}) {             // its two digits and its % sign
         Obj* d = ctx.spawnFrom(from, false, 1);
         if (!d) return;
-        d->sprite = ctx.spr(i == 2 ? "mi_prcnt" : "scoline"); d->flags = 0xe000;
-        *links[i] = d;
+        d->sprite = ctx.spr(off == 0x60 ? "mi_prcnt" : "scoline"); d->flags = 0xe000;
+        ctx.setLink(*m, off, d);
     }
 }
 
@@ -6697,12 +6721,11 @@ void setUp(ObjCtx& ctx, Obj& o) {
         m->l(0x5a) = o.l(0x64);
         m->l(0x56) = int32_t(ctx.pl.addrOf(&o));
         m->sprite = ctx.spr("scoline"); m->flags = 0xe000; m->type = 0x30;
-        Obj** links[3] = {&m->link, &m->link2, &m->link3};
-        for (int i = 0; i < 3; ++i) {
+        for (int off : {0x32, 0x36, 0x60}) {        // its two digits and its % sign
             Obj* d = ctx.spawnFrom(o, false, 1);
             if (!d) break;
-            d->sprite = ctx.spr(i == 2 ? "mi_prcnt" : "scoline"); d->flags = 0xe000;
-            *links[i] = d;
+            d->sprite = ctx.spr(off == 0x60 ? "mi_prcnt" : "scoline"); d->flags = 0xe000;
+            ctx.setLink(*m, off, d);
         }
     }
     setState(o, kIntro);
@@ -7285,7 +7308,7 @@ void h_swingBall(ObjCtx& ctx, Obj& o) {
         if (Obj* c = ctx.spawnFrom(o, true)) {                           // FUN_0043546e(2)
             c->x = int16_t(o.x - 6); c->y = int16_t(o.y + 0xd); c->w(0x26) = 0x6663;
             c->sprite = ctx.spr("obichain"); c->flags = 0x2000;
-            o.link = c;
+            ctx.setLink(o, 0x4a, c);
         }
         uint8_t id = 0;
         ctx.triggerClass(o.x - 0x10, o.y + 0x18, &id);
@@ -7302,7 +7325,7 @@ void h_swingBall(ObjCtx& ctx, Obj& o) {
         static const int16_t kSwing[12][2] = {                                                  // 0x45b05a
             {60, -8}, {63, -8}, {68, -5}, {70, -4}, {70, -2}, {67, 4}, {64, 7}, {58, 10}, {49, 15}, {38, 18}, {25, 21}, {13, 22}};
         const int i = std::min<int>(o.frame, 11);
-        if (o.link) { o.link->frame = kChainFrame[i]; o.link->facing = o.facing; }   // l4a
+        if (Obj* c = ctx.linkAt(o, 0x4a)) { c->frame = kChainFrame[i]; c->facing = o.facing; }   // the chain
         o.frame = uint8_t(i >> 1);
         o.x = int16_t(o.w(0x50) + 3 + (o.facing ? -kSwing[i][0] : kSwing[i][0]));
         o.y = int16_t(o.w(0x52) + kSwing[i][1]);
@@ -7321,7 +7344,7 @@ void h_swingBall(ObjCtx& ctx, Obj& o) {
     if (beyondWide(ctx, o)) {                                            // 0x425051: both go, the ball first
         ctx.pl.restoreEntry(o);
         ctx.release(o);
-        if (o.link) ctx.release(*o.link);
+        if (Obj* c = ctx.linkAt(o, 0x4a)) ctx.release(*c);
     }
 }
 
@@ -7337,11 +7360,11 @@ void spawnRipple(ObjCtx& ctx, Obj& at, int dx, int dy, uint16_t flagAdd = 0) {
     a->x = int16_t(at.x + dx); a->y = int16_t(at.y + dy);
     Obj* b = ctx.spawnFrom(at, true);                                     // FUN_0043546e(1)
     if (!b) { ctx.release(*a); return; }
-    a->link = b;
+    ctx.setLink(*a, 0x50, b);
     b->type = 0x4f;
     std::memcpy(b->s + 0x12, a->s + 0x12, 2);
     b->w(0x26) = 0x6663;
-    b->sprite = ctx.spr("fx_rippl"); b->link = a;
+    b->sprite = ctx.spr("fx_rippl"); ctx.setLink(*b, 0x50, a);
     b->flags = uint16_t(0x2000 + flagAdd);
     b->x = int16_t(at.x + dx); b->y = int16_t(at.y + dy);
     b->facing = 0xff;
@@ -7352,11 +7375,12 @@ void spawnRipple(ObjCtx& ctx, Obj& at, int dx, int dy, uint16_t flagAdd = 0) {
 void h_ripple(ObjCtx& ctx, Obj& o) {
     const bool splash = o.sprite && o.sprite->name() == "fxisplsh";
     const bool done = animStep(ctx, o, o.anim(0x32), splash ? kAnim_splashRing : kAnim_rippleRing, 4);
-    ctx.setA5(o.link);                                                   // 0x41b97c: a5 = l50
-    if (o.link) o.link->frame = o.frame;                                 // l50: the twin
+    ctx.setA5(uint32_t(o.l(0x50)));                                      // 0x41b97c: a5 = l50
+    Obj* twin = ctx.linkAt(o, 0x50);
+    if (twin) twin->frame = o.frame;
     if (done) {
         ctx.release(o);
-        if (Obj* t = o.link) {
+        if (Obj* t = twin) {
             // The twin's l6a is the display entry it had when it last ran (0x41562c) - in the
             // last pass, as it runs after the ripple - and that entry of this pass is cancelled.
             ctx.pl.objectSystem().cancelDisplayAt(uint32_t(t->l(0x6a)));
@@ -7421,10 +7445,14 @@ namespace wheel {
 
 // 0x4146f1: stop the rumble (if it is still the last channel-1 sound) and free the children
 // (l3c, l40, l44, l48 up to the first missing one) and the wheel.
+constexpr int kChildren[4] = {0x3c, 0x40, 0x44, 0x48};
+
 void teardown(ObjCtx& ctx, Obj& o) {
     if (ctx.pl.scriptEvent() == 0xd1) { ctx.soundNow(0x89); ctx.pl.scriptEvent() = 0; }
-    for (Obj* p : o.parts) { if (!p) break; ctx.release(*p); }
-    o.parts.clear();
+    for (int off : kChildren) {                                          // (the links are left)
+        if (o.l(off) == 0) break;
+        if (Obj* p = ctx.linkAt(o, off)) ctx.release(*p);
+    }
     ctx.release(o);
 }
 
@@ -7434,15 +7462,14 @@ int init(ObjCtx& ctx, Obj& o) {
     if (o.frame != 0xff) return 0;
     o.behind = 0xff;
     o.l(0x54) = 0x40000;
-    o.parts.clear();
     for (int i = 0; i < 4; ++i) {                                        // FUN_0043546e(4) x 4
         Obj* c = ctx.spawnFrom(o, true);
         if (!c) { teardown(ctx, o); return -1; }                         // 0x414482 -> 0x4146f1
+        ctx.setLink(o, kChildren[i], c);
         c->x = o.x; c->y = o.y; c->w(0x26) = 0x6663;
         c->sprite = ctx.spr(i == 3 ? "obrwhee2" : "obrwhee1"); c->flags = 0x2000; c->behind = 0xff;
         if (i == 0 || i == 1) c->facing = 0xff;
         if (i == 1 || i == 2) c->vflip = 0xff;
-        o.parts.push_back(c);
     }
     return 1;
 }
@@ -7467,11 +7494,11 @@ void tail(ObjCtx& ctx, Obj& o) {
         0, 0, 0, 0, 3,  1, 3, 1, 3, 2,  2, 2, 2, 2, 1,  3, 1, 3, 1, 0};
     const int row = std::clamp<int>(o.w(0x32), 0, 15);
     o.frame = kWheelFrames[row];
-    for (size_t i = 0; i < o.parts.size(); ++i) {
-        Obj* c = o.parts[i];
+    for (int i = 0; i < 4; ++i) {
+        ctx.setA5(uint32_t(o.l(kChildren[i])));                          // 0x414552 .. 0x414672: a5 = l3c .. l48
+        Obj* c = ctx.linkAt(o, kChildren[i]);
         if (!c) continue;
-        ctx.setA5(c);                                                    // 0x414552 .. 0x414672: a5 = l3c .. l48
-        c->frame = kWheelFrames[row + 1 + int(i)];
+        c->frame = kWheelFrames[row + 1 + i];
         c->x = o.x; c->y = o.y; c->flags = o.flags;
     }
     const int16_t dy = int16_t(o.y - ctx.camY);                          // 0x424e73
@@ -7681,25 +7708,25 @@ void h_firePit(ObjCtx& ctx, Obj& o) {
     auto key = [](int i, int col) { int16_t v; std::memcpy(&v, kData_firePath + i * 12 + col * 2, 2); return int(v); };
     if (o.b(0x32) == 0) {
         o.b(0x32) = 0xff;
-        o.w(0x36) = 0;                                                   // keyframe index (l36 = 0x45ad94 + 12 * i)
+        o.l(0x36) = 0x45ad94;                                            // the keyframe (12 bytes each)
         o.w(0x46) = o.x; o.w(0x48) = o.y;
         o.l(0x5a) = 0;
         Obj* t = ctx.spawnFrom(o, true);                                 // FUN_0043546e(2)
         if (!t) { ctx.pl.restoreEntry(o); ctx.release(o); return; }
         t->w(0x26) = 0x6663;                                             // (d0 != 0: FUN_004263a6)
         t->sprite = ctx.spr("fxifirer"); t->flags = 0x2000;
-        o.link = t;                                                      // l50
+        ctx.setLink(o, 0x50, t);                                         // the tail
     }
     if (!ctx.frozen()) {
         o.l(0x5a) -= 0x8800;
         if (o.l(0x5a) < 0) {
             o.l(0x5a) += 0x10000;
-            o.w(0x36) += 1;
-            if (o.w(0x36) == 15 && !ctx.channel0Busy()) ctx.sound0(8, 5); // 0x45ae48: the roar (FUN_0042633d(8, 0x60))
+            o.l(0x36) += 0xc;
+            if (o.l(0x36) == 0x45ae48 && !ctx.channel0Busy()) ctx.sound0(8, 5);   // the roar (FUN_0042633d(8, 0x60))
         }
     }
-    if (o.w(0x36) >= kFrames) o.w(0x36) = 0;
-    const int i = o.w(0x36);
+    if ((o.l(0x36) - 0x45ad94) / 12 >= kFrames) o.l(0x36) = 0x45ad94; // (the table's 0xffff)
+    const int i = (o.l(0x36) - 0x45ad94) / 12;
     int f = key(i, 0) - 1;
     o.sprite = ctx.spr("fxrfirep");
     if (int8_t(f) >= 0x13) { f -= 0x13; o.sprite = ctx.spr("fx0firep"); }
@@ -7707,8 +7734,8 @@ void h_firePit(ObjCtx& ctx, Obj& o) {
     o.x = int16_t(o.w(0x46) + key(i, 1));
     o.y = int16_t(o.w(0x48) - key(i, 2));
     int tailY = 0;
-    if (o.link) {
-        Obj& t = *o.link;
+    if (Obj* tail = ctx.linkAt(o, 0x50)) {
+        Obj& t = *tail;
         t.frame = uint8_t(key(i, 3) - 1);                                // (0x8004 entries read as frame 3)
         t.x = int16_t(o.w(0x46) + key(i, 4));
         tailY = o.w(0x48) + key(i, 5) - 0x3a;
@@ -7721,7 +7748,7 @@ void h_firePit(ObjCtx& ctx, Obj& o) {
     const int dx = int16_t(o.x - ctx.camX), dy = int16_t(o.y - ctx.camY);   // 0x40f584: its own window
     if (dx < -0xc8 || dx >= 0x208 || dy < -0xa0 || dy >= 0x17c) {
         ctx.pl.restoreEntry(o); ctx.release(o);
-        if (o.link) ctx.release(*o.link);
+        if (Obj* tail = ctx.linkAt(o, 0x50)) ctx.release(*tail);
     }
 }
 
@@ -7757,19 +7784,19 @@ void h_whipLever(ObjCtx& ctx, Obj& o) {
 // something else), it waits 0xd0..0x14f ticks and spawns another.  (The original counts
 // spawns in b5a but overwrites that byte with the timer, so the "ten at most" never holds.)
 void h_snakeRespawner(ObjCtx& ctx, Obj& o) {
-    if (!o.link) {
+    if (o.l(0x50) == 0) {                                                // l50: its snake
         if (o.b(0x5a) != 0xa) {
             o.b(0x5a) += 1;
             if (Obj* s = spawnFromTemplate(ctx, o, 0x74)) {              // FUN_004351c5, template 0x468314
-                o.link = s;                                              // (+0x50)
+                ctx.setLink(o, 0x50, s);
                 o.w(0x5a) = int16_t((ctx.rnd() & 0x7f) + 0xd0);
             }
         }
-    } else if (o.link->type != 0x6d) {                                   // (a freed record's type is 0)
+    } else if (Obj* s = ctx.linkAt(o, 0x50); !s || s->type != 0x6d) {   // (a freed record's type is 0)
         if (o.w(0x5a)) o.w(0x5a) -= 1;
-        else o.link = nullptr;
+        else o.l(0x50) = 0;
     }
-    if (!o.link) exitDespawnFar(ctx, o);
+    if (o.l(0x50) == 0) exitDespawnFar(ctx, o);
 }
 
 // ---------------------------------------------------------------- roaming snake and its spit (types 12 / 36)
@@ -8117,8 +8144,8 @@ void h_fireball(ObjCtx& ctx, Obj& o) {
     }
     auto die = [&] { o.w(0x32) = 0x100; exitDespawnWide(ctx, o); };
     if (int8_t(o.frame - 4) < 0) {
-        Obj* p = o.link;                                                 // l50: the priest
-        ctx.setA5(p);                                                    // 0x40fa4e
+        Obj* p = ctx.linkAt(o, 0x50);                                    // the priest
+        ctx.setA5(uint32_t(o.l(0x50)));                                  // 0x40fa4e
         if (!p || p->type != 45 || p->b(0x32) != 0) { o.w(0x32) = 0x100; return; }
         if (p->b(0x6b) != 0) { exitDespawnWide(ctx, o); return; }        // the priest flinches: hold
     }
@@ -8201,23 +8228,23 @@ void h_firePriest(ObjCtx& ctx, Obj& o) {
     if (o.frame == 6) {
         const bool behind = ctx.harry.x() < o.x ? o.facing == 0 : o.facing != 0;
         if (behind) { o.w(0x52) = 0x100; exitDespawnFar(ctx, o); return; }
-        Obj* f = o.link2;                                                // l64
-        ctx.setA5(f ? ctx.pl.addrOf(f) : kHarryAddr);                    // 0x40ff65 (l64 is Harry's record once set below)
+        Obj* f = ctx.linkAt(o, 0x64);                                    // its fireball, or Harry's record
+        ctx.setA5(uint32_t(o.l(0x64)));                                  // 0x40ff65
         if (f && f->type == 0x2c) { exitDespawnFar(ctx, o); return; }   // its fireball still burns
-        o.link2 = nullptr;                                               // (l64 = Harry's record, whose type is 1 or 0xff)
+        o.l(0x64) = int32_t(kHarryAddr);                                 // (Harry's record, whose type is 1 or 0xff)
     }
     anim2Step(ctx, o, kAnim2_priestMain, 0x36, 4);
     if (o.b(0x3a) == 0 && o.l(0x36) == int32_t(kMain + 4)) {             // 0x45a833: the fireball appears
         if (Obj* f = ctx.spawn()) {                                      // FUN_004356bc(3)
             f->w(0x26) = 0x6663;                                         // (d0 != 0: FUN_004263a6)
-            o.link2 = f;
+            ctx.setLink(o, 0x64, f);
             ctx.sound0(0x28, 8);                                         // FUN_0042633d(0x28, 0x60)
             f->type = 0x2c; f->facing = o.facing;
             f->x = int16_t(o.x - 0x1a); f->y = int16_t(o.y - 0x38);
             f->sprite = ctx.spr("fxzfireb"); f->flags = 0x2000;
             f->script = kAnim2_fireball; f->l(0x36) = anim2Start(kAnim2_fireball); f->b(0x3a) = 0;
             f->l(0x5e) = 0; f->w(0x64) = f->y;
-            f->link = &o;
+            ctx.setLink(*f, 0x50, &o);
             f->l(0x5a) = 0x60000;
             if (f->facing) { f->l(0x5a) = -0x60000; f->x += 0x33; }
         }

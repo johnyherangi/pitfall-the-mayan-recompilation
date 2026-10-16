@@ -308,8 +308,7 @@ void PlayLogic::spawnEntry(Obj& o, size_t e, const ph::ObjectTemplate& t) {
     o.frame = t.sub;
     o.flags = t.flags;
     o.setSprite(t.sprite[0] ? game_->findSprite(t.sprite) : nullptr);
-    o.col = h_.w(0x466782); o.row = alsByte(e);
-    o.als = int(e);                                      // +0x1c
+    o.entry = ph::Arena::kAddress + game_->arenaLayout().als + uint32_t(e);   // +0x1c
     o.id = alsByte(e + 1);                               // +0x20
     alsMem_[e + 1] = 0;
     if (t.soundSlot) o.w(0x26) = 0x6663;                 // FUN_004263a6 (it returns 0: the release after it never runs)
