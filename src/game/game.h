@@ -219,6 +219,10 @@ public:
     // the tick of Harry's last landing sound; the engine never resets them.
     uint32_t& logicTicks() { return logicTicks_; }
     uint32_t& lastLandTick() { return lastLandTick_; }
+    // DAT_004601b4: the 68000's a5 as the translated logic keeps it in memory (an address: an
+    // object record, Harry's record 0x465b0f, a table).  The feathers' drift reads what the code
+    // before it left there (0x412d88); the engine never resets it.
+    uint32_t& regA5() { return regA5_; }
     // 0x41ff20: the collected 1-up reaches the lives (type 0xaa): mi_life's 1-up animation.
     void lifeIconOneUp() { hudAnim_.oneUp = true; hudAnim_.oneUpStart = logicTicks_; }
     bool invincible() const { return invincible_; }   // DAT_0046d054: the typed cheat (0x439868) clears the damage each tick
@@ -364,8 +368,9 @@ private:
     bool titleSoundB_ = false;         // DAT_0046fa44: ... 0x29 (later 0x2a)
     uint32_t logicTicks_ = 0;          // DAT_004601d9
     uint32_t lastLandTick_ = 0;        // DAT_004601d5
+    uint32_t regA5_ = 0;               // DAT_004601b4
     uint32_t timerTicks_ = 0;          // DAT_00450fa8: the 17 ms timer's callbacks (FUN_004448c0), paused or not
-    bool invincible_ = false;          // DAT_0046d054 (the cheat codes are not ported yet)
+    bool invincible_ = false;          // DAT_0046d054: the "vampire" cheat, no damage
     // FUN_00435d45's own state (engine globals; DAT_0046b178 and DAT_0046fa38 cleared by a new game).
     struct HudAnim {
         uint32_t prevMeter = 0;        // DAT_0046b178: the meter as last drawn

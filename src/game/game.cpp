@@ -3,6 +3,7 @@
 #include "game/objects.h"
 
 #include "ph/manifests.h"
+#include "ph/tables.h"
 
 #include <algorithm>
 #include <cstring>
@@ -103,6 +104,9 @@ Game::Game(std::string dataDir, engine::Options& options)
     cd_ = std::make_unique<RippedCd>(dataDir_, mixer_);                             // FUN_00441cf0
     setCdVolume(options_.cdVolume);
     cutData_ = cutsceneInitialData();
+    // The logic's memory holds one table of the data section, the collision shapes' heights from
+    // 0x4668c4 (which the probes read from ph::kCollisionHeights); the rest of it starts at zero.
+    std::memcpy(logicMem_.at(0x4668c4), ph::kCollisionHeights, Harry::kBase + Harry::kSize - 0x4668c4);
     startLevel(kIntro);                                                             // WinMain: FUN_004460e0(0x15)
 }
 

@@ -226,9 +226,17 @@ void PlayLogic::spawnRightColumn() {
     spawnColumn(uint16_t(h_.w(0x4658b4) + 0x160) >> 4);
 }
 
+void PlayLogic::keepAlsBase() {
+    // Each spawner keeps the .als working copy's address (DAT_004504e4) in DAT_00466788 and the
+    // templates' (0x4678c4) in DAT_0046678c; nothing clears them after it.
+    h_.setUl(0x466788, ph::Arena::kAddress + game_->arenaLayout().als);
+    h_.setUl(0x46678c, 0x4678c4);
+}
+
 void PlayLogic::spawnColumn(uint16_t col) {
     // 0x40407f: the column's entries in the rows (camY >> 4) - 3 < row <= (camY >> 4) + 0x10
     h_.w(0x466782) = int16_t(col);
+    keepAlsBase();
     const uint16_t off = alsWord(size_t(int16_t(col * 2 + 4)));
     if (off == 0) return;
     const int16_t cy = int16_t(uint16_t(h_.w(0x4658b6)) >> 4);
@@ -266,6 +274,7 @@ void PlayLogic::spawnRow(int16_t row) {
     if (d0 < 0) d0 = 1;
     const uint16_t col0 = uint16_t(d0) >> 4;
     h_.w(0x466782) = int16_t(col0);
+    keepAlsBase();
     size_t a0 = size_t(int16_t(col0 * 2 + 4));
     for (int d7 = 0x1c; d7 >= 0; --d7, a0 += 2, h_.w(0x466782) += 1) {
         const uint16_t off = alsWord(a0);

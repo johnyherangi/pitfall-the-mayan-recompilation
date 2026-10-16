@@ -42,6 +42,11 @@ struct ArenaLayout {
 class Arena {
 public:
     static constexpr uint32_t kSize = 0x180000;
+    // Where the block sat in the original's runs under Wine (GlobalAlloc's block, the same from run
+    // to run).  Addresses into it are kept in the logic's memory: the spawners leave the .als
+    // working copy's in DAT_00466788, which a hit's knock-backs then read (FUN_00412987, 0x4132ec),
+    // and the logic's start the collision planes' in DAT_0046615c / 60.
+    static constexpr uint32_t kAddress = 0x016a0020;
     Arena() : mem_(kSize, 0) {}
     Arena(const Arena&) = delete;
     Arena& operator=(const Arena&) = delete;

@@ -29,6 +29,14 @@ uint32_t PlayLogic::addrOf(const Obj* o) const {
     return kObjPoolAddr + uint32_t(objects_.indexOf(*o)) * kObjSize;
 }
 
+uint8_t PlayLogic::memByte(uint32_t addr) {
+    if (addr >= kObjPoolAddr && addr < kObjPoolAddr + uint32_t(ObjectSystem::kPoolSize) * kObjSize)
+        return recordByte(objects_.record(int((addr - kObjPoolAddr) / kObjSize)), int((addr - kObjPoolAddr) % kObjSize));
+    if (addr >= Harry::kBase && addr < Harry::kBase + Harry::kSize) return *h_.at(addr);
+    if (const uint8_t* p = harryMem(addr)) return *p;
+    return 0;
+}
+
 // ---------------------------------------------------------------- level start
 
 void PlayLogic::enter(Game& g) {
@@ -37,6 +45,7 @@ void PlayLogic::enter(Game& g) {
     // its own (FUN_0043628c), after which the end runs once more.
     g_debugLogic = this;
     game_ = &g;
+    objects_.setA5Register(&g.regA5());
     level_ = g.levelNumber();
     g.bridge([&] {
         // (the logic's memory keeps what the last level, or the last game, left in it)
@@ -47,6 +56,7 @@ void PlayLogic::enter(Game& g) {
         exiting_ = false;
         deathTimer_ = 0;
         boss_ = nullptr;
+        keepPlanes();
         h_.l(0x466535) = level_;
         endTimer_ = 0;                                             // DAT_0046b1b4
         g.state().displayList.clear();                             // DAT_0046aa90 = 0x46aa94
@@ -68,6 +78,7 @@ void PlayLogic::restart(Game& g) {
     game_ = &g;
     g.bridge([&] {
         endTimer_ = 0;                                             // DAT_0046b1b4
+        keepPlanes();
         g.state().displayList.clear();                             // DAT_0046aa90 = 0x46aa94
         if (g.levelNumber() >= kIntro && g.levelNumber() <= kCredits) { cutFrame(g, 1); return; }
         if (g.levelNumber() == kAtari2600Level) { a26Frame(g, 1); return; }   // 0x401f3c
@@ -78,6 +89,13 @@ void PlayLogic::restart(Game& g) {
         tick(g);                                                   // 0x4361cc: a logic tick
         epilogue(g);                                               // 0x4361d1
     });
+}
+
+void PlayLogic::keepPlanes() {
+    // 0x435feb / 0x436114: the collision planes' addresses (DAT_00450fc0 / DAT_00450518, in the
+    // load block) for the probes, which here read the planes themselves (det() / dt2())
+    h_.setUl(0x46615c, ph::Arena::kAddress + game_->arenaLayout().det);
+    h_.setUl(0x466160, ph::Arena::kAddress + game_->arenaLayout().dt2);
 }
 
 void PlayLogic::levelStart() {
@@ -127,8 +145,7 @@ void PlayLogic::levelVars() {
     h_.b(0x466552) = 0;
     h_.b(0x466553) = 0;
     h_.w(0x465b02) = 0;
-    hud_.clear();                                              // DAT_00466870 = 0x466874
-    h_.w(0x466874) = 0;
+    hudReset();                                                // DAT_00466870 = 0x466874
 }
 
 void PlayLogic::startPosition() {
@@ -450,7 +467,7 @@ void PlayLogic::timers() {
         for (Killed& k : killed_) {
             if (k.count == 0) continue;
             k.count -= 1;
-            if (k.count == 0 && k.als >= 0) alsMem_[size_t(k.als) + 1] = k.id;
+            if (k.count == 0) restoreId(k.als, k.id);
         }
     }
     if (h_.b(0x465b01)) h_.b(0x465b01) -= 1;
@@ -710,13 +727,20 @@ void PlayLogic::markCollected(const Obj& o) { (void)o; }   // the working id sim
 
 void PlayLogic::restoreEntry(const Obj& o) {
     // The handler exits write the saved id (+0x20) back into the working .als copy (+0x1c).
-    if (o.als >= 0 && size_t(o.als) + 1 < alsMem_.size()) alsMem_[size_t(o.als) + 1] = o.id;
+    restoreId(o.als, o.id);
+}
+
+void PlayLogic::restoreId(int als, uint8_t id) {
+    // [entry + 1] = id: an entry of the .als working copy, or for an object that has none the
+    // dummy entry 0x466770 a new record points at.
+    if (als < 0) h_.b(0x466771) = id;
+    else if (size_t(als) + 1 < alsMem_.size()) alsMem_[size_t(als) + 1] = id;
 }
 
 void PlayLogic::markKilled(const Obj& o) {
     // 0x4081fc: kept in the 0x465a40 list (if there is room) to come back after 15 seconds;
-    // on the easy setting the monkeys are not.
-    if (o.als < 0) return;
+    // on the easy setting the monkeys are not.  (An object with no .als entry takes a place too,
+    // with the dummy entry.)
     if (!game_->hardMode() && o.type == 0x23) return;
     for (Killed& k : killed_)
         if (k.count == 0) { k.count = 0xf; k.id = o.id; k.als = o.als; return; }
@@ -810,11 +834,33 @@ void PlayLogic::spawnText(const char* text, int x, int y, uint8_t type) {
 
 // ---------------------------------------------------------------- camera, objects, display
 
+void PlayLogic::hudAdd(const Obj& o) {
+    // 0x4150a2: the record's address at DAT_00466870, which moves on, and a 0 after it.  (The
+    // list has no bound; here it ends with the logic's memory, 35 entries.)
+    const uint32_t a = h_.ul(0x466870);
+    if (a >= 0x466874 && a + 8 <= Harry::kBase + Harry::kSize) {
+        h_.setUl(a, addrOf(&o));
+        h_.setUl(a + 4, 0);
+    }
+    h_.setUl(0x466870, a + 4);
+}
+
+void PlayLogic::hudReset() {
+    // (only the first entry's low word is cleared: after a pass that listed objects the walk
+    // meets 0x00460000, whose "type" byte 0x0c is none of these, and goes on to the old second)
+    h_.setUl(0x466870, 0x466874);
+    h_.uw(0x466874) = 0;
+}
+
 void PlayLogic::hudPlacement() {
-    // FUN_0043348e: the objects 0x4150a2 listed in the last object pass follow the camera.
+    // FUN_0043348e: the objects 0x4150a2 listed (0x466874, up to a 0) follow the camera.
     const int16_t cx = h_.w(0x4658b4), cy = h_.w(0x4658b6);
-    for (int i : hud_) {
-        Obj& o = objects_.record(i);
+    for (uint32_t a = 0x466874; a + 4 <= Harry::kBase + Harry::kSize; a += 4) {
+        const uint32_t v = h_.ul(a);
+        if (v == 0) break;
+        Obj* rec = objAt(v);
+        if (!rec) continue;
+        Obj& o = *rec;
         switch (o.type) {
         case 0x9b: o.x = int16_t(cx + 0x83); o.y = int16_t(cy + 0x54); break;
         case 0x97:
@@ -827,6 +873,7 @@ void PlayLogic::hudPlacement() {
         case 0x4b: o.x = int16_t(cx - 0x10); o.y = int16_t(cy + 0x50); break;
         case 0x30: {                                                        // 0x4335ce: the boss meter
             Obj* d2 = o.link; Obj* d3 = o.link2; Obj* pct = o.link3;      // l32 / l36 / l60
+            game_->regA5() = addrOf(d2);                                   // 0x4335e1: a5 = l32
             int16_t x = int16_t(cx + 0x82);
             if (o.b(0x5a) == 1) x = int16_t(x - 0x1c);
             if (o.b(0x5a) == 2) x = int16_t(x + 0x14);
@@ -852,7 +899,7 @@ void PlayLogic::runObjects(Game& g) {
     h_.w(0x466508) = 0;
     h_.b(0x465b73) = 0;        // 0x4051c4: DAT_00465b73 is cleared before every object pass; a platform sets it again
     h_.b(0x4658c3) = 0;        // 0x4051ab: trigger id 3 (a wall for Harry on the ground) never stops objects
-    hud_.clear();              // 0x405170: the list 0x4150a2 fills starts again
+    hudReset();                // 0x405170: the list 0x4150a2 fills starts again
     ObjCtx ctx{g, *this, g.level(), h_};
     ctx.levelNo = level_;
     ctx.camX = h_.w(0x4658b4); ctx.camY = h_.w(0x4658b6);   // DAT_004658b4 / b6
@@ -884,6 +931,18 @@ void PlayLogic::displayList(Game& g) {
     // last object pass, then Harry (flickering while invulnerable), then the ones in front.
     FrameState& fs = g.state();
     fs.displayList.clear();
+    // Harry's tile base for the Genesis's sprite table (DAT_00465886), which the PC only writes:
+    // 0xf80 hidden (frame 0xff, or his sprite and frame those of DAT_00465b31 / 30, never set on
+    // the PC), 0x1200 on the continue screen, else 0x400.
+    h_.w(0x465886) = 0;
+    if (h_.b(0x466552) == 0) {
+        if (h_.frame() == 0xff) h_.w(0x465886) = 0xf80;
+        else if (level_ == 0xe) h_.w(0x465886) = 0x1200;
+        else {
+            h_.w(0x465886) = 0x400;
+            if (h_.ul(0x465b1d) == h_.ul(0x465b31) && h_.frame() == h_.b(0x465b30)) h_.w(0x465886) = 0xf80;
+        }
+    }
     auto objs = [&](size_t from) {
         // the records as they are now (an object freed since keeps its fields), up to the -1;
         // -2 is a cancelled entry

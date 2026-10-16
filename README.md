@@ -139,8 +139,11 @@ side with the original (under Wine, captured frame by frame for five minutes),
 the whole attract run — the title, the three demos and the intro — matches it
 pixel for pixel but for the time the original's loads take (and the fades, which
 the original's screen does not show on today's displays), and so do 50-second
-runs of seventeen of the levels picked from the menu, with their deaths,
-restarts and continue screens.  What still differs
+runs of eighteen of the levels picked from the menu, with their deaths,
+restarts and continue screens.  Read while it runs, the original's memory (the
+logic's variables, the object records, the random generator) matches the
+port's byte for byte, tick by tick, through runs with the whip and the sling,
+kills, deaths and restarts.  What still differs
 from the original is listed in `docs/RECONSTRUCTION_LEDGER.md` (the platform's
 parts: the mixer for Miles, the ini file for the registry, the full-screen
 modes, WinHelp).

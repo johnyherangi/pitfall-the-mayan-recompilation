@@ -99,7 +99,8 @@ namespace { int jaguarTest(const std::string& dir); int bungeeTest(const std::st
             int mapScreenTest(const std::string& dir); int continueTest(const std::string& dir);
             int transitionTest(const std::string& dir); int musicTest(const std::string& dir);
             int cutsceneTest(const std::string& dir); int titleTest(const std::string& dir); int earthwormTest(const std::string& dir);
-            int cheatTest(const std::string& dir); int menuTest(const std::string& dir); int exitTest(const std::string& dir); }
+            int cheatTest(const std::string& dir); int menuTest(const std::string& dir); int exitTest(const std::string& dir);
+            int leftoversTest(const std::string& dir); }
 namespace {
 // The engine's blocking parts run out: a command's fades and waits, a level load's fade in.
 int settle(game::Game& g, int cap = 1000) {
@@ -164,6 +165,7 @@ int gameplayTests(const std::string& dir) {
     fails += cheatTest(dir);
     fails += menuTest(dir);
     fails += exitTest(dir);
+    fails += leftoversTest(dir);
     return fails;
 }
 }
@@ -1405,6 +1407,42 @@ int exitTest(const std::string& dir) {
         ++fails;
     } else {
         std::printf("exit: an engine exit leaves the rest of the tick undone (the objects, the timers, the end)\n");
+    }
+    return fails;
+}
+
+// What the logic leaves in its memory and reads again: the spawners keep the .als working copy's
+// address (the load block where GlobalAlloc put it) in DAT_00466788, of which each weapon test
+// clears only the low word, so a whip's hit on a gargoyle chips a piece off that flies at the
+// address's high word (0x412987).
+int leftoversTest(const std::string& dir) {
+    int fails = 0;
+    engine::Options opts; opts.allowCheat = true;
+    game::Game g(dir, opts);
+    g.newGame();
+    g.startLevel(3); g.setMode(game::Mode::Playing); settle(g);
+    game::PlayLogic* pl = game::g_debugLogic;
+    if (!pl) return 1;
+    const uint32_t als = ph::Arena::kAddress + g.arenaLayout().als, high = als & 0xffff0000u;
+    const game::Harry& h = pl->harry();
+    const bool kept = (h.ul(0x466788) & 0xffff0000u) == high && h.ul(0x46678c) == 0x4678c4;
+    flyTo(g, pl, 600, 414);                                // below the gargoyle at (616, 336)
+    engine::HostInput idle, right, whip;
+    right.keyDown[0x27] = true; whip.keyDown['Q'] = true;
+    for (int t = 0; t < 33; ++t) g.tick(t < 30 ? idle : right);
+    int chipAt = -1;
+    for (int t = 0; t < 40 && chipAt < 0; ++t) {
+        g.tick(t < 2 ? whip : idle);
+        for (int r = 0; r < 0x50; ++r) {
+            game::Obj& o = pl->objectSystem().record(r);   // (freed in its tick, the record keeps it)
+            if (o.sprite && o.sprite->name() == "gargrok" && uint32_t(o.l(0x32)) == high) chipAt = t;
+        }
+    }
+    if (!kept || chipAt < 0) {
+        std::printf("FAIL: leftovers: the .als address kept %d (%#x for %#x), a chip at %d\n", kept, h.ul(0x466788), als, chipAt);
+        ++fails;
+    } else {
+        std::printf("leftovers: the spawners' .als address (%#x) kept in DAT_00466788; a whip's hit chips the gargoyle at %d, the chip flying at %#x\n", als, chipAt, high);
     }
     return fails;
 }

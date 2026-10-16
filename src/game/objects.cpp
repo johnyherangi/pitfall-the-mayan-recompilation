@@ -119,12 +119,31 @@ bool overlap(int ax, int ay, const ph::SpriteHitbox* ha, int bx, int by, const p
 
 bool ObjCtx::boxesOverlap(const Obj& a, const Obj& b) {
     // FUN_00424af1 with a5 = a, a6 = b.
+    setA5(&a);
     return overlap(a.x, a.y, boxOf(a), b.x, b.y, boxOf(b));
+}
+
+void ObjCtx::setA5(uint32_t addr) { g.regA5() = addr; }
+void ObjCtx::setA5(const Obj* o) { g.regA5() = pl.addrOf(o); }
+
+uint8_t recordByte(const Obj& o, int off) {
+    if (off < 0 || off >= int(kObjSize)) return 0;
+    uint8_t b[0x70];
+    std::memcpy(b, o.s, sizeof b);                   // the state bytes, by their offsets
+    std::memcpy(b + 0, &o.x, 2); std::memcpy(b + 2, &o.xFrac, 2);
+    std::memcpy(b + 4, &o.y, 2); std::memcpy(b + 6, &o.yFrac, 2);
+    b[8] = o.type; b[9] = o.frame; b[0xa] = o.hits; b[0xb] = o.facing;
+    std::memcpy(b + 0xc, &o.flags, 2);
+    std::memset(b + 0xe, 0, 0x20 - 0xe);             // the sprite, the links, the .als entry
+    b[0x20] = o.id;
+    b[0x28] = o.behind; b[0x29] = o.vflip; b[0x2d] = o.whipCool; b[0x2e] = o.touchTick;
+    return b[off];
 }
 
 bool ObjCtx::touchesHarry(Obj& o, int16_t* d1) {
     // FUN_00424af1 with a5 = Harry (DAT_00465b0f), a6 = o: Harry's box from his sprite slot;
     // never while DAT_00465b72 is set (dying / leaving the level).
+    setA5(kHarryAddr);
     const char* hs = harry.sprite();
     if (!*hs || (!o.sprite && !o.rawBox)) return false;
     if (!overlap(harry.x(), harry.y(), ph::hitbox(hs), o.x, o.y, boxOf(o), d1)) return false;
@@ -212,10 +231,11 @@ void ObjectSystem::savePlaces(Places& p) const {
 }
 
 Obj* ObjectSystem::allocHead() {
-    // FUN_00435905: pop a free record and put it at the head of the list.
-    if (top_ < kReserve) return nullptr;
+    // FUN_00435905: pop a free record and put it at the head of the list (a5 = the record).
+    if (top_ < kReserve) { setA5(0xffffffffu); return nullptr; }
     Obj& o = recs_[size_t(stack_[top_--])];
     const int i = indexOf(o);
+    setA5(kObjPoolAddr + uint32_t(i) * kObjSize);
     if (head_ == -1) {
         head_ = tail_ = i; o.prev = o.next = -1;
     } else {
@@ -230,8 +250,9 @@ Obj* ObjectSystem::allocHead() {
 
 Obj* ObjectSystem::allocTail() {
     // FUN_00435780: the same at the tail.
-    if (top_ < kReserve) return nullptr;
+    if (top_ < kReserve) { setA5(0xffffffffu); return nullptr; }
     Obj& o = recs_[size_t(stack_[top_--])];
+    setA5(kObjPoolAddr + uint32_t(indexOf(o)) * kObjSize);
     linkTail(o);
     init(o);
     return &o;
@@ -262,9 +283,12 @@ bool ObjectSystem::moveToTail(Obj& o) {
         return false;
     }
     Obj& r = recs_[size_t(stack_[top_--])];
+    setA5(kObjPoolAddr + uint32_t(indexOf(r)) * kObjSize);   // (a0 and a5 the record)
     linkTail(r);
     return true;
 }
+
+uint32_t ObjectSystem::recordAddr(int i) { return i < 0 ? 0xffffffffu : kObjPoolAddr + uint32_t(i) * kObjSize; }
 
 std::vector<Obj*> ObjectSystem::list() {
     std::vector<Obj*> v;
@@ -282,10 +306,12 @@ void ObjectSystem::tick(ObjCtx& ctx) {
     for (int i = head_; i != -1 && guard < 0x1000; ++guard) {
         Obj& o = recs_[size_t(i)];
         const int pending = o.next;
+        ctx.harry.setUl(0x465888, recordAddr(pending));      // 0x405224
         size_t& n = o.behind ? behindN_ : frontN_;            // 0x405236 (+0x28)
         if (n + 1 < disp_.size()) {                          // (the original would write on past 0x464e7c)
             disp_[n] = i; disp_[n + 1] = -1;
             curSlot_ = n; hasSlot_ = true;
+            ctx.harry.setUl(0x465b8e, currentDisplayAddr());  // 0x405265
             ++n;
         }
         ctx.pl.setTriggerClass(2, 3);     // 0x40528a: trigger id 2 is a wall for objects (a few handlers clear it again)
@@ -527,7 +553,9 @@ bool deflectStones(ObjCtx& ctx, Obj& o) {
     Harry& h = ctx.harry;
     for (uint32_t a = 0x466808; a <= 0x466818; a += 4) {
         Obj* st = ctx.pl.objAt(h.ul(a));
-        if (!st || st->type == 4 || st->b(0x6a) != 0 || !ctx.boxesOverlap(*st, o)) continue;
+        if (!st) continue;
+        ctx.setA5(st);                                          // 0x42404d, before its tests
+        if (st->type == 4 || st->b(0x6a) != 0 || !ctx.boxesOverlap(*st, o)) continue;
         ctx.sound1(0xce, 0xc);
         st->l(0x32) = st->l(0x32) >> 1;
         st->l(0x32) += int32_t(ctx.rnd() & 0xffff) - 0x7fff;
@@ -569,7 +597,9 @@ bool webHit(ObjCtx& ctx, Obj& o, bool* cut) {
     }
     for (uint32_t a = 0x466808; a <= 0x466818; a += 4) {
         Obj* st = ctx.pl.objAt(h.ul(a));
-        if (!st || st->type == 4 || !ctx.boxesOverlap(*st, o)) continue;
+        if (!st) continue;
+        ctx.setA5(st);                                          // 0x424982, before the type test
+        if (st->type == 4 || !ctx.boxesOverlap(*st, o)) continue;
         o.whipCool = 5;
         if (cut) *cut = st->b(0x54) != 0;
         if (o.type == 0x20) { st->l(0x32) = -st->l(0x32); snd(); return true; }
@@ -631,7 +661,9 @@ void killObject(ObjCtx& ctx, Obj& o) {
     // 0x4081fc: the 0x465a40 list (class bit 1: it comes back 15 s later; on easy the monkeys
     // do not), the score, then the record is freed and the death effect (0x40855e: by type,
     // which also moves y; unlisted types get the debris puff) is made from it.
+    if (o.type != 0) ctx.setA5(0x45b6c3);                      // 0x40821c: a5 = the class table
     if (o.type != 0 && o.type < 180 && (kTypeClass[o.type] & 2) && (ctx.hard || o.type != 0x23)) ctx.pl.markKilled(o);
+    ctx.setA5(0x461aca);                                        // 0x4082b5: a5 = the score table
     if (o.type < 180) ctx.g.stats().score += kKillScore[o.type];
     const int kind = deathFxAdjust(o);                          // 0x40855e
     ctx.release(o);

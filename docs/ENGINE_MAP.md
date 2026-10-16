@@ -116,7 +116,7 @@ function boundaries are unreliable there; the full decompilation is kept in
 | `0x450fcc` / `0x450514` | the level has a map / a parallax map (`FUN_004460e0`; the cutscenes' `0x40160e` clears both) | `FrameState::mainLayer / parallaxLayer` |
 | `0x456000` .. `0x4569df` | the cutscenes' data: the script's cursor, the wait's count (`0x456004`), the exit's string (`0x456008`), flags, texts, frame scripts, the ten actors (`0x45623f`, the frame's copy at `0x4564bf`), the scripts (`0x456753` ..) | `Game::cutsceneData`, `PlayLogic::cb` |
 | `0x46fb90`   | the cutscenes' actors are drawn | `FrameState::cutscene` |
-| `0x4504dc` / `0x4504e0` | the load block (1.5 MB, `GlobalAlloc`) and where a level's records start in it, past INIT.PH's (`docs/FORMATS.md` § 10) | `ph::Arena`, `ph::ArenaLayout` |
+| `0x4504dc` / `0x4504e0` | the load block (1.5 MB, `GlobalAlloc`: at `0x016a0020` in every run under Wine) and where a level's records start in it, past INIT.PH's (`docs/FORMATS.md` § 10) | `ph::Arena` (`kAddress`), `ph::ArenaLayout` |
 | `0x450fc4` / `0x450510` / `0x45052c` / `0x450fc0` / `0x450518` / `0x4504e4` / `0x4504c4` / `0x450f90` | in the load block: the background, the triggers and their copy, the collision planes (the probes' `0x46615c` / `0x466160`), the objects' working copy and the level's own, the parallax map | `ArenaLayout::base / trg / det / dt2 / als / parallax`, `PlayLogic::alsMem_ / tb` |
 | `0x462854` .. `0x464ab3` | the 0x50 object records, never cleared (x, y and their fractions kept from a record's last use, a level before too) | `ObjectSystem`, `Game::objectPlaces` |
 | `0x453080`   | palette entry flags                      | `ph::Palette::flags_`        |
@@ -189,7 +189,7 @@ the title's start key and attract (`0x44476e`), so the stones' clearing of the s
 | `0x465b70` / `0x465bb3` / `0x465aff` | on ground / collision plane / jump hold | `Harry` fields |
 | `0x465ae3`, `0x466526`, `0x4466527`, `0x46653b` | lives, treasures, continues, score | `PlayerStats` |
 | `0x4658ac` | level width in 16-px columns | `LevelData::columns` |
-| `0x4668c4` | collision shape heights | `ph::kCollisionHeights` |
+| `0x4668c4` | collision shape heights (in the data section, inside the logic's memory: its only bytes there that are not zero at the start) | `ph::kCollisionHeights`, copied into `Game::logicMemory` |
 | `0x461f8e` | trigger class table | `ph::kTriggerClass` |
 
 ## The logic's end (`0x4363bd`) and the HUD
@@ -349,7 +349,14 @@ which `FUN_0043628c` counts down to `*6` (back to the Lost City of Copan).
 | `FUN_00423134` / `FUN_00423150` | animation script interpreter (frame bytes, `f0` loop, `fc/fd/ee/ef/fb/ed` sounds, `f7` flip, `f9` unflip) | `animStep / animPeek` |
 | `FUN_004237a5` | pointer-based script interpreter (Harry's; objects use frames, `f0`, sounds, `f3` jump, `f1` set sprite) | `anim2Step` |
 | `0x424171` | weapon hits: sling list `0x466808`, stone `0x46681c`, whip box `0x465aeb..` against the sprite box; `obj+0xa` accumulates, `d5` = hit points | `weaponHits` |
-| `0x4081fc` | enemy killed: class table `0x45b6c3` (bit 1 = permanent), score table `0x461aca`, death-effect table `0x45b814`, kill list `0x465a40` | `killObject`, `Game::permanentlyGone` |
+| `0x4081fc` | enemy killed: class table `0x45b6c3` (bit 1: kept in the kill list `0x465a40`, 19 places of {count, id, `.als` entry}, to come back 15 s later; on easy not the monkeys), score table `0x461aca`, death-effect table `0x45b814` | `killObject`, `PlayLogic::markKilled` |
+| `0x466770` | the dummy `.als` entry a new record points at (`0x435854`) until the spawner gives it one: the exits and the kill list write its id to `0x466771`, and it takes a kill list place as any | `PlayLogic::restoreId` |
+| `DAT_004601b4` | where the translated code keeps the 68000's a5, written at about a hundred places (the allocators leave the new record or -1, `FUN_00435532` the record moved, the box test the first record, a kill the class and score tables, the links a handler walks, the HUD's placements); only the feather (`0x412d88`) reads what is left in it: when `+0x57` of that record or table is set (a5 last left at a leaf off Harry's zip line or a power shot's sparkle), the feather skips its countdown, landing, push and sway | `Game::regA5`, `ObjectSystem::setA5`, `PlayLogic::memByte` |
+| `DAT_00466782` / `DAT_00466788` / `DAT_0046678c` | the spawners' column, `.als` address (`DAT_004504e4`: `ph::Arena::kAddress` + `ArenaLayout::als`) and templates' address (`0x4678c4`); the same words are the text's x (`FUN_00434a30`), a stone's hit (its velocity and place, the low word cleared by every weapon test) and the rope's last segment, so a whip's hit on a gargoyle or a skeleton (`0x412987` / `0x4132ec`) sends a chip or a bone off at the address's high word, from the spawner's column | `PlayLogic::keepAlsBase`, `gargoyleChip`, `stoneKnocksBone` |
+| `DAT_00465888` | the object pass's next record (`0x405224`; the 2600 level's pass `0x40293c`) | `ObjectSystem::tick`, `PlayLogic::a26Objects` |
+| `DAT_00466870` / `0x466874 ..` | the HUD list: `0x4150a2` puts the record's address at the end and a 0 after it; the pass start (`0x405170`, `FUN_00433116`) clears only the first entry's low word, and `FUN_0043348e` walks the list in memory, so after a pass that listed objects an empty one starts with `0x00460000` (its "type" `0x460008` = 0x0c is no HUD type) and goes on to the old entries | `PlayLogic::hudAdd / hudReset / hudPlacement` |
+| `DAT_0046615c` / `DAT_00466160` | the collision planes' addresses (`DAT_00450fc0` / `DAT_00450518`), set by the logic's start and restart for the probes | `PlayLogic::keepPlanes` (the probes read `det()` / `dt2()`) |
+| `DAT_00465886` | Harry's Genesis tile base, which the PC only writes (`FUN_00434f6c`: 0x400, 0xf80 hidden, 0x1200 on the continue screen; `FUN_00435174`: 0x7000) | `PlayLogic::displayList / listAll` |
 | `FUN_00424af1` | sprite box overlap test; boxes come from the `0x468824` table through the sprite header word at +8 | `ObjCtx::boxesOverlap / touchesHarry`, `ph::kHitboxes` |
 | `0x407aff` | Harry contact every 6th tick, hurt by `d5` | `harryContact` |
 | `FUN_00428233` | hurt Harry: `+d5` damage, cap 0xa0, 0x46 ticks invulnerable, hit sounds 0x17/0x2f/0x30/0x31 | `PlayLogic::hurt` |

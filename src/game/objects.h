@@ -82,6 +82,10 @@ struct Obj {
     void setSprite(const ph::Sprite* spr) { sprite = spr; rawBox = nullptr; }
 };
 
+// The record's byte at +off as the original lays it out (0x6e bytes; the pointer fields, which
+// the port keeps as pointers, read as 0).
+uint8_t recordByte(const Obj& o, int off);
+
 // FUN_004251f9: the trigger under (x, y).  cls = the class byte (0 when >= 0xf0, d2),
 // id = the trigger id (d3), raw = the class byte itself (d6); found is false when the
 // cell has no trigger (the routine then returns with Z set, as it does for a class >= 0xf0).
@@ -110,7 +114,11 @@ struct ObjCtx {
     // FUN_00424af1 with a5 = Harry; `d1`, when given, receives what the test leaves in d1 (the
     // object's box edge it stopped at; unchanged when either box is missing).
     bool touchesHarry(Obj& o, int16_t* d1 = nullptr);
-    bool boxesOverlap(const Obj& a, const Obj& b);     // FUN_00424af1
+    bool boxesOverlap(const Obj& a, const Obj& b);     // FUN_00424af1 (the caller has put a in a5)
+    // DAT_004601b4, the a5 the translated code keeps in memory (Game::regA5): what a routine
+    // leaves there is what the next one finds (see h_feather).
+    void setA5(uint32_t addr);
+    void setA5(const Obj* o);                          // the record's address (0 for none)
     const ph::ColumnTable& det() const;                // .det collision plane
     const ph::ColumnTable& dt2() const;                // .dt2
     // FUN_00425d6f: floor in the cell of (x, y) or one above / below; returns the surface y or y.
@@ -155,6 +163,8 @@ public:
     void savePlaces(Places& p) const;
     Obj* allocHead();                          // FUN_00435905 (nullptr when no record is left)
     Obj* allocTail();                          // FUN_00435780
+    // Where the allocators leave the record they hand out (a5, DAT_004601b4: -1 when none is left).
+    void setA5Register(uint32_t* r) { a5_ = r; }
     void free(Obj& o);                         // FUN_0043598f
     // 0x435532: the object goes to the end of the list (it then runs again in this pass and
     // draws after the others).  false: there was no record to spare, the object was freed
@@ -172,6 +182,8 @@ public:
     Obj& record(int i) { return recs_[size_t(i)]; }
     const Obj& record(int i) const { return recs_[size_t(i)]; }
     int indexOf(const Obj& o) const { return int(&o - recs_.data()); }
+    // a record's address in the original (its list links: 0xffffffff for none)
+    static uint32_t recordAddr(int i);
     std::vector<Obj*> list();                  // the objects in list order (DAT_00462848 ..)
     // A walk of the list as the handlers do it (DAT_00462848, then +0x18 of each record, which a
     // freed record keeps).
@@ -205,6 +217,8 @@ private:
     size_t curSlot_ = 0;                       // DAT_00465b8e: the entry of the object that ran last
     bool hasSlot_ = false;
     bool endPass_ = false;
+    uint32_t* a5_ = nullptr;
+    void setA5(uint32_t v) { if (a5_) *a5_ = v; }
 };
 
 // --- shared behaviour pieces (objects.cpp) ---

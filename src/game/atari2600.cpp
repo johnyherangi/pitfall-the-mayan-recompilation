@@ -404,6 +404,7 @@ void PlayLogic::a26Hud() {
         }
         a26Glyph(d, d6, 0x90);
     }
+    game_->regA5() = 0x46655c;                                 // (a5 walked the six digits from 0x466556)
     // the lives left: one or two strokes
     int d6 = 0x98;
     if (h_.b(0x465e85) == 1) a26Glyph(0xb, d6, 0x9e);
@@ -457,6 +458,7 @@ void PlayLogic::a26Objects() {
     };
     for (Obj* o = objects_.first(); o; ) {
         Obj* next = objects_.nextOf(*o);
+        h_.setUl(0x465888, next ? addrOf(next) : 0xffffffffu);   // 0x40293c
         switch (o->type) {
         case 7: {
             // a crocodile: the mouth opens and shuts every 0x79 ticks (frame 3 open, 4 shut); its

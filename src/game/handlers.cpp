@@ -934,21 +934,25 @@ void h_hawk(ObjCtx& ctx, Obj& o) {
 // 0x412d6a: type 0x40, a drifting feather / leaf that Harry's run can push.
 void h_feather(ObjCtx& ctx, Obj& o) {
     if (o.w(0x58)) { o.w(0x58) -= 1; if (o.w(0x58) == 0) { ctx.release(o); return; } }
-    // (0x412d88 skips the next part when +0x57 of the record in a5 is set; a5 is left over from
-    // the code before - usually Harry's record, whose +0x57 nothing sets - so it never skips here.)
-    if (o.w(0x4e)) o.w(0x4e) -= 1;
-    else {
-        o.b(0x6d) -= 1;
-        if (int8_t(o.b(0x6d)) < 0) {
-            o.b(0x6d) = 3;
-            int y = o.y;
-            if (ctx.floorSnap(o.x, y)) { ctx.release(o); return; }
+    // 0x412d88: the next part (the countdown, the landing, Harry's push, the sway) is skipped
+    // while the byte at +0x57 of what a5 (DAT_004601b4) was left at by the code before is set:
+    // a leaf that Harry's zip line shook off (+0x57 = 0xff) or a power shot's sparkle, made
+    // since and nothing else put in a5 after it.  The part leaves a5 = Harry (0x412dda).
+    if (ctx.pl.memByte(ctx.g.regA5() + 0x57) == 0) {
+        if (o.w(0x4e)) o.w(0x4e) -= 1;
+        else {
+            o.b(0x6d) -= 1;
+            if (int8_t(o.b(0x6d)) < 0) {
+                o.b(0x6d) = 3;
+                int y = o.y;
+                if (ctx.floorSnap(o.x, y)) { ctx.release(o); return; }
+            }
         }
+        if (ctx.touchesHarry(o)) o.l(0x50) += ctx.harry.vx() >> 5;
+        o.l(0x50) = std::clamp(int32_t(o.l(0x50)), int32_t(-0x15000), int32_t(0x15000));
+        moveX(o, o.l(0x50));
+        if (o.l(0x50) < 0) o.l(0x50) += 0x400; else o.l(0x50) -= 0x400;
     }
-    if (ctx.touchesHarry(o)) o.l(0x50) += ctx.harry.vx() >> 5;
-    o.l(0x50) = std::clamp(int32_t(o.l(0x50)), int32_t(-0x15000), int32_t(0x15000));
-    moveX(o, o.l(0x50));
-    if (o.l(0x50) < 0) o.l(0x50) += 0x400; else o.l(0x50) -= 0x400;
     moveY(o, o.l(0x50) >= 0 ? -o.l(0x50) : o.l(0x50));
     moveY(o, o.l(0x36));
     if (o.script) animStep(ctx, o, o.anim(0x3a), o.script, 7);
@@ -1121,7 +1125,7 @@ void stoneBlast(ObjCtx& ctx) {
     for (Obj* a0 = os.first(); a0; a0 = os.nextOf(*a0)) {
         const uint8_t t = a0->type;
         if (t == 0) continue;
-        if (scores) ctx.g.stats().score += scoreForType(t);
+        if (scores) { ctx.setA5(0x461aca); ctx.g.stats().score += scoreForType(t); }   // 0x41c134
         if (!(typeClass(t) & 1)) continue;
         if (t == 0x69) {
             a0->b(0x68) = 1;
@@ -1164,7 +1168,11 @@ void h_stonePiece(ObjCtx& ctx, Obj& o) {
                 // (a piece that follows the record at l36 while it keeps the type in b3a; the big
                 // stone's pieces have l36 = 0)
                 Obj* t = ctx.pl.objAt(uint32_t(o.l(0x36)));
-                if (t && t->type == o.b(0x3a)) { ctx.release(*t); o.w(0x38) = t->x; o.w(0x3a) = t->y; }
+                if (t && t->type == o.b(0x3a)) {
+                    ctx.release(*t);
+                    ctx.setA5(&o);                                // 0x41c383: pop a5 (the a0 pushed before)
+                    o.w(0x38) = t->x; o.w(0x3a) = t->y;
+                }
                 else ctx.release(o);
             }
         }
@@ -1515,6 +1523,8 @@ void h_mineCart(ObjCtx& ctx, Obj& o) {
     auto in = [&](uint32_t s) { return h.cont() == s; };
     auto rides = [&] { return in(0x42abaa) || in(0x42f2f9) || in(0x42aa3b); };
     auto part = [&](int off) { return ctx.pl.objAt(uint32_t(o.l(off))); };
+    // a part fetched into a5 (the lever's three uses: 0x409af5, 0x409d86, 0x40a01c)
+    auto partA5 = [&](int off) { if (o.l(off) != 0) ctx.setA5(uint32_t(o.l(off))); return part(off); };
     auto stopRumble = [&] { if (ctx.pl.scriptEvent() == 0xd1) { ctx.soundNow(0x89); ctx.pl.scriptEvent() = 0; } };
     auto wrapRide = [&] {                                   // 0x409172 / 0x4098d5
         const int16_t d = 0x600;
@@ -1526,7 +1536,7 @@ void h_mineCart(ObjCtx& ctx, Obj& o) {
 
     // 0x40a00d: the lever and the wheels follow the cart; far from the camera all four go.
     auto parts = [&] {
-        if (Obj* lv = part(0x56)) {
+        if (Obj* lv = partA5(0x56)) {
             lv->x = o.x; lv->y = int16_t(o.y - 0x10); lv->facing = o.b(0x4a);
             if (lv->frame == 0 && in(0x42abaa)) lv->y = int16_t(lv->y - 0x200);   // in Harry's hands
         }
@@ -1609,14 +1619,18 @@ void h_mineCart(ObjCtx& ctx, Obj& o) {
 
     if (l7 && !in(0x42aa3b) && !in(0x42709d)) {
         // 0x4090f8: a crashed cart meeting a type-0x7f object on the ride
+        bool met = false;
         for (Obj* a = os.first(); a; a = os.nextOf(*a)) {
+            ctx.setA5(a);                                              // (a5 walks the list)
             if (a->type != 0x7f || !ctx.boxesOverlap(*a, o)) continue;
+            met = true;
             if (o.b(0x65) == 0) break;
             o.b(0x65) = 0xff;
             h.b(0x465b74) = 0; h.setCont(0x42c244); h.w(0x465b47) = 0; h.b(0x465bb2) = 0x70;
             if (int16_t(h.w(0x4658b4) - 0x200) < 0) wrapRide();
             return;
         }
+        if (!met) ctx.setA5(0xffffffffu);
         if (o.b(0x65) != 0) { parts(); return; }
     }
 
@@ -1767,7 +1781,7 @@ board:
         auto back = [&] { return o.b(0x4a) != 0 ? h.b(0x466768) != 0 : h.b(0x466767) != 0; };
         if (o.w(0x3e) == 3 && ahead()) {
             o.b(0x47) = 0;                                                    // the brake is let go
-            if (Obj* lv = part(0x56)) lv->frame = 1;
+            if (Obj* lv = partA5(0x56)) lv->frame = 1;
         }
         int32_t d0 = 0;
         if (o.b(0x47) == 0) {
@@ -1802,7 +1816,7 @@ board:
             }
         } else if (o.l(0x50) == 0 && o.w(0x3e) == 7 && back() && o.b(0x47) == 0) {
             // 0x409d6d: Harry pulls the lever back
-            if (Obj* lv = part(0x56)) lv->frame = 0;
+            if (Obj* lv = partA5(0x56)) lv->frame = 0;
             o.b(0x47) = 0xff;
             h.setCont(0x42abaa);
             o.b(0x6d) = 0x30;
@@ -1822,6 +1836,7 @@ board:
 // cart's (slope) facing matches the sparks' (its direction, b4a), else l5e.
 void h_cartSpark(ObjCtx& ctx, Obj& o) {
     o.behind = 0xff;
+    ctx.setA5(uint32_t(o.l(0x32)));                           // 0x40ecaf: a5 = the cart
     if (Obj* cart = ctx.pl.objAt(uint32_t(o.l(0x32)))) {
         const bool other = (cart->facing != 0) != (o.facing != 0);
         if (Obj* w = ctx.pl.objAt(uint32_t(cart->l(other ? 0x5e : 0x5a)))) {
@@ -2176,6 +2191,7 @@ void h_hudGo(ObjCtx& ctx, Obj& o) {
 // the script 0x45be4a both go (without a twin it goes at once).
 void h_harrySplash(ObjCtx& ctx, Obj& o) {
     const bool done = animStep(ctx, o, o.anim(0x32), kAnim_harrySplash, 4);
+    ctx.setA5(uint32_t(o.l(0x50)));                               // 0x41b27e: a5 = l50
     Obj* twin = ctx.pl.objAt(uint32_t(o.l(0x50)));
     if (!twin) { ctx.release(o); return; }
     twin->frame = o.frame;
@@ -3425,6 +3441,7 @@ void h_batRoost(ObjCtx& ctx, Obj& o) {
     if (o.w(0x34)) {                                  // the second bat follows 0x32 ticks later
         o.w(0x34) -= 1;
         if (o.w(0x34) == 0) {
+            ctx.setA5(o.link2);                       // 0x415491: a5 = l40
             if (asleep(o.link2)) wake(o.link2);
             ctx.release(o);
             return;
@@ -3438,6 +3455,7 @@ void h_batRoost(ObjCtx& ctx, Obj& o) {
         else {
             const int16_t dy = int16_t(o.y - ctx.harry.y());
             if (dy >= -0xc8 && dy < 0x14) {
+                ctx.setA5(o.link);                    // 0x415537: a5 = l3c
                 if (asleep(o.link)) { Obj* b = o.link; o.link = nullptr; wake(b); }
                 o.w(0x34) = 0x32;
                 return;
@@ -3557,6 +3575,7 @@ void h_explosion(ObjCtx& ctx, Obj& o) {
         if (o.link) ctx.release(*o.link);                     // (+0x54, the mirrored half)
         return;
     }
+    ctx.setA5(o.link);                                        // 0x410582: a5 = +0x54
     if (o.link) o.link->frame = o.frame;
     if (int8_t(o.frame - 3) >= 0) {
         o.touchTick = 0;
@@ -3634,6 +3653,7 @@ void h_pit(ObjCtx& ctx, Obj& o) {
             if (o.w(0x5a)) o.w(0x5a) -= 1;
             const bool looped = animStep(ctx, o, o.anim(0x32), kAnim_pit, 4);
             if (o.w(0x32) == 0xc && o.w(0x5a)) o.w(0x32) = 0;             // keep bubbling until the timer runs out
+            ctx.setA5(o.link);                                                // 0x40f764: a5 = l50
             if (o.link) {
                 o.link->frame = o.frame;
                 if (int8_t(o.link->frame - 3) < 0) o.link->frame = 0xff;
@@ -3808,8 +3828,10 @@ void levelScriptPull(ObjCtx& ctx, uint8_t leverId) {
     ctx.pl.clearTriggerClass(e->door);
     if (e->param == -3) { ctx.pl.clearTriggerClass(0x4d); return; }   // DAT_0046590d
     if (e->param == -4) { ctx.pl.clearTriggerClass(0x4e); return; }   // DAT_0046590e
+    // (a5 walks the list: it is left at the object found, else at its end, -1)
     for (Obj* p : ctx.pl.objectSystem().list()) {
         Obj& o = *p;
+        ctx.setA5(&o);                                                 // 0x418104 / 0x41820c
         if (o.type != 0x21 && o.type != 0x1f) continue;               // chutes and doors
         uint8_t id = triggerIdAt(ctx, o.x - 0x18, o.y + 0x10);
         ctx.harry.uw(0x466782) = id;
@@ -3822,6 +3844,7 @@ void levelScriptPull(ObjCtx& ctx, uint8_t leverId) {
             return;
         }
     }
+    ctx.setA5(0xffffffffu);
 }
 
 // ---------------------------------------------------------------- the Loltun vaults (levels 11..13)
@@ -3842,6 +3865,7 @@ void vaultNote(ObjCtx& ctx, int lever) {
     // 0x40b960 copies the lever's palette line (0x45b954 + lever * 0x20) into the Genesis colours
     // at 0x462654 (DAT_0046654f: changed); the port does not keep those colours, so the flash
     // is not shown.  Then the lever's note (0x45aa04).
+    ctx.setA5(0x45b954 + uint32_t(lever) * 0x20 + 0x20);   // (a5 ends past the line it copied)
     static const uint8_t kNote[3] = {0xcc, 0xc5, 0xee};
     ctx.sound1(kNote[lever], 0x12);
 }
@@ -4223,6 +4247,7 @@ void h_chute(ObjCtx& ctx, Obj& o) {
             o.frame -= 1;
         }
     }
+    ctx.setA5(half);                                           // 0x40e0b9: a5 = +0x46
     half->frame = o.frame;
     if (o.frame == 0 && !ctx.pl.harryOnPlatform() && !ctx.pl.harryBusy() && h.w(0x465baa) >= 0 && harryOnBox(ctx, o, -48, 48, -11, 7)) {
         // 0x40e10a: Harry stands on the closed hatch (box 0x45ba36); no landing
@@ -4314,6 +4339,8 @@ void h_axe(ObjCtx& ctx, Obj& o) {
 void gargoyleChip(ObjCtx& ctx, Obj& o) {
     Harry& h = ctx.harry;
     if (h.l(0x466788) == 0) return;
+    // (0x412994: every register saved around it, so a5 comes back as it was)
+    struct KeepA5 { uint32_t& r; uint32_t v; ~KeepA5() { r = v; } } keep{ctx.g.regA5(), ctx.g.regA5()};
     Obj* c = ctx.spawnFrom(o, true);                    // FUN_0043546e(1)
     if (!c) return;
     c->w(0x26) = 0x6663;
@@ -4502,7 +4529,9 @@ void h_floorSpikes(ObjCtx& ctx, Obj& o) {
             parts[i]->sprite = ctx.spr(i == 1 ? "ob_spik1" : "ob_spik2"); parts[i]->flags = 0x4000;
             parts[i]->w(0x26) = 0x6663;
         }
+        ctx.setA5(parts[0]);                                       // 0x4106d2: a5 = l3c
         parts[0]->x -= 4; parts[0]->y += 6; parts[0]->facing = 0xff; parts[0]->behind = 0xff;
+        ctx.setA5(parts[2]);                                       // 0x410711: a5 = l44
         parts[2]->x += 4; parts[2]->y -= 6;
         o.link = parts[0]; o.link2 = parts[1]; o.link3 = parts[2];
         exitDespawnFar(ctx, o);
@@ -5055,6 +5084,7 @@ void h_bungee(ObjCtx& ctx, Obj& o) {
     {
         int f = (uint16_t(d0) / 0x1e) & 3;
         if (f >= 3) f = 2;
+        ctx.setA5(body);                          // 0x40cfe4: a5 = l54
         body->frame = uint8_t(f + 1);
     }
     int16_t d1 = int16_t(o.w(0x38) - 0xa);
@@ -5067,6 +5097,7 @@ void h_bungee(ObjCtx& ctx, Obj& o) {
             p->sprite = ctx.spr("ob_bunge"); p->flags = 0x6000; p->x = o.x;
         }
         Obj* p = body->parts[used++];
+        ctx.setA5(p);                             // 0x40d09c (or the record FUN_00435905 just gave)
         p->frame = still ? 0xff : segFrame;
         p->y = d1;
         if (int16_t(d0 - 0x20) < 0) p->y = int16_t(p->y + d0 - 0x20);
@@ -5165,6 +5196,7 @@ void spawnMeter(ObjCtx& ctx, Obj& boss) {
 // 0x415b92: the boss is dead - score, a death cloud, then the type 0x51 burst sequence.
 void bossDeath(ObjCtx& ctx, Obj& o) {
     o.w(0x26) = 0;                              // FUN_004263c4
+    ctx.setA5(0x461aca);                        // 0x415bba: a5 = the score table
     ctx.g.stats().score += scoreForType(o.type);
     o.y -= 0x14;
     o.b(0x5a) = 0xff;
@@ -5206,6 +5238,7 @@ void h_bossDeathBurst(ObjCtx& ctx, Obj& o) {
 void h_bossMeter(ObjCtx& ctx, Obj& o) {
     ctx.pl.hudAdd(o);                                                   // 0x4150a2: placed by FUN_0043348e
     Obj* d2 = o.link; Obj* d3 = o.link2; Obj* pct = o.link3;            // l32 / l36 / l60
+    ctx.setA5(d2);                                                      // 0x41019a: a5 = l32
     if (!d2 || !d3 || !pct) return;
     o.behind = d2->behind = d3->behind = pct->behind = 0xff;
     pct->frame = 0;
@@ -5865,9 +5898,11 @@ void h_jaguarRope(ObjCtx& ctx, Obj& o) {
     if (o.w(0x32) != 0x80) { o.w(0x32) += 2; o.y += 2; }
     int16_t y = o.y;
     Obj* s = &o;
+    ctx.setA5(&o);                                                     // 0x41e0a6 (a5 walks the segments, to the 0 at the end)
     for (int guard = 0; guard < ObjectSystem::kPoolSize; ++guard) {
         y = int16_t(y + 0x10);
         s->behind = behind;
+        ctx.setA5(uint32_t(s->l(0x46)));                               // 0x41e0c4
         s = ctx.pl.objAt(uint32_t(s->l(0x46)));
         if (!s) break;
         s->y = y;
@@ -6261,6 +6296,7 @@ bool pose(ObjCtx& ctx, Obj& o, uint32_t table, uint32_t script, int ticks) {
     o.b(0x33) = b;
     const uint8_t* t = kData_spiritPoses + (table - kPoses);
     const uint8_t* p = t + rdw(t + 2 * b);
+    ctx.setA5(uint32_t(o.l(0x3c)));                       // 0x422aef: a5 walks the parts (+0x3c), to the 0 at the end
     for (Obj* a5 = part(ctx, o); a5; a5 = part(ctx, *a5)) {
         // (with no part at all the original stops with the error "U00151_back_mk")
         if (uint16_t(rdw(p)) == 0x8000) break;
@@ -6275,6 +6311,7 @@ bool pose(ObjCtx& ctx, Obj& o, uint32_t table, uint32_t script, int ticks) {
         putFixed(*a5, 0x4c, ty);
         putFixed(*a5, 0x54, (ty - fy(*a5)) >> 3);
         a5->b(0x58) = uint8_t(rdw(p)); p += 2;
+        ctx.setA5(uint32_t(a5->l(0x3c)));                 // 0x422c66
     }
     return ended;
 }
@@ -6287,11 +6324,13 @@ void move(ObjCtx& ctx, Obj& o, int32_t d0, int32_t d1) {
     if (o.x < 0x47) o.x = 0x48;
     if (o.x >= 0x199) o.x = 0x198;
     moveY(o, d1);
+    ctx.setA5(uint32_t(o.l(0x3c)));                       // 0x422763
     for (Obj* a5 = part(ctx, o); a5; a5 = part(ctx, *a5)) {
         moveX(*a5, d0);
         putFixed(*a5, 0x48, getFixed(*a5, 0x48) + d0);
         moveY(*a5, d1);
         putFixed(*a5, 0x4c, getFixed(*a5, 0x4c) + d1);
+        ctx.setA5(uint32_t(a5->l(0x3c)));                 // 0x4227fb
     }
 }
 
@@ -6302,7 +6341,9 @@ bool deflect(ObjCtx& ctx, Obj& o) {
     if (!head) return false;
     for (uint32_t a = 0x466808; a <= 0x466818; a += 4) {
         Obj* w = ctx.pl.objAt(ctx.harry.ul(a));
-        if (!w || w->type == 4 || w->b(0x6a) != 0) continue;
+        if (!w) continue;
+        ctx.setA5(w);                                     // 0x42255c, before its tests
+        if (w->type == 4 || w->b(0x6a) != 0) continue;
         const int16_t dx = int16_t(head->x - w->x);
         if (dx < -10 || dx >= 10) continue;
         const int16_t dy = int16_t(head->y - w->y);
@@ -6532,6 +6573,7 @@ Flow body(ObjCtx& ctx, Obj& o, uint32_t st, uint32_t& next, int32_t d1) {
         if (int8_t(o.b(0x33) - 6) < 0) return kDone;
         if (int8_t(o.b(0x33) - 0xf) < 0) {          // Harry held in its hand (part 14 at 0x465c64)
             if (h.cont() != 0x42c2ff) { h.setCont(0x42c2ff); h.w(0x465b47) = 0; }
+            ctx.setA5(h.ul(0x465c64));                // 0x421a5e
             if (const Obj* hand = ctx.pl.objAt(h.ul(0x465c64))) {
                 h.x() = int16_t(hand->x + 0x10);
                 h.y() = int16_t(hand->y + 0x30);
@@ -6632,6 +6674,7 @@ void setUp(ObjCtx& ctx, Obj& o) {
     const uint8_t* t = kData_spiritPoses;
     const uint8_t* p = t + rdw(t);                     // pose 0 of 0x457420
     const uint8_t* q = kData_spiritParts;
+    ctx.setA5(uint32_t(o.l(0x3c)));                    // 0x420df9
     for (Obj* a5 = part(ctx, o); a5; a5 = part(ctx, *a5)) {
         if (uint16_t(rdw(p)) == 0x8000) break;
         a5->x = int16_t(o.x - rdw(p)); p += 2;
@@ -6643,6 +6686,7 @@ void setUp(ObjCtx& ctx, Obj& o) {
         a5->behind = uint8_t(rdw(q)); q += 2;
         a5->flags = uint16_t(rdw(q)); q += 2;
         if (int8_t(a5->frame - 3) < 0) o.l(0x64) = int32_t(ctx.pl.addrOf(a5));   // the head
+        ctx.setA5(uint32_t(a5->l(0x3c)));              // 0x420f22
     }
     // the boss meter (type 0x30): the head's hits while this is a type 0x69 boss
     if (Obj* m = ctx.spawnFrom(o, false, 1)) {
@@ -6918,6 +6962,8 @@ void stoneKnocksBone(ObjCtx& ctx, Obj& o) {
     Harry& h = ctx.harry;
     if (h.l(0x466788) == 0) return;
     if (spriteIs(o, "skiroll") || spriteIs(o, "skimorph") || spriteIs(o, "skijaw") || spriteIs(o, "skidie")) return;
+    // (0x413337: every register saved around it, so a5 comes back as it was)
+    struct KeepA5 { uint32_t& r; uint32_t v; ~KeepA5() { r = v; } } keep{ctx.g.regA5(), ctx.g.regA5()};
     Obj* b = spawnBone(ctx, o);
     if (!b) return;
     b->b(0x68) = 0xff;
@@ -7300,6 +7346,7 @@ void spawnRipple(ObjCtx& ctx, Obj& at, int dx, int dy, uint16_t flagAdd = 0) {
 void h_ripple(ObjCtx& ctx, Obj& o) {
     const bool splash = o.sprite && o.sprite->name() == "fxisplsh";
     const bool done = animStep(ctx, o, o.anim(0x32), splash ? kAnim_splashRing : kAnim_rippleRing, 4);
+    ctx.setA5(o.link);                                                   // 0x41b97c: a5 = l50
     if (o.link) o.link->frame = o.frame;                                 // l50: the twin
     if (done) {
         ctx.release(o);
@@ -7417,6 +7464,7 @@ void tail(ObjCtx& ctx, Obj& o) {
     for (size_t i = 0; i < o.parts.size(); ++i) {
         Obj* c = o.parts[i];
         if (!c) continue;
+        ctx.setA5(c);                                                    // 0x414552 .. 0x414672: a5 = l3c .. l48
         c->frame = kWheelFrames[row + 1 + int(i)];
         c->x = o.x; c->y = o.y; c->flags = o.flags;
     }
@@ -7836,10 +7884,12 @@ void h_crocSplash(ObjCtx& ctx, Obj& o) {
     if (o.w(0x64)) {
         o.w(0x64) -= 1;
         o.frame = 0xff;
+        ctx.setA5(uint32_t(o.l(0x50)));                       // 0x4188f9: a5 = l50
         if (t) t->frame = 0xff;
         return;
     }
     const bool done = animStep(ctx, o, o.anim(0x32), kAnim_splashRing2, 4);
+    ctx.setA5(uint32_t(o.l(0x50)));                           // 0x41893d
     if (t) t->frame = o.frame;
     if (!done) return;
     ctx.release(o);
@@ -7894,6 +7944,7 @@ void h_leapingCroc(ObjCtx& ctx, Obj& o) {
             a4->x = o.x; a4->y = int16_t(o.y - 0x54); a4->facing = 0xff;
             o.w(0x38) = 0; o.w(0x40) = 6; o.w(0x4a) = 0x32; o.l(0x46) = int32_t(0xfff7c000);
             o.frame = 0; o.w(0x5e) = 0;
+            ctx.setA5(uint32_t(o.l(0x5a)));                       // 0x4162df: a5 = l5a
             if (body) body->frame = 0xff;
             const bool l18 = ctx.levelNo == 0x12;
             const int16_t lo = l18 ? 0x3f2 : 0x98e, hi = l18 ? 0x5fa : 0xa9f;
@@ -7915,6 +7966,7 @@ void h_leapingCroc(ObjCtx& ctx, Obj& o) {
             h.y() += 0x26;
         }
         moveX(o, -0x3000);
+        ctx.setA5(uint32_t(o.l(0x5a)));                           // 0x4164d6: a5 = l5a
         if (body) {
             body->x = o.x; body->y = o.y;
             if (body->frame != 6) animStep(ctx, *body, o.anim(0x5e), kAnim_crocLeap, 4);   // 0x45bc66
@@ -8060,6 +8112,7 @@ void h_fireball(ObjCtx& ctx, Obj& o) {
     auto die = [&] { o.w(0x32) = 0x100; exitDespawnWide(ctx, o); };
     if (int8_t(o.frame - 4) < 0) {
         Obj* p = o.link;                                                 // l50: the priest
+        ctx.setA5(p);                                                    // 0x40fa4e
         if (!p || p->type != 45 || p->b(0x32) != 0) { o.w(0x32) = 0x100; return; }
         if (p->b(0x6b) != 0) { exitDespawnWide(ctx, o); return; }        // the priest flinches: hold
     }
@@ -8142,6 +8195,7 @@ void h_firePriest(ObjCtx& ctx, Obj& o) {
         const bool behind = ctx.harry.x() < o.x ? o.facing == 0 : o.facing != 0;
         if (behind) { o.w(0x52) = 0x100; exitDespawnFar(ctx, o); return; }
         Obj* f = o.link2;                                                // l64
+        ctx.setA5(f ? ctx.pl.addrOf(f) : kHarryAddr);                    // 0x40ff65 (l64 is Harry's record once set below)
         if (f && f->type == 0x2c) { exitDespawnFar(ctx, o); return; }   // its fireball still burns
         o.link2 = nullptr;                                               // (l64 = Harry's record, whose type is 1 or 0xff)
     }
@@ -8368,9 +8422,12 @@ void h_continueSign(ObjCtx& ctx, Obj& o) {
     h.w(0x4658b6) = 0x2a;
     if (o.b(0x5a) == 0) {
         o.b(0x5a) = 0xff;
-        char text[] = "continues  ";                               // 0x45bfd2, copied to 0x4661b8
-        const int c = std::min(ctx.g.stats().continues & 0xff, 9);
-        text[10] = char('0' + c);
+        // "continues " (0x45bfd2) copied to 0x4661b8, its NUL turned into the count
+        static const char kText[] = "continues ";
+        char* text = reinterpret_cast<char*>(h.at(0x4661b8));
+        std::memcpy(text, kText, sizeof kText);
+        text[10] = char('0' + std::min(ctx.g.stats().continues & 0xff, 9));
+        text[11] = 0;
         ctx.pl.spawnText(text, 0x50, 0xbe, 0x6c);                    // FUN_00434a30
         static const uint8_t kFrames[] = {0, 1, 2, 3, 4, 5, 5};     // 0x4619d8
         int16_t x = 0x92;

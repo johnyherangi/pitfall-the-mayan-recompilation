@@ -608,6 +608,7 @@ void PlayLogic::h4285c5() { h_.setCont(0x42f2f9); h42f2f9(); }
 
 void PlayLogic::h4285d7(Obj& bat) {
     // FUN_004285d7 (a5 = the bat): dazed in its grip; 12 changes of the input break free.
+    game_->regA5() = addrOf(&bat);                         // (0x40a771: the bat's handler puts it in a5)
     h_.setCont(0x428625);
     h_.setSprite("hyidazed");
     h_.b(0x465b47) = 0xc;
@@ -621,7 +622,9 @@ void PlayLogic::h4285d7(Obj& bat) {
 void PlayLogic::h428625() {
     h428d36();
     const uint32_t a = h_.ul(0x465b4f);
-    if (a == 0 || (a & 1)) { h428dfa(); return; }
+    if (a == 0) { h428dfa(); return; }
+    game_->regA5() = a;                                    // 0x42863c
+    if (a & 1) { h428dfa(); return; }
     Obj* bat = objAt(a);
     if (!bat || bat->type != 0x12 || bat->w(0x4a) == 0) { h428dfa(); return; }
     h_.w(0x465b45) -= 1;
@@ -922,6 +925,7 @@ void PlayLogic::h42939b() {
     h_.setSprite("hyifall");
     hAnim(0x465b47, 0x461746, 4);
     h_.vy() = 0x50000;
+    game_->regA5() = h_.ul(0x465b4b);                      // 0x4293d8
     Obj* a5 = objAt(h_.ul(0x465b4b));
     if (a5 && a5->type == 0x54) {
         h_.x() = int16_t(a5->x - 7);
@@ -3888,6 +3892,7 @@ void PlayLogic::h42bda7() {
     }
     h_.uw(0x465b45) = h_.uw(0x466767);
     if (h_.w(0x465b45) != 0) {
+        game_->regA5() = h_.ul(0x465b53);                   // 0x42be7c
         if (Obj* a5 = objAt(h_.ul(0x465b53))) a5->frame = 0xff;
         if (h_.b(0x466767) == 0) {
             if (trg(h_.x() + 0x30, h_.y() - 0x38).id != 0x1d) { dropOff(); return; }
@@ -3901,6 +3906,7 @@ void PlayLogic::h42bda7() {
         return;
     }
     // hanging still
+    game_->regA5() = h_.ul(0x465b53);                       // 0x42bf53
     if (Obj* a5 = objAt(h_.ul(0x465b53))) {
         a5->x = h_.x();
         a5->y = int16_t(h_.y() - 0x17);
@@ -3940,7 +3946,8 @@ void PlayLogic::h428780() {
     // Anything else puts him back at the checkpoint (FUN_00432615).
     h_.onGround() = 0;
     if (!hAnim2(0x465b4b, 6)) return;
-    h4311bf();
+    h4311bf();                                             // (every register saved around it)
+    game_->regA5() = h_.ul(0x465b43);                      // 0x428862
     Obj* a5 = objAt(h_.ul(0x465b43));                      // (the record is free by now; x / y stay)
     const uint8_t id = a5 ? trg(a5->x - 0x18, a5->y + 0x18).id : 0;
     Game::Warp& wp = game_->warp();
@@ -3983,7 +3990,7 @@ void PlayLogic::h4311bf() {
     // and goes, but the sling stones in flight (type 5).  (The stone / boomerang slots keep
     // pointing at their freed records, as in the original.)
     for (const Killed& k : killed_)
-        if (k.count != 0 && k.als >= 0) alsMem_[size_t(k.als) + 1] = k.id;
+        if (k.count != 0) restoreId(k.als, k.id);
     for (Obj* p : objects_.list()) {
         Obj& o = *p;
         restoreEntry(o);

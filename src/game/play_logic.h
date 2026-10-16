@@ -45,6 +45,9 @@ public:
     // record (0x465b0f) is not an Obj.
     Obj* objAt(uint32_t addr);
     uint32_t addrOf(const Obj* o) const;
+    // The original's byte at an address as far as the port keeps it (the object records, the
+    // logic's memory, the executable's data the port carries; else 0).
+    uint8_t memByte(uint32_t addr);
 
     // --- the entry points of Harry's state code that the object handlers call ---
     // `call 0xXXXXXX` from a handler (a6 = Harry): the knock-backs 0x427148 / 0x42715b /
@@ -73,6 +76,7 @@ public:
     void markCollected(const Obj& o);          // the .als entry stays cleared (it comes back after a death unless special)
     void markKilled(const Obj& o);             // 0x4081fc: the 0x465a40 list brings the entry back after 15 s
     void restoreEntry(const Obj& o);           // put the .als id back: the entry respawns when it scrolls back in
+    void restoreId(int als, uint8_t id);       // [entry + 1] = id (the dummy entry 0x466770 when als < 0)
     bool freezeSparkleBlocked() const { return h_.b(0x465d4b) != 0; }   // DAT_00465d4b
     bool harryBusy() const { return h_.ul(0x465b7e) != 0; }             // DAT_00465b7e: on a bungee vine
     bool harryOnPlatform() const { return h_.b(0x465b73) != 0; }        // DAT_00465b73: standing on an object
@@ -99,7 +103,8 @@ public:
     // address stays on the stack, and the `ret` that ends the object pass runs the code there
     // before the pass really returns (see runStrayReturns).
     void strayReturn(uint32_t addr) { strayReturns_.push_back(addr); }
-    void hudAdd(const Obj& o) { hud_.push_back(objects_.indexOf(o)); }   // 0x4150a2: FUN_0043348e places it next tick
+    void hudAdd(const Obj& o);                 // 0x4150a2: FUN_0043348e places it next tick
+    void hudReset();                           // the list 0x466874 (its end in DAT_00466870) starts again
     uint32_t& fadeCmd() { return game_->brightness(); }   // DAT_0046b1b0 (0xc0: the big stone's white flash)
     // [DAT_004504e4] + off: the Genesis variables the PC keeps in the .als buffer past the level's
     // data (+0x384: the Balankanche ride's last obstacle, the map screen's flags).  The buffer is
@@ -191,6 +196,8 @@ private:
     void spawnRightColumn();                    // FUN_00404016
     void spawnTopRow();                         // FUN_00404269
     void spawnBottomRow();                      // FUN_004042fe
+    void keepAlsBase();                         // DAT_00466788 / 8c: the spawners' .als and template bases
+    void keepPlanes();                          // DAT_0046615c / 60: the collision planes' addresses
     void spawnColumn(uint16_t col);             // 0x40407f
     void spawnRow(int16_t row);                 // 0x40438e
     void spawnEntry(Obj& o, size_t entry, const ph::ObjectTemplate& t);   // FUN_0040454e
@@ -271,7 +278,6 @@ private:
     Harry& h_;                       // 0x465800 .. 0x4668ff (Game::logicMemory)
     ObjectSystem::Places& places_;   // the records' places between levels (Game::objectPlaces)
     ObjectSystem objects_;
-    std::vector<int> hud_;           // 0x466874: the records 0x4150a2 listed in the last object pass
     std::span<uint8_t> alsMem_;      // [DAT_004504e4], 4 KB of the load block: the level's .als data as the spawner works on it (an id is 0 while its object lives, or once collected or killed), then at +0x800 the level's own copy ([DAT_004504c4])
     struct Killed { uint8_t count = 0, id = 0; int als = -1; };   // als: the entry's offset in alsMem_
     Killed killed_[19];              // 0x465a40 .. 0x465ad8
