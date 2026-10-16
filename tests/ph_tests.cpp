@@ -22,6 +22,15 @@ int runGameplayTests(const std::string& dir);
 
 int main(int argc, char** argv) {
     const std::string dir = argc > 1 ? argv[1] : "original";
+    // No CD music but the music test's own (the data folder may hold the disc's tracks, whose
+    // fade at each load would put the transitions' timing off)
+    const std::string noMusic = (std::filesystem::temp_directory_path() / "pitfall_no_music").string();
+    std::filesystem::create_directories(noMusic);
+#ifdef _WIN32
+    _putenv_s("PITFALL_MUSIC_DIR", noMusic.c_str());
+#else
+    setenv("PITFALL_MUSIC_DIR", noMusic.c_str(), 1);
+#endif
     ph::Palette pal;
 
     // INIT.PH: 120 sprite/font records + 138 sounds, manifest order.
@@ -1049,6 +1058,7 @@ void writeWav(const std::string& path, int rate, int seconds10) {
 }
 int musicTest(const std::string& dir) {
     int fails = 0;
+    const std::string noMusic = (std::filesystem::temp_directory_path() / "pitfall_no_music").string();
     const std::filesystem::path tmp = std::filesystem::temp_directory_path() / "pitfall_music_test";
     std::filesystem::create_directories(tmp);
     writeWav((tmp / "Track05.wav").string(), 22050, 10);
@@ -1066,9 +1076,9 @@ int musicTest(const std::string& dir) {
     engine::Options opts;
     game::Game g(dir, opts);
 #ifdef _WIN32
-    _putenv_s("PITFALL_MUSIC_DIR", "");                 // (an empty value removes it)
+    _putenv_s("PITFALL_MUSIC_DIR", noMusic.c_str());
 #else
-    unsetenv("PITFALL_MUSIC_DIR");
+    setenv("PITFALL_MUSIC_DIR", noMusic.c_str(), 1);
 #endif
     g.setMode(game::Mode::Playing);
     g.newGame();

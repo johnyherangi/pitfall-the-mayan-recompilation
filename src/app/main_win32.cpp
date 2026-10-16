@@ -489,6 +489,8 @@ void hostKeys(engine::HostInput& host) {
         }
     }
     if (GetForegroundWindow() != g_app.hwnd) host.keyDown.fill(false);
+    host.padBits = GetForegroundWindow() == g_app.hwnd ? readGamepads(g_app.options.joystick, host.padPressed) : 0;
+    if (!host.padBits) host.padPressed = false;
 }
 
 LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {

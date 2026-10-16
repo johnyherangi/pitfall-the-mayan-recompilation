@@ -422,6 +422,8 @@ void Game::tick(const engine::HostInput& host) {
         held = true;
         if (!lastHost_.keyDown[size_t(k)]) pressed = true;
     }
+    if (host.padBits & ~uint32_t(engine::kJoyDebug)) held = true;   // (the port's gamepad: its buttons as keys)
+    if (host.padPressed) pressed = true;
     if (paused_) { if (pressed) setPaused(false); }
     else if (held) startKey_ = 1;
     lastHost_ = host;

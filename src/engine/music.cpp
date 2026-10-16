@@ -76,11 +76,13 @@ CdTracks::CdTracks(const std::string& dataDir) {
     if (dataDir.empty()) return;
     const fs::path base(dataDir);
     std::vector<fs::path> dirs;
-    if (const char* e = std::getenv("PITFALL_MUSIC_DIR"); e && *e) dirs.emplace_back(e);   // (a folder of rips elsewhere)
-    if (fs::path a = childCI(base, "assets"); !a.empty())
-        if (fs::path m = childCI(a, "music"); !m.empty()) dirs.push_back(m);
-    if (fs::path m = childCI(base, "music"); !m.empty()) dirs.push_back(m);
-    dirs.push_back(base);
+    if (const char* e = std::getenv("PITFALL_MUSIC_DIR"); e && *e) dirs.emplace_back(e);   // (a folder of rips elsewhere: that one alone)
+    else {
+        if (fs::path a = childCI(base, "assets"); !a.empty())
+            if (fs::path m = childCI(a, "music"); !m.empty()) dirs.push_back(m);
+        if (fs::path m = childCI(base, "music"); !m.empty()) dirs.push_back(m);
+        dirs.push_back(base);
+    }
     for (const fs::path& d : dirs) {
         std::error_code ec;
         std::map<int, std::string> found;

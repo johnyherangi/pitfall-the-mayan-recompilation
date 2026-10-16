@@ -35,7 +35,7 @@ uint32_t Input::poll(const HostInput& host, bool useJoystick, bool allowCheat) c
         if (host.joyX < 0x5000) bits |= kJoyLeft;
         if (host.joyX > 0xb000) bits |= kJoyRight;
     }
-    return bits;
+    return bits | (host.padBits & ~uint32_t(kJoyDebug));
 }
 
 uint32_t Input::pollVaultKeys(const HostInput& host) {
@@ -43,7 +43,8 @@ uint32_t Input::pollVaultKeys(const HostInput& host) {
     if (host.keyDown['1'] || host.keyDown[0x61]) bits |= kJoyShoot;   // VK_NUMPAD1
     if (host.keyDown['2'] || host.keyDown[0x62]) bits |= kJoyJump;
     if (host.keyDown['3'] || host.keyDown[0x63]) bits |= kJoyWhip;
-    return bits;
+    // a gamepad: its shoot, jump and whip buttons as the three levers (1, 2, 3)
+    return bits | (host.padBits & (kJoyShoot | kJoyJump | kJoyWhip));
 }
 
 } // namespace engine

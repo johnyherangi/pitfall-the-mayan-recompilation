@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -47,7 +48,7 @@ int main(int argc, char** argv) {
 
     engine::Options options;
     options.load("pitfall.ini");
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_JOYSTICK) != 0) {
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER) != 0) {
         std::fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
         return 1;
     }
@@ -70,6 +71,12 @@ int main(int argc, char** argv) {
     SDL_AudioDeviceID dev = SDL_OpenAudioDevice(nullptr, 0, &want, &have, 0);
     if (dev) { SDL_PauseAudioDevice(dev, 0); g->mixer().setDeviceClock(true); }
     SDL_Joystick* joy = SDL_NumJoysticks() > 0 ? SDL_JoystickOpen(0) : nullptr;
+    // the port's gamepads (SDL's game controller mapping: the d-pad and the left stick, A / cross
+    // jump, B / circle shoot, X / square whip, Y / triangle, Start and Back select)
+    std::vector<SDL_GameController*> pads;
+    for (int i = 0; i < SDL_NumJoysticks(); ++i)
+        if (SDL_IsGameController(i)) if (SDL_GameController* c = SDL_GameControllerOpen(i)) pads.push_back(c);
+    uint32_t lastPad = 0;
 
     engine::HostInput host;
     Uint64 last = SDL_GetPerformanceCounter();
@@ -134,6 +141,26 @@ int main(int argc, char** argv) {
                 host.joyX = int(SDL_JoystickGetAxis(joy, 0)) + 0x8000;
                 host.joyY = int(SDL_JoystickGetAxis(joy, 1)) + 0x8000;
             }
+            host.padBits = 0;
+            for (SDL_GameController* c : pads) {
+                auto on = [&](SDL_GameControllerButton b) { return SDL_GameControllerGetButton(c, b) != 0; };
+                if (on(SDL_CONTROLLER_BUTTON_DPAD_UP)) host.padBits |= engine::kJoyUp;
+                if (on(SDL_CONTROLLER_BUTTON_DPAD_DOWN)) host.padBits |= engine::kJoyDown;
+                if (on(SDL_CONTROLLER_BUTTON_DPAD_LEFT)) host.padBits |= engine::kJoyLeft;
+                if (on(SDL_CONTROLLER_BUTTON_DPAD_RIGHT)) host.padBits |= engine::kJoyRight;
+                if (on(SDL_CONTROLLER_BUTTON_A)) host.padBits |= engine::kJoyJump;
+                if (on(SDL_CONTROLLER_BUTTON_B)) host.padBits |= engine::kJoyShoot;
+                if (on(SDL_CONTROLLER_BUTTON_X)) host.padBits |= engine::kJoyWhip;
+                if (on(SDL_CONTROLLER_BUTTON_Y) || on(SDL_CONTROLLER_BUTTON_START) || on(SDL_CONTROLLER_BUTTON_BACK)) host.padBits |= engine::kJoySelect;
+                const int lx = SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_LEFTX), ly = SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_LEFTY);
+                if (lx < -12000) host.padBits |= engine::kJoyLeft;
+                if (lx > 12000) host.padBits |= engine::kJoyRight;
+                if (ly < -12000) host.padBits |= engine::kJoyUp;
+                if (ly > 12000) host.padBits |= engine::kJoyDown;
+            }
+            const uint32_t padButtons = engine::kJoyJump | engine::kJoyShoot | engine::kJoyWhip | engine::kJoySelect;
+            host.padPressed = (host.padBits & padButtons & ~lastPad) != 0;
+            lastPad = host.padBits;
             g->tick(host);
             acc -= 1.0; ticked = true;
         }

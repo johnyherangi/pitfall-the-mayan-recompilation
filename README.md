@@ -100,6 +100,16 @@ original's registry value names.
 | Harry's special idle | F10 or Alt+Y |  |
 | full screen | Alt+Enter (an addition; the original has it in the System page) | |
 
+A gamepad works alongside the keyboard without any setting (an addition: the
+original's JoyStick option is the joystick API's one stick and four buttons).
+An Xbox pad is read through XInput, a PlayStation (DualShock, DualSense) or
+other pad through the joystick API with its d-pad; the SDL build uses SDL's
+controller mapping.  The d-pad or the left stick moves, A / cross jumps, B /
+circle shoots, X / square whips, Y / triangle (or Start, Back / Options,
+Create) selects; in the vaults the shoot, jump and whip buttons pull levers 1,
+2 and 3, and any button serves where "any key" does (the title, the scenes,
+ending a pause).
+
 The original's typed cheat codes work as they did (type them while playing),
 "vampire" and "hatman" among them; `game/cheats.cpp` lists them all.
 

@@ -45,11 +45,16 @@ struct HostInput {
     uint32_t joyButtons = 0;               // JOYINFO.wButtons
     int joyX = 0x8000, joyY = 0x8000;      // 0..0xffff, centre 0x8000
     bool ctrlDown = false;
+    // A gamepad (the port's: XInput, or a PlayStation or other pad through the joystick API, with
+    // its d-pad), as the game's joypad bits, read with the keyboard whatever the joystick option;
+    // a button pressed this frame counts as a key pressed (the engine's start key).
+    uint32_t padBits = 0;
+    bool padPressed = false;
 };
 
 class Input {
 public:
-    // FUN_00444940 keyboard / joystick branch.
+    // FUN_00444940 keyboard / joystick branch (the port's gamepad bits added to either).
     uint32_t poll(const HostInput& host, bool useJoystick, bool allowCheat) const;
     KeyBindings bindings;
     // Loltun vault (Simon) levels 11..13 use keys 1/2/3 (and numpad) instead.
