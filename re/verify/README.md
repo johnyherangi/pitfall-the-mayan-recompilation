@@ -66,10 +66,14 @@ What has to be right for the comparison to mean something:
   them half done (the distance comes back within 60 ticks); `memsample` drops a record during
   which a tick began (it reads the engine's count again after the rest).  The original's timing
   suffers when anything else keeps the machine busy during a capture: run them alone.
-* **The joypad.**  Under Wine the original runs about 38 ticks a second, and after a pause (a death's
+* **The joypad.**  Under Wine the original runs 38 to 58 ticks a second, and after a pause (a death's
   waits, a load) it runs the missed ticks back to back, a tenth of a millisecond each; the keys it
   reads with `GetAsyncKeyState` can change in the middle of such a run.  Only the joypad sampler
-  sees those ticks; `mkpad.py` takes each tick's joypad from the record that shows its logic's end.
+  sees those ticks; `mkpad.py` takes each tick's joypad from the record that shows its logic's end,
+  else from the tick's last record (the game can stop between the count's step and the poll for tens
+  of milliseconds while the keys change; but a 0 there may be a load's clearing, which the records of
+  the tick's first 5 ms tell apart), and for a tick the joypad sampler missed, from the main
+  capture's sample of its end.
 * **The level's start.**  The first tick after the one in which the level variable (`0x451a2c`)
   turned to the level; levels 0, 2, 5, 8 and 16 run 13 more ticks in their load (`PRETICKS=13`).
   The port's menu step for it is that tick less those 13, plus 40: from there the logic's memory,
@@ -116,4 +120,6 @@ registry), types its cheats once the level runs (`CHEATS`, by default "vampire":
 came in after that tick: `WM_CHAR` runs between two ticks), and the lives turning 99 into one for
 "meowmeowlikemeowman", which `memdump` types into the port before the same tick (`Game::typeChar`); the rest is the joypad, the fly cheat's Ctrl bit (`0x100`)
 in it.  A run is compared as a level's: `mkpad.py`, `memdump` with the level's menu step and as many
-steps as the capture has ticks, `cmpmem.py`.
+steps as the capture has ticks, `cmpmem.py`; with `FOLLOW=1` the comparison goes on past the level's
+end, the ticks counted on as the engine's, through the map screen and the next level (a run that
+ends its level: the bosses' plans, or random play that reaches the exit).

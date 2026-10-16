@@ -64,14 +64,15 @@ int main(int argc, char** argv) {
         engine::HostInput hi;
         for (const auto& k : keys) if (t >= k[1] && (k[2] < 0 || t < k[2])) hi.keyDown[size_t(k[0])] = true;
         if (!pad.empty() && pStart < 0 && t > menuTick && menuTick >= 0 && g.levelNumber() == menuLevel) pStart = int(g.state().globalFrame);
-        // a cheat typed between two of the original's ticks (its WM_CHAR, 0x439868) comes in before the later one
+        g.tick(hi);
+        g.render();
+        // a cheat typed between two of the original's ticks (its WM_CHAR, 0x439868) comes in after the
+        // earlier one, which the sampler may well have seen after it (the lives' 99)
         for (auto& [at, text] : typed)
-            if (pStart >= 0 && at >= 0 && long(g.state().globalFrame) + 1 - pStart + oStart > at) {
+            if (pStart >= 0 && at >= 0 && long(g.state().globalFrame) - pStart + oStart >= at) {
                 for (char c : text) g.typeChar(uint8_t(c));
                 at = -1;
             }
-        g.tick(hi);
-        g.render();
         std::printf("%d %d %u %d ", t, g.state().globalFrame, g.logicTicks(), g.levelNumber());
         for (int i = 0; i < 12; ++i) std::printf("%02x", *g.logicMemory().at(0x466772 + uint32_t(i)));
         std::printf(" ");

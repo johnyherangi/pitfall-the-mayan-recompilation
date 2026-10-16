@@ -106,7 +106,8 @@ void PlayLogic::camera() {
             else if (neg16(h.x() - (k == 1 ? a0 : a1)->x)) behind(2);
             else ahead(2);
         } else if (level_ == 8 || level_ == 0) {
-            if (boss_ && neg16(h.x() - boss_->x)) behind(2); else ahead(2);   // trg+0x1f4
+            const Obj* b = bossObject();                    // the record at the address trg+0x1f4 holds
+            if (b && neg16(h.x() - b->x)) behind(2); else ahead(2);
         } else {
             byFacing();
         }

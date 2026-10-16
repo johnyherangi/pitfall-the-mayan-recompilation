@@ -30,8 +30,8 @@ cmake --build build --config Release
 ctest --test-dir build -C Release
 ```
 
-This produces `build\Release\pitfall.exe` (the game), `phdump.exe` and
-`ph_tests.exe`.  The code builds with MSVC at `/W4 /permissive-` without a
+This produces `build\Release\pitfall.exe` (the game), `pitstart.exe` (the CD's
+launcher), `phdump.exe` and `ph_tests.exe`.  The code builds with MSVC at `/W4 /permissive-` without a
 warning (checked with MSVC 14.50 and the Windows 10.0.26100 SDK, `ph_tests`
 giving the same results as the g++ build).  No third-party dependencies are needed for the Win32 build
 beyond the vendored `third_party/stb/stb_vorbis.c`.  For a portable SDL2 build
@@ -51,6 +51,18 @@ build\Release\pitfall.exe original
 build\Release\pitfall.exe original -level 1     (a debugging start on a level)
 build\Release\pitfall.exe original J            (the original's "J": the joystick on)
 ```
+
+`pitstart.exe` is the CD's launcher (`PITSTART.EXE`, which `AUTORUN.INF` starts):
+its window, pictures and icon are read from the CD's `PITSTART.EXE` and its
+music is `pitstart.wav`; Play runs the intro (`intro.avi`, through MCIWnd as
+the original does it: it plays only where the system still decodes Indeo 3.2;
+elsewhere MCI says it cannot load the driver and the box stays black until a
+key, as the original's does) and then `pitfall.exe` from the launcher's folder; More...
+offers the CD's registration program, *Technical Help* (`tech.wri` in
+WordPad), the two About pictures and Uninstall (here: the port's
+`pitfall.ini`).  It looks for the CD's files as `pitfall.exe` looks for its data
+(`pitstart.exe original`, or `pitstart.exe original U` to uninstall, as
+`AUTORUN.INF`'s menu does).
 
 ## The window
 
@@ -134,8 +146,9 @@ reconstructed: Harry's whole state machine, the object system with 140
 behaviour types, the camera and spawner, the triggers and level scripts, every
 boss, the Loltun vaults, the continue screen, the map screen, the Atari 2600
 level, the title, the intro, the reunion, the end and its credits, the
-typed cheat codes, the waterfalls and water effects, and the original's
-window with its menu, status bar, dialogs and property sheet.  Run side by
+typed cheat codes, the waterfalls and water effects, the original's
+window with its menu, status bar, dialogs and property sheet, and the CD's
+launcher.  Run side by
 side with the original (under Wine, captured frame by frame for five minutes),
 the whole attract run — the title, the three demos and the intro — matches it
 pixel for pixel but for the time the original's loads take (and the fades, which
@@ -145,7 +158,10 @@ restarts and continue screens.  Read while it runs, the original's memory (the
 logic's variables, the object records, the random generator) matches the
 port's byte for byte, tick by tick, on every one of those levels, through runs
 with the whip, the sling and the vaults' levers, kills, deaths and restarts
-(the pointers in it too, kept as the original's addresses).  What still differs
+(the pointers in it too, kept as the original's addresses), and through runs
+that play the original from its own memory: the four bosses' fights to their
+ends, sweeps over whole levels, the vaults' Simon games and random play, on
+past a level's end through the map screen into the next level.  What still differs
 from the original is listed in `docs/RECONSTRUCTION_LEDGER.md` (the platform's
 parts: the mixer for Miles, the ini file for the registry, the full-screen
 modes, WinHelp).

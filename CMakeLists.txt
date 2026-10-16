@@ -106,6 +106,15 @@ elseif(WIN32)
     endif()
 endif()
 
+# The CD's launcher (PITSTART.EXE), with its dialogs, pictures and sound read from the CD's files.
+if(WIN32)
+    add_executable(pitstart WIN32 src/app/pitstart_win32.cpp)
+    target_link_libraries(pitstart PRIVATE winmm vfw32 gdi32 user32 shell32)
+    if(MINGW)
+        target_link_options(pitstart PRIVATE -static)
+    endif()
+endif()
+
 # ---- tests -----------------------------------------------------------------
 if(PITFALL_BUILD_TESTS)
     enable_testing()

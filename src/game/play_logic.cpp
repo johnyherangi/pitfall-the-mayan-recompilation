@@ -62,7 +62,6 @@ void PlayLogic::enter(Game& g) {
         alsMem_ = std::span<uint8_t>(g.arena().data() + g.arenaLayout().als, 0x1000);
         exiting_ = false;
         deathTimer_ = 0;
-        boss_ = nullptr;
         keepPlanes();
         h_.l(0x466535) = level_;
         endTimer_ = 0;                                             // DAT_0046b1b4
@@ -159,22 +158,30 @@ void PlayLogic::startPosition() {
     // FUN_004331d8: Harry at the '^' trigger (x = col * 16 - 8, y = (row + 2) * 16) and the
     // checkpoint there too, unless he comes out of a vortex (DAT_00465b39); the facing from
     // the table at 0x433334 (one byte a level, read past its end for the levels after 18).
+    // The trigger record is read in the load block ([DAT_00450510]: a column's big-endian word,
+    // the offset of its {row, id} pairs, 0 for none; 0xff ends a list), DAT_004658ac columns of
+    // it (the count tested after its step, as the original's loop): the map screen, which has
+    // no trigger record, reads what the loads before it left there.
     h_.w(0x4667a2) = 0;                                        // no marker lit
     h_.w(0x466782) = 0;
-    const ph::ColumnTable& trg = game_->level().triggers;
-    for (int c = 0; c < uint16_t(h_.w(0x4658ac)) && c < trg.columns(); ++c, h_.w(0x466782) += 1) {
-        for (const ph::ColumnEntry& e : trg.column(c)) {
-            if (e.id != ph::kTrgStart) continue;
-            const int16_t x = int16_t(c * 16 - 8), y = int16_t((e.row + 2) * 16);
-            if (h_.b(0x465b39) == 0) h_.w(0x46679e) = x;
-            h_.x() = x;
-            h_.y() = y;
-            if (h_.b(0x465b39) == 0) h_.w(0x4667a0) = y;
-            const uint8_t f = level_ >= 0 && level_ < 25 ? ph::kStartFacing[level_] : 0;
-            h_.b(0x4667a4) = f;
-            h_.facing() = f;
-            return;
+    uint16_t left = uint16_t(h_.w(0x4658ac));                  // d7
+    for (int col = 0;; ++col) {
+        if (const uint16_t list = tw(col * 2)) {
+            for (uint16_t e = list; trgAt(e) != 0xff; e = uint16_t(e + 2)) {
+                if (trgAt(e + 1) != ph::kTrgStart) continue;
+                const int16_t x = int16_t((h_.w(0x466782) << 4) - 8), y = int16_t((trgAt(e) + 2) << 4);
+                if (h_.b(0x465b39) == 0) h_.w(0x46679e) = x;
+                h_.x() = x;
+                if (h_.b(0x465b39) == 0) h_.w(0x4667a0) = y;
+                h_.y() = y;
+                const uint8_t f = level_ >= 0 && level_ < 25 ? ph::kStartFacing[level_] : 0;
+                h_.b(0x4667a4) = f;
+                h_.facing() = f;
+                return;
+            }
         }
+        h_.w(0x466782) += 1;
+        if (--left == 0) return;
     }
 }
 
@@ -651,7 +658,6 @@ void PlayLogic::h430eb6() {
             const uint8_t v = a.at(int64_t(lay.trg) + lay.trgSize + i);
             a.put(int64_t(lay.trg) + i, &v, 1);
         }
-        boss_ = nullptr;
     }
     std::memset(game_->levelFlags(), 0, 0x12);
     game_->loseLife();
@@ -671,7 +677,6 @@ uint8_t PlayLogic::trgAt(int off) const { return game_->arena().at(int64_t(game_
 void PlayLogic::setBoss(Obj* o) {
     // [DAT_00450510] + 0x1f4 = the boss's record, as the 68000 code stores it (big-endian), and
     // DAT_00466507
-    boss_ = o;
     h_.b(0x466507) = o ? 0xff : 0;
     if (o) setTl(0x1f4, addrOf(o));
 }

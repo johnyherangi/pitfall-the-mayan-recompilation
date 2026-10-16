@@ -1,7 +1,7 @@
 // Level 19: the map screen between two levels.  "*4" (a level's exit, 0x430912, which keeps the
 // level in DAT_0046b1ac) loads it; FUN_00435fc0 starts it as any level, and the end of the restart
-// (0x432cd6) runs its set-up (0x431c99); FUN_0043628c then runs the joypad and FUN_00432038 in
-// place of the usual tick.  The camera pans along the path from the level left to the next one,
+// (0x432cd6) runs its set-up (0x431c99), which runs on into a first FUN_00432038; FUN_0043628c then
+// runs the joypad and FUN_00432038 in place of the usual tick.  The camera pans along the path from the level left to the next one,
 // a peg every 16 ticks, then the next level's name rises from the bottom; a button or a key
 // (after the first 30 ticks) or 180 ticks at the end go on ("*1", the level DAT_0045050c).
 //
@@ -110,6 +110,7 @@ void PlayLogic::mapSetup() {
     h_.w(0x465cf6) = int16_t(h_.w(0x4658b6) + 0x200);
     h_.w(0x465cf4) = h_.w(0x4661ee);
     h_.w(0x466550) = 2;
+    mapTick();                                                // 0x432033: FUN_004263a5 (a stub), then on into FUN_00432038
 }
 
 void PlayLogic::mapAmbient() {

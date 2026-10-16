@@ -883,6 +883,16 @@ int mapScreenTest(const std::string& dir) {
         g.completeLevel();
         settle(g);
         if (g.levelNumber() != 19) { std::printf("FAIL: map: level %d did not lead to the map (%d)\n", kTour[i][0], g.levelNumber()); ++fails; continue; }
+        if (i == 0) {
+            // FUN_004331d8 reads the map's missing trigger record where it would be in the load block:
+            // after level 0 it finds a '^' there in column 12, Harry's start and checkpoint at
+            // (0xb8, 0x620), the facing 0xc7 from past the table's end (as the original's run shows)
+            auto w = [&](uint32_t a) { return int(uint16_t(*g.logicMemory().at(a) | *g.logicMemory().at(a + 1) << 8)); };
+            if (w(0x46679e) != 0xb8 || w(0x4667a0) != 0x620 || *g.logicMemory().at(0x4667a4) != 0xc7) {
+                std::printf("FAIL: map: the checkpoint at (%#x, %#x) facing %#x\n", w(0x46679e), w(0x4667a0), unsigned(*g.logicMemory().at(0x4667a4)));
+                ++fails;
+            }
+        }
         game::PlayLogic* pl = game::g_debugLogic;
         int t = 0, pegs = 0, letters = 0;
         for (; g.levelNumber() == 19 && t < 1000; ++t) {
@@ -901,7 +911,8 @@ int mapScreenTest(const std::string& dir) {
         }
         total += t;
     }
-    // a button skips it, but not in its first 30 ticks
+    // a button skips it, but not in its first 30 ticks (FUN_00432038's calls: the set-up's own, the
+    // level start's and the first tick's come before this loop's first)
     g.startLevel(0);
     g.completeLevel();
     settle(g);
@@ -909,7 +920,7 @@ int mapScreenTest(const std::string& dir) {
     int skipAt = -1;
     for (int t = 0; t < 100 && skipAt < 0; ++t) { g.tick(t % 2 ? jump : idle); if (g.transitionActive()) skipAt = t; }
     settle(g);
-    if (skipAt < 29 || skipAt > 32 || g.levelNumber() != 1) { std::printf("FAIL: map: a button went on at %d (level %d)\n", skipAt, g.levelNumber()); ++fails; }
+    if (skipAt < 27 || skipAt > 30 || g.levelNumber() != 1) { std::printf("FAIL: map: a button went on at %d (level %d)\n", skipAt, g.levelNumber()); ++fails; }
     std::printf("map: 13 paths in %d ticks; a button goes on at %d\n", total, skipAt);
     return fails;
 }

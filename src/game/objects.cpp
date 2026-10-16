@@ -536,13 +536,39 @@ uint32_t anim2Addr(const uint8_t* script) {
 }
 
 namespace {
+// The box the whip tests read (0x424525 / 0x424762): 0x468824 + the word at +8 of what +0xe
+// points at, with neither FUN_00424af1's exception for its three box records (the carts'
+// 0x4186b4 has 0xd there, a box out of every whip's reach) nor one for 0xffff (bytes of the
+// resources, as far out).
+bool whipBox(const Obj& o, ph::SpriteHitbox& box) {
+    uint32_t word;
+    if (o.rawBox) {
+        const uint8_t* p = harryMem(o.rawBox->va + 8);
+        if (!p) return false;
+        word = uint32_t(p[0] | p[1] << 8);
+    } else if (o.sprite && o.sprite->boxWord() >= 0) {
+        word = uint32_t(o.sprite->boxWord());
+    } else {
+        const ph::SpriteHitbox* b = ph::hitboxOf(o.sprite);   // (not loaded through FUN_004453a0)
+        if (!b) return false;
+        box = *b;
+        return true;
+    }
+    const uint8_t* b = harryMem(0x468824 + word);
+    if (!b) return false;
+    auto w = [&](int i) { return int16_t(b[2 * i] | b[2 * i + 1] << 8); };
+    box.dx = w(0); box.w = w(1); box.dy = w(2); box.h = w(3);
+    return true;
+}
+
 // The whip box (DAT_00465aeb x0, 0x465aed x1, 0x465aef y0, 0x465af1 y1; x0 == 0 while the whip
-// is not out) against the object's box (0x424525 / 0x424762: no test of the box's width).
+// is not out) against the object's box (no test of the box's width).
 bool whipTouches(ObjCtx& ctx, const Obj& o) {
     const Harry& h = ctx.harry;
     if (h.w(0x465aeb) == 0) return false;
-    const ph::SpriteHitbox* b = boxOf(o);
-    if (!b) return false;
+    ph::SpriteHitbox box{};
+    if (!whipBox(o, box)) return false;
+    const ph::SpriteHitbox* b = &box;
     int16_t d1 = int16_t(o.x + b->dx + b->w);
     if (int16_t(d1 - h.w(0x465aeb)) < 0) return false;
     d1 = int16_t(d1 - b->w);

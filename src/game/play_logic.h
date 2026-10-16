@@ -97,7 +97,10 @@ public:
     int cameraRightLock() const { return h_.w(0x465b0b); }
     void setBoss(Obj* o);                       // trg+0x1f4 (big-endian) and DAT_00466507
     void endBoss() { h_.b(0x466507) = 0; }        // (trg+0x1f4 keeps pointing at the dead boss)
-    Obj* bossObject() const { return boss_; }
+    // The record at the address trg+0x1f4 holds, as the camera and the boss meter read it: what
+    // setBoss left there, or the level's own trigger bytes (a restart puts them back; the stone
+    // jaguars' fight leaves them alone), which lead to no record.
+    Obj* bossObject() { return objAt(tl(0x1f4)); }
     bool bossActive() const { return h_.b(0x466507) != 0; }
     void startBossOutro() { h_.b(0x465d49) = 1; }   // DAT_00465d49 (FUN_0043426d)
     // A handler `call`ed code that never returns (it ends with `jmp 0x405313`): the return
@@ -286,7 +289,6 @@ private:
     void clearKillList();
     bool exiting_ = false;
     int deathTimer_ = 0;
-    Obj* boss_ = nullptr;            // trg+0x1f4 (the boss object)
     // Sound channel state (FUN_004262d9 / FUN_004261e2).
     uint8_t ch0Pri_ = 0, ch0Id_ = 0, ch0Hold_ = 0;   // DAT_004627be / DAT_004627bf / DAT_004627c2
     uint8_t ch1Pri_ = 0, ch1Id_ = 0;                 // DAT_004627c0 / DAT_004627c1

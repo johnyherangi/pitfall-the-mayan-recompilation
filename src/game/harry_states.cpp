@@ -3759,9 +3759,9 @@ void PlayLogic::h42fadf() {
     h_.b(0x465b47) -= 1;
     if (!neg8(h_.b(0x465b47))) return;
     h_.b(0x465b47) = 4;
-    if (h_.facing()) {
+    if (h_.facing()) {                                     // 0x42ff8c
         h_.b(0x465b48) -= 1;
-        if (h_.vx() >= 0) h_.b(0x465b48) += 2;
+        if (h_.vx() < 0) h_.b(0x465b48) += 2;
     } else {
         h_.b(0x465b48) += 1;
         if (h_.vx() < 0) h_.b(0x465b48) -= 2;

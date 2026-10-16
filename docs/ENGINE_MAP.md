@@ -171,7 +171,7 @@ the title's start key and attract (`0x44476e`), so the stones' clearing of the s
 | `FUN_00435fc0` / `FUN_004360e9` | level logic init / restart (bridge from the engine) | `Game::startLevel` + `PlayLogic::enter` / `restart` |
 | `FUN_0043628c` | per-tick logic dispatcher | `PlayLogic::tick` |
 | `FUN_004263f3` | joypad → direction/button bytes (`0x466765`, `0x466761`) | `PlayLogic::readPad` |
-| `FUN_0043256f` / `FUN_004331d8` | level init, start position from the `^` trigger | `PlayLogic::enter` |
+| `FUN_0043256f` / `FUN_004331d8` | level init, start position from the `^` trigger: the trigger record read in the load block (`[DAT_00450510]`, `DAT_004658ac` columns, the count tested after its step), so the map screen, which has none, finds a `^` in what the loads before it left there (on the map after level 0: column 12, Harry and the checkpoint at (0xb8, 0x620), facing 0xc7 from past the table's end) | `PlayLogic::enter`, `PlayLogic::startPosition` |
 | `FUN_0042571f` / `FUN_00425d6f` | collision probes (`.det`), `FUN_004258a2` / `FUN_00425f88` (`.dt2`) | `ph::probeCell/probeNear` |
 | `FUN_00425455` / `FUN_0042547d` | the floor under Harry / under a probe point (his y set from it) | `PlayLogic::feet` / `feetAt` |
 | `FUN_00426810` | Harry's state machine: the continuation in `DAT_00465b69` (103 of them between 0x426eaa and 0x4311a5: standing `FUN_00428dfa`, running, jumping, the whip `FUN_0042babc`, …) | `PlayLogic::harryUpdate`, `PlayLogic::hNNNNNN` (`harry_states.cpp`) |
@@ -237,14 +237,14 @@ otherwise `*0` / `*2` again.  `*2` (0x44423d) plays sound 0x20, clears the scree
 
 A level's exit (`0x430912`) keeps the level in `DAT_0046b1ac` and asks for `*4`, which loads level 19 (level 22 after the
 Warrior Spirit).  The level starts as any other (`FUN_00435fc0` → `FUN_0043256f`), and the end of the restart
-(`0x432cd6`) runs the map's set-up `0x431c99`; `FUN_0043628c` then runs the joypad and `FUN_00432038` instead of the
-usual tick.  The tables: `0x46aa34` the path by the level left, `0x46aa4e` the next level by the path (kept in
+(`0x432cd6`) runs the map's set-up `0x431c99`, which runs on into `FUN_00432038` (a first tick of the map, within the
+level's start); `FUN_0043628c` then runs the joypad and `FUN_00432038` instead of the usual tick.  The tables: `0x46aa34` the path by the level left, `0x46aa4e` the next level by the path (kept in
 `DAT_0045050c` for `*1`), `0x461c44` the 13 paths ({x, y, frame | 0x8000 h-flip | 0x4000 v-flip} words), `0x46a88e` the
 names.  The tour this gives: 0, 1, 2, 3, 4, 5, 6, 16, 17, 7, 18, 8, 9, 10.
 
 | address | role | port |
 |---------|------|------|
-| `0x431c99` | the set-up: the pegs of up to three paths before, the camera at the path's first point (0x15a / 0x196 to its left / above, kept +0x200 at `0x4661e0` / `0x4661e4` as 16.16), 0x28 ticks to the first step | `PlayLogic::mapSetup` |
+| `0x431c99` | the set-up: the pegs of up to three paths before, the camera at the path's first point (0x15a / 0x196 to its left / above, kept +0x200 at `0x4661e0` / `0x4661e4` as 16.16), 0x28 ticks to the first step; then on into `FUN_00432038` (`0x432033`, after the stub `FUN_004263a5`) | `PlayLogic::mapSetup` |
 | `FUN_00432038` | a peg every 16 ticks (sounds 9 / 0xa by turns), the camera a sixteenth of the way to it each tick; the buttons count after `DAT_0046a88a` (30) ticks | `PlayLogic::mapTick` |
 | `0x4323b4` | the path's end: the name (`FUN_00431ad5`) rises 3 px a tick to the camera's y + 0xb4; `DAT_004601c0` (180) ticks or a button: `*1` | `PlayLogic::mapArrived` |
 | `FUN_00431a67` | the jungle sounds 0x9b .. 0xa1 every 0x80 .. 0xff ticks on channel 1 (the countdown the logic's `DAT_00465b04`; through `FUN_004261e2`, so none while `DAT_00465b72` / `DAT_0046652f` / `DAT_0046652b` are set — on the title, which runs no logic, as the last level left them: none after a game over) | `PlayLogic::mapAmbient`, `Game::titleAmbient` |
@@ -352,7 +352,7 @@ which `FUN_0043628c` counts down to `*6` (back to the Lost City of Copan).
 | `FUN_00435905` / `FUN_00435780` / `FUN_0043598f` | allocate at the head / the tail, free a record. `FUN_004356bc` / `FUN_0043546e` also copy the parent's x / y, and with `d0.b != 0` (nearly every call site) call the VRAM-slot stub `FUN_004263a6`, which marks the record with `w26 = 0x6663` | `ObjectSystem::allocHead / allocTail / free`, `ObjCtx::spawnFrom(parent, tail, d0)` |
 | `FUN_00423134` / `FUN_00423150` | animation script interpreter (frame bytes, `f0` loop, `fc/fd/ee/ef/fb/ed` sounds, `f7` flip, `f9` unflip); a record that switches scripts keeps the script's address in its state (a web `+0x48`, a feather `+0x32`, an effect `+0x3c`, a pit creature `+0x3c`, a hopping skull `+0x50`) | `animStep / animPeek`, `animAddr / animPtr` (`kAnimBlocks`) |
 | `FUN_004237a5` | pointer-based script interpreter (Harry's; objects use frames, `f0`, sounds, `f3` jump, `f1` set sprite); the place it keeps is an address in the script (`kAnim2Scripts`: each script's address, generated with the scripts) | `anim2Step`, `anim2Start / anim2Pos` |
-| `0x424171` | weapon hits: sling list `0x466808`, stone `0x46681c`, whip box `0x465aeb..` against the sprite box; `obj+0xa` accumulates, `d5` = hit points | `weaponHits` |
+| `0x424171` | weapon hits: sling list `0x466808`, stone `0x46681c`, whip box `0x465aeb..` against the sprite box; `obj+0xa` accumulates, `d5` = hit points.  The whip's tests (`0x424525` / `0x424762`) take the box at `0x468824` + the word at +8 of whatever +0xe points at, with neither `FUN_00424af1`'s exception for its three box records nor one for 0xffff: the mine carts' weapon box `0x4186b4` has 0xd there, a box no whip reaches (stones, through `FUN_00424af1`, do) | `weaponHits`, `whipBox` |
 | `0x4081fc` | enemy killed: class table `0x45b6c3` (bit 1: kept in the kill list `0x465a40`, 19 places of 8 bytes {seconds left, id, the `.als` entry's address}, to come back 15 s later, `0x433af2` counting them down once a second and `FUN_004311bf` bringing them all back; on easy not the monkeys), score table `0x461aca`, death-effect table `0x45b814` | `killObject`, `PlayLogic::markKilled` (the list in the logic's memory) |
 | `0x466770` | the dummy `.als` entry a new record points at (`0x435854`) until the spawner gives it one: the exits and the kill list write its id to `0x466771`, and it takes a kill list place as any | `Obj::entry`, `PlayLogic::putEntryId` |
 | `DAT_0046654f` | the Genesis palette's "changed" flag: set where the translated code copies colours into the Genesis palette at `0x462654` (a vault lever's note `0x40b9d7`, the stone jaguars' fight `0x41c778`, the jaguar man's wake `0x41ed44`, the continue sign `0x41e40c`) and cleared only by the Genesis init `FUN_00434815`, which the PC never calls, so it stays set; nothing on the PC reads it or those colours | `vaultNote`, `stoneJaguar::startFight`, `h_jagMan`, `h_continueSign` |
@@ -364,7 +364,7 @@ which `FUN_0043628c` counts down to `*6` (back to the Lost City of Copan).
 | `DAT_0046615c` / `DAT_00466160` | the collision planes' addresses (`DAT_00450fc0` / `DAT_00450518`), set by the logic's start and restart for the probes | `PlayLogic::keepPlanes` (the probes read `det()` / `dt2()`) |
 | `DAT_00465886` | Harry's Genesis tile base, which the PC only writes (`FUN_00434f6c`: 0x400, 0xf80 hidden, 0x1200 on the continue screen; `FUN_00435174`: 0x7000) | `PlayLogic::displayList / listAll` |
 | `FUN_00424af1` | sprite box overlap test; boxes come from the `0x468824` table through the sprite header word at +8, which the load gave for the slot it filled (a level's sprite bound to a slot of another name has that slot's box: level 3's bats `btrfly` as `btzfly`, the pits, level 5's branches and ropes, level 8's tongue, gargoyle and axe) | `ObjCtx::boxesOverlap / touchesHarry`, `ph::hitboxOf` (`Sprite::boxWord`), `ph::kHitboxes` |
-| `0x407aff` | Harry contact every 6th tick, hurt by `d5` | `harryContact` |
+| `0x407aff` / `0x407b0f` | an object's touch on Harry (every sixth call, `+0x2e` counting down; a touch hurts him by `d5`): `FUN_00424af1` with Harry's box, which while he swings on a vine (`hyisswng`) is moved for the test by the word for his frame in the table at `0x45ba4e`, towards his facing | `harryContact / harryContactNow` (the table read through `harryMem`) |
 | `FUN_00428233` | hurt Harry: `+d5` damage, cap 0xa0, 0x46 ticks invulnerable, hit sounds 0x17/0x2f/0x30/0x31 | `PlayLogic::hurt` |
 | `0x4301ce` | triggers 0x30 / 0x31 toggle the in-front flag; it leaves `FUN_004251f9`'s results, which several callers test next | `priorityTrigger` (returns the `Trg`) |
 | `0x424d6a` + `0x424ec4`, `0x424fbb` + `0x425051` | handler exits: release when 120 px / one screen beyond the camera | `exitDespawnFar / exitDespawnWide` |
@@ -450,7 +450,7 @@ Notes on some of them: the jaguar boss keeps its state as the continuation addre
 puts the GO sign up at `0x41124d`), GO `0x4112e0`, POUNCE `0x411054`, REVERSE `0x41190f`, RUN `0x411651`, CROUCH
 `0x410f1f`, ROAR `0x41119c`, STOP `0x41156b`; the bungee vine drives Harry's state
 `0x429fe2` with the triple-format scripts at `0x45aaa4` and releases through `0x42c3bc` / `0x42c2cc`; the condor and the
-hawk share the stun tumble `0x4073d3` / `0x407555`, the wall turn `0x40769b` and the climb `0x40775b`.  On the vault levels
+hawk share the stun tumble `0x4073d3` / `0x407555` (it keeps the state at +0x64 and the sprite's word at +0x68, which nothing reads back), the wall turn `0x40769b` and the climb `0x40775b`.  On the vault levels
 11..13 the lever (26, `0x40b9e0`) runs the Simon game: the first lever to run leads (`DAT_0046617c`, whose top byte
 `DAT_0046617f` doubles as "showing the combination"), collects the three letters (103) into `0x466186`, and each round
 shows the combination at `0x466194` (one more random lever a round, a step every 0x18 ticks) through the code pointer

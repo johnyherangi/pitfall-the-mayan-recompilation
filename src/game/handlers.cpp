@@ -741,6 +741,7 @@ void condorFlyAway(ObjCtx& ctx, Obj& o) {
 // read back), four feathers drift down and the tumble starts on this tick.
 void condorStun(ObjCtx& ctx, Obj& o) {
     o.l(0x64) = o.l(0x38);
+    o.l(0x68) = int32_t(o.sprite.addr);       // 0x4073df: the sprite's word kept (nothing reads it back)
     o.l(0x38) = kCdStun;
     o.l(0x5e) = -0x20000;
     o.l(0x34) = ctx.harry.facingLeft() ? -0x30000 : 0x30000;
@@ -5272,8 +5273,12 @@ void h_bossMeter(ObjCtx& ctx, Obj& o) {
     o.behind = d2->behind = d3->behind = pct->behind = 0xff;
     pct->frame = 0;
     // Whose hit count it shows: on level 10 the record at l5a while l56 is a type 0x69 boss,
-    // else a type 0x8c boss at l50, else the boss at trg+0x1f4 (0x3e hit points on level 8,
-    // 0x1e elsewhere).
+    // else a type 0x8c boss at l50, else, in a boss fight, the record at the address trg+0x1f4
+    // holds (0x3e hit points on level 8, 0x1e elsewhere).  setBoss leaves its boss there, but
+    // the stone jaguars' fight leaves it alone: their second meter, when the fight starts with
+    // one jaguar in the list (l50 0), reads the level's trigger bytes there, on level 3
+    // 0xfe262b55, where the original faults (0x410358) and the game stops; here that leads to no
+    // record and the meter stays hidden.
     const Obj* hp = nullptr;
     int full = 0;
     if (ctx.levelNo == 10) {
