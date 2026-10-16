@@ -166,11 +166,12 @@ vortices into the vaults, the 2600 level and Earthworm Jim's level and back,
 through the continue screen's "yes" and "no" to the game over, the title and
 a demo, and from the Warrior Spirit's death through the reunion and the
 end's credits; on the hard difficulty too, and with Harry hurt and killed, the
-sound channels' state compared as well.  Seven of those runs were recorded on
-screen too (Ceiba Jungle's vines, random play on Xibalba Falls, its continue
-screen, a vault, Earthworm Jim's level, the 2600 level and the Warrior Spirit's
-fight): every one of their 14,548 pictures matches the port's of its tick
-pixel for pixel, but the original's load screens.  What still differs
+sound channels' state compared as well.  Nine of those runs were recorded on
+screen too (the Ceiba jaguar's fight on through the map screen into Xibalba
+Falls, random play, the continue screen, a vault, Earthworm Jim's level, the
+2600 level, the Warrior Spirit's fight, the reunion, the end and its credits):
+every one of their 24,114 pictures matches the port's of its tick pixel for
+pixel, but the original's load screens.  What still differs
 from the original is listed in `docs/RECONSTRUCTION_LEDGER.md` (the platform's
 parts: the mixer for Miles, the ini file for the registry, the full-screen
 modes, WinHelp).

@@ -89,15 +89,16 @@ Ceiba jaguar's, the stone jaguars', the jaguar man's and the Warrior Spirit's: 5
 byte as well, and so does random play without "vampire" on the normal difficulty on levels 0 to 9 and 16 to 18 (5,300
 to 6,800 ticks each; on level 3 the original faults 2,100 ticks in, at the stone jaguars' second meter, as below),
 with the sound channels' state (`0x4627be .. c2`: each channel's priority and sound, channel 0's hold) compared every
-tick too.  Seven driven runs were recorded on screen as well (`re/verify`: the original's game area grabbed every 50 ms,
-each picture set beside every picture the port drew on the ticks it was on the screen): Harry flown into Ceiba Jungle's
-vines and left swinging there (1,966 pictures), random play on Xibalba Falls (710), Harry dropped out of it to the
-continue screen and back (935), the first vault's Simon game (2,073), Copan's vortex to Earthworm Jim's level and back
-(1,627), to the 2600 level, run to its game's end and back (1,632), and the Warrior Spirit's fight, flown at and shot
-(5,605).  Every picture is the port's of its tick or of one to four ticks before
-(the screen trails the count, by more when the X server is behind), pixel for pixel, but the original's load screens
-(its dark red while a level's files load, 9 pictures, as above) and one picture of the first runs, grabbed before the
-grabs' two times were kept, which is the port's of the tick after its bound.
+tick too.  Nine driven runs were recorded on screen as well (`re/verify`: the original's game area grabbed every 50 ms,
+each picture set beside every picture the port drew on the ticks it was on the screen): the Ceiba jaguar's fight to the
+level's end, the map screen and Xibalba Falls (3,578 pictures), Harry flown into Ceiba Jungle's vines and left swinging
+there (1,966), random play on Xibalba Falls (710), Harry dropped out of it to the continue screen and back (935), the
+first vault's Simon game (2,073), Copan's vortex to Earthworm Jim's level and back (1,627), to the 2600 level, run to
+its game's end and back (1,632), the Warrior Spirit's fight, flown at and shot (5,605), and the Warrior Spirit shot
+down, the reunion, the end's words and its credits (5,988).  Every picture is the port's of its tick or of one to four
+ticks before (the screen trails the count, by more when the X server is behind), pixel for pixel, but the original's
+load screens (its dark red while a level's files load, 10 pictures, as above) and one picture of the first runs,
+grabbed before the grabs' two times were kept, which is the port's of the tick after its bound.
 
 ## Approximated
 

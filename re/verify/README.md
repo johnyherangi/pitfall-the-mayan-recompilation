@@ -167,7 +167,8 @@ pixels).  Most pictures match the port's of the tick the count was on when they 
 few the one before (not yet drawn) or one or two earlier (the server behind): the port draws each
 tick's picture as the original does, not a tick early or late.  A picture the original showed in a
 single colour, or in the load's dark red being cleared to black, is a load's screen (its disk time,
-which the port does not take: the last column says so).  Seven runs (Ceiba Jungle's vines, random
-play on Xibalba Falls, its continue screen, the first vault, the vortices to level 24 and to the
-2600 level, the Warrior Spirit's fight): every one of 14,548 pictures exact but 9 load screens and
-one picture of the first runs, grabbed before the grabs' two times were kept.
+which the port does not take: the last column says so).  Nine runs (the Ceiba jaguar's fight on
+through the map into Xibalba Falls, Ceiba Jungle's vines, random play on Xibalba Falls, its continue
+screen, the first vault, the vortices to level 24 and to the 2600 level, the Warrior Spirit's fight,
+and its end on through the reunion and the credits): every one of 24,114 pictures exact but 10 load
+screens and one picture of the first runs, grabbed before the grabs' two times were kept.
