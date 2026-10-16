@@ -158,6 +158,11 @@ public:
     engine::Options& options() { return options_; }
     const ph::Sprite* findSprite(const std::string& name) const;   // level first, then INIT.PH
     const SpriteSlots& spriteSlots() const { return spriteSlots_; }
+    // What a sprite slot holds as a record's sprite: its word (the sprite's address in the load
+    // block, or what the slot kept: an earlier load's, or its name's address in the executable)
+    // and the sprite now at that address (none for those).  A name without a slot: the sprite by name.
+    SpriteRef slotSprite(uint32_t slot) const;
+    SpriteRef slotSprite(const char* name) const;
     void playSound(int id);                                           // FUN_0043cc10(id, 0)
     bool soundPlaying(int id) const { return mixer_.playing(id); }
     void stopSound(int id) { mixer_.stop(id); }

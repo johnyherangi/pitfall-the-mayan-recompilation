@@ -74,40 +74,39 @@ void h_deathCloud(ObjCtx& ctx, Obj& o) {
 // at 0x45a8d4.
 void applyPickup(ObjCtx& ctx, Obj& o) {
     PlayerStats& st = ctx.g.stats();
-    if (!o.sprite) return;
-    const std::string& n = o.sprite->name();
+    auto is = [&](const char* name) { return ctx.sprIs(o, name); };   // (the table's slots against +0xe)
     auto treasure = [&](int score, int add, int snd) {   // 0x40588c ..: DAT_00466526 counts towards a continue
         st.score += score;
         st.treasures = uint8_t(st.treasures + add);
         ctx.sound1(snd, 9);
     };
-    if (n == "mi_stone") {                              // 0x40598d
+    if (is("mi_stone")) {                              // 0x40598d
         st.ammoCount[2] = uint8_t(st.ammoCount[2] + 2); st.score += 600; ctx.sound1(0x4b, 9);
-    } else if (n == "fxrbmrot") {                       // 0x4059b8
+    } else if (is("fxrbmrot")) {                       // 0x4059b8
         st.ammoCount[1] = uint8_t(st.ammoCount[1] + 1); st.score += 500; ctx.sound0(0x35, 7);
-    } else if (n == "mi_pouc2") {                       // 0x405a22
+    } else if (is("mi_pouc2")) {                       // 0x405a22
         ctx.sound1(0xfc, 0xa); st.score += 50;
         st.ammoCount[0] = uint8_t(st.ammoCount[0] + (ctx.hard ? 8 : 10));
-    } else if (n == "fx_hrtbt") {                       // 0x405935: heals 0x28
+    } else if (is("fx_hrtbt")) {                       // 0x405935: heals 0x28
         ctx.sound1(0xfb, 9); st.score += 500;
         Harry& h = ctx.harry;
         if (h.damage() != 0) h.damage() = int16_t(h.damage() - 0x28) < 0 ? 0 : uint8_t(h.damage() - 0x28);
-    } else if (n == "mi_ptfal") {                       // 0x405838: a letter of P-I-T-F-A-L-L
+    } else if (is("mi_ptfal")) {                       // 0x405838: a letter of P-I-T-F-A-L-L
         st.score += 10000;
         int16_t bit = 1;
         while (true) { o.frame = uint8_t(o.frame - 1); if (int8_t(o.frame) < 0) break; bit = int16_t(bit + bit); }
         st.letters = uint8_t(st.letters + uint8_t(bit));
         ctx.sound1(0x24, 9);
     } else if (o.frame == 0) {
-        if (n == "mi_chili") { ctx.harry.w(0x46652b) = 0x380; st.score += 600; ctx.sound1(0xfe, 0xc); }   // 0x405a5b
-        else if (n == "mi_time") {                      // 0x405a88: the stop-watch
+        if (is("mi_chili")) { ctx.harry.w(0x46652b) = 0x380; st.score += 600; ctx.sound1(0xfe, 0xc); }   // 0x405a5b
+        else if (is("mi_time")) {                      // 0x405a88: the stop-watch
             ctx.harry.w(0x46652f) = 0x300; st.score += 750; ctx.harry.b(0x465897) = 0;
             ctx.g.setCdVolumeCmd(1);                     // DAT_00450500: the CD turned down
-        } else if (n == "mi_1up") { ctx.sound0(0x33, 0x14); st.lives += 1; st.score += 2000; }   // 0x4059ed
-        else if (n == "mi_gold") treasure(500, 5, 0xfe);
-        else if (n == "mi_silvr") treasure(200, 2, 0xfe);
-        else if (n == "mi_ring") treasure(1000, 10, 0xfe);
-        else if (n == "mi_coin") treasure(100, 1, 0xfd);
+        } else if (is("mi_1up")) { ctx.sound0(0x33, 0x14); st.lives += 1; st.score += 2000; }   // 0x4059ed
+        else if (is("mi_gold")) treasure(500, 5, 0xfe);
+        else if (is("mi_silvr")) treasure(200, 2, 0xfe);
+        else if (is("mi_ring")) treasure(1000, 10, 0xfe);
+        else if (is("mi_coin")) treasure(100, 1, 0xfd);
     }
 }
 
@@ -125,7 +124,7 @@ void h_oneUpFly(ObjCtx& ctx, Obj& o);
 
 // 0x405328: type 2, the pickups (treasure, hearts, ammo, chili, letters, 1-ups).
 void h_item(ObjCtx& ctx, Obj& o) {
-    const std::string n = o.sprite ? o.sprite->name() : std::string();
+    auto is = [&](const char* name) { return ctx.sprIs(o, name); };
     // Occasional sparkle (every 0x20..0x9f ticks, not on the first timeout).
     o.w(0x5e) -= 1;
     if (o.w(0x5e) < 0) {
@@ -133,11 +132,11 @@ void h_item(ObjCtx& ctx, Obj& o) {
         if (o.b(0x60) == 0) o.b(0x60) = 0xff;
         else {
             const int16_t* off = nullptr;
-            if (n == "mi_coin") off = kItemSparkle[0];
-            else if (n == "mi_gold") off = kItemSparkle[1];
-            else if (n == "mi_silvr") off = kItemSparkle[3];
-            else if (n == "mi_ring") off = kItemSparkle[2];
-            else if (n == "mi_1up") {
+            if (is("mi_coin")) off = kItemSparkle[0];
+            else if (is("mi_gold")) off = kItemSparkle[1];
+            else if (is("mi_silvr")) off = kItemSparkle[3];
+            else if (is("mi_ring")) off = kItemSparkle[2];
+            else if (is("mi_1up")) {
                 o.w(0x5e) = int16_t((ctx.rnd() & 0x3f) + 8);
                 uint32_t r; do { r = ctx.rnd() & 3; } while (r == 3);
                 off = k1upSparkle[r];
@@ -145,22 +144,22 @@ void h_item(ObjCtx& ctx, Obj& o) {
             if (off) spawnItemSparkle(ctx, o, off, true);
         }
     }
-    if (n == "fxrbmrot") {
+    if (is("fxrbmrot")) {
         if (animStep(ctx, o, o.anim(0x42), kAnim_boomerangSpin, 6)) o.facing ^= 1;
-    } else if (n == "mi_stone") {
+    } else if (is("mi_stone")) {
         animStep(ctx, o, o.anim(0x42), kAnim_turn4, 4);
-    } else if (n == "fx_hrtbt") {
+    } else if (is("fx_hrtbt")) {
         animStep(ctx, o, o.anim(0x42), ctx.pl.bossActive() ? kAnim_heartBoss : kAnim_heart, 6);   // 0x405589: faster beat during a boss fight
     } else {
         halfMinuteTick(o);                              // 0x4057b0
         if (o.b(0x50) == 0) {
             o.b(0x50) = 0xff;
-            if (n == "mi_ptfal") {
+            if (is("mi_ptfal")) {
                 int16_t bit = 1;
                 for (int8_t f = int8_t(o.frame); --f >= 0;) bit = int16_t(bit + bit);
                 if (ctx.g.stats().letters & uint8_t(bit)) { ctx.release(o); return; }   // that letter is had
             }
-            if (n != "mi_ring") {
+            if (!is("mi_ring")) {
                 // Settle on the floor of either collision plane.
                 int y = o.y + 0x10;
                 ctx.floorSnap(o.x, y);
@@ -174,7 +173,7 @@ void h_item(ObjCtx& ctx, Obj& o) {
     if (o.w(0x68)) {
         o.w(0x68) -= 1;                               // pickup delay after dropping from a pouch
     } else if (ctx.touchesHarry(o)) {
-        if (n == "mi_1up") {
+        if (is("mi_1up")) {
             // The icon flies to the HUD (type 0xaa) and awards the life on arrival.
             o.type = 0xaa; o.b(0x32) = 0;
             ctx.g.stats().score += 2000;
@@ -312,7 +311,7 @@ void h_hangingPouch(ObjCtx& ctx, Obj& o) {
         ph::FloorHit f = ph::probeCell(ctx.det(), o.x, o.y + 0x12);
         if (!f.hit) f = ph::probeCell(ctx.dt2(), o.x, o.y + 0x12);
         if (!f.hit) return;
-        if (o.sprite && o.sprite->name() == "mi_pouc2") o.frame = 1;
+        if (ctx.sprIs(o, "mi_pouc2")) o.frame = 1;
         o.l(0x32) = 0;
         o.type = 2;                           // becomes an ordinary pickup
         o.w(0x68) = 8;
@@ -344,8 +343,8 @@ void h_oneUpFly(ObjCtx& ctx, Obj& o) {
     if (o.w(0x5e) < 0) {
         o.w(0x5e) = 5;
         uint32_t r; do { r = ctx.rnd() & 3; } while (r == 3);
-        if (Obj* e = ctx.spawn()) {
-            e->x = int16_t(o.x + k1upSparkle[r][0]); e->y = int16_t(o.y + k1upSparkle[r][1]);
+        if (Obj* e = ctx.spawnFrom(o)) {              // FUN_004356bc(1): at the head, marked (w26)
+            e->x = int16_t(e->x + k1upSparkle[r][0]); e->y = int16_t(e->y + k1upSparkle[r][1]);
             e->type = 0x10; e->flags = 0x6000; e->sprite = ctx.spr("fx_sprk1");
         }
     }
@@ -389,7 +388,7 @@ void h_snake(ObjCtx& ctx, Obj& o) {
     weaponHits(ctx, o, 10, &killed);
     if (killed) { killObject(ctx, o); return; }
     if (ctx.frozen()) { if (o.frame != 0xff) freezeSparkle(ctx, o); return; }
-    if (!o.sprite || o.sprite->name() != "snimiss") harryContact(ctx, o, 10);
+    if (!ctx.sprIs(o, "snimiss")) harryContact(ctx, o, 10);
     if (o.b(0x33) == 0) {
         // Still in the hole: emerge when Harry comes within 0xc0 x / 0xa0 y.
         if (o.w(0x34) == 0) {
@@ -3697,7 +3696,7 @@ void h_pit(ObjCtx& ctx, Obj& o) {
 void projectileSound(ObjCtx& ctx, Obj& o) {
     // 0x40d6b7: the crack of a thrown thing (in level 10 its own; a bone only on a free channel)
     if (ctx.levelNo == 10) { ctx.sound0(0x50, 0xb); return; }      // FUN_0042633d(0x50, 0x60)
-    if (o.sprite && o.sprite->name() == "skzbone" && !ctx.channel1Busy()) ctx.sound1(0x8c, 4);
+    if (ctx.sprIs(o, "skzbone") && !ctx.channel1Busy()) ctx.sound1(0x8c, 4);
 }
 
 void projectileShatter(ObjCtx& ctx, Obj& o) {
@@ -4145,7 +4144,7 @@ void h_vaultReward(ObjCtx& ctx, Obj& o) {
     moveY(o, o.l(0x32));
     if (int16_t(o.y - 0xa0) >= 0) o.y = 0xa0;
     if (ctx.touchesHarry(o)) {
-        if (o.sprite && o.sprite->name() == "mi_1up") ctx.g.stats().score += 5000;
+        if (ctx.sprIs(o, "mi_1up")) ctx.g.stats().score += 5000;
         applyPickup(ctx, o);                              // 0x4057c9
         ctx.release(o);
     }
@@ -4186,7 +4185,7 @@ void h_door(ObjCtx& ctx, Obj& o) {
     if (o.w(0x34) == -1) { ctx.release(o); return; }
     if (o.b(0x6c) == 0) {
         if (o.frame == 0xfc) { o.frame = 0; o.facing = 0xff; }
-        if (!(o.sprite && o.sprite->name() == "ob_door3")) {   // (already ob_door3: b6c stays 0)
+        if (!ctx.sprIs(o, "ob_door3")) {   // (already ob_door3: b6c stays 0)
             if (ctx.levelNo == 4 || ctx.levelNo == 9) {
                 o.sprite = ctx.spr("ob_door3");
                 o.w(0x26) = 0x6663;                 // FUN_004263c4 / FUN_004263a6(6), which never fails on the PC
@@ -4611,7 +4610,7 @@ Obj* spawnFromTemplate(ObjCtx& ctx, const Obj& at, int templateId) {
     Obj* p = ctx.spawnFrom(const_cast<Obj&>(at), true, t.soundSlot);   // d0 = template +8
     if (!p) return nullptr;
     p->type = t.type; p->frame = t.sub; p->flags = t.flags;
-    p->sprite = t.sprite[0] ? ctx.spr(t.sprite) : nullptr;
+    p->sprite = t.sprite[0] ? ctx.spr(t.sprite) : SpriteRef{};
     return p;
 }
 
@@ -4683,7 +4682,7 @@ void h_pot(ObjCtx& ctx, Obj& o) {
     }
     // 0x40f211: the pot itself breaks
     ctx.sound1(0xba, 0xa);
-    if (o.sprite && o.sprite->name() == "fxzpots3") o.vflip = 0xff;
+    if (ctx.sprIs(o, "fxzpots3")) o.vflip = 0xff;
     o.facing = uint8_t(ctx.rnd() & 1);
     o.w(0x26) = 0x6663;                               // FUN_004263c4 / FUN_004263a6(8)
     o.vflip = o.b(0x59);
@@ -5151,7 +5150,10 @@ void h_bungee(ObjCtx& ctx, Obj& o) {
 // timer, w6a accumulated damage; its pounce distance is the word at trg+0x1ea (PlayLogic::tw).
 
 namespace jaguar {
-enum State : uint8_t { kIntro = 1, kGoWait, kPounce, kReverse, kRun, kCrouch, kRoar, kStop };
+constexpr uint32_t kIntro = 0x411391, kGoWait = 0x4112e0, kPounce = 0x411054, kReverse = 0x41190f, kRun = 0x411651,
+                   kCrouch = 0x410f1f, kRoar = 0x41119c, kStop = 0x41156b;
+void setState(Obj& o, uint32_t st) { o.l(0x32) = int32_t(st); }
+uint32_t state(Obj& o) { return uint32_t(o.l(0x32)); }
 constexpr int kHitPoints = 0x1e;
 constexpr int kLeapMinX = 0x9fc, kLeapMaxX = 0xbf8;   // a leap stays inside the arena
 constexpr int kWallLeft = 0x9dc, kWallRight = 0xc18;  // a hurt jaguar stops at these walls
@@ -5172,21 +5174,21 @@ bool aggressive(Obj& o) { return o.w(0x58) == 0x960 || o.hits >= 0xa; }
 void startLeap(ObjCtx& ctx, Obj& o) {          // 0x410ff2 / 0x41135c / 0x411629
     o.script = kAnim2_jaguarLeap; o.l(0x3e) = anim2Start(kAnim2_jaguarLeap);
     o.sprite = ctx.spr("jguleap");
-    o.b(0x32) = kPounce;
+    setState(o, kPounce);
 }
 void toRun(ObjCtx& ctx, Obj& o, int16_t counter, int16_t animPos) {
     o.sprite = ctx.spr("jgurun");
-    o.b(0x32) = kRun;
+    setState(o, kRun);
     o.w(0x4c) = counter;
     o.w(0x36) = animPos;
 }
 void toReverse(ObjCtx& ctx, Obj& o) {          // 0x411070 / 0x4118ea
     o.sprite = ctx.spr("jgurevrs");
-    o.b(0x32) = kReverse;
+    setState(o, kReverse);
     o.w(0x36) = 0;
 }
 void toRoar(Obj& o) {                          // 0x4119a3
-    o.b(0x32) = kRoar;
+    setState(o, kRoar);
     o.script = kAnim2_jaguarRoar; o.l(0x46) = anim2Start(kAnim2_jaguarRoar); o.w(0x4a) = 0;
     o.w(0x4c) = 0;
     o.facing ^= 1;
@@ -5195,7 +5197,7 @@ void toStop(ObjCtx& ctx, Obj& o, int16_t wallX, bool faceRight) {   // 0x411703 
     o.x = wallX;
     o.l(0x50) = 0;
     o.sprite = ctx.spr("jgurun");
-    o.b(0x32) = kStop;
+    setState(o, kStop);
     o.facing = faceRight ? 1 : 0;
     o.l(0x38) = faceRight ? 0x80000 : -0x80000;
     o.b(0x5b) = 0;
@@ -5227,7 +5229,7 @@ void bossDeath(ObjCtx& ctx, Obj& o) {
     o.y -= 0x14;
     o.b(0x5a) = 0xff;
     for (const char* n : {"jmzmorf2", "jmzmorfa", "jmzmorfb", "jmzswipe", "jm0swipe", "jm1swipe", "jmzready"})
-        if (o.sprite && o.sprite->name() == n) { o.y -= 0x10; o.b(0x5a) = 0; break; }
+        if (ctx.sprIs(o, n)) { o.y -= 0x10; o.b(0x5a) = 0; break; }
     ctx.g.setRandomSeed(0x12d233, 0x84a43c94);  // 0x415c48
     ctx.harry.l(0x46677e) = 0x13477db9;          // (read by nothing)
     if (Obj* c = ctx.spawn()) {                 // FUN_004356bc(3)
@@ -5314,7 +5316,7 @@ void h_jaguar(ObjCtx& ctx, Obj& o) {
                                                     // trigger record (on level 0 over the end of column 0x22's list)
             o.b(0x3c) = uint8_t((ctx.rnd() & 3) + 2);
             o.y += 0x18;
-            o.b(0x32) = kIntro;
+            setState(o, kIntro);
             o.facing = 1;
             o.l(0x38) = -0x10000;
         }
@@ -5322,7 +5324,7 @@ void h_jaguar(ObjCtx& ctx, Obj& o) {
         // stones bounce off).  DAT_00466782 marks a hit for this tick.
         bool hitNow = false;
         ctx.harry.b(0x466782) = 0;
-        if (o.b(0x32) == kIntro) {
+        if (state(o) == kIntro) {
             deflectStones(ctx, o);
         } else if (int16_t(o.x - 0xbd0) < 0 && int16_t(o.x - 0xa30) >= 0) {
             o.hits = 0;
@@ -5339,13 +5341,13 @@ void h_jaguar(ObjCtx& ctx, Obj& o) {
             ctx.pl.strayReturn(0x410e6a);
             return;
         }
-        if (ctx.harry.invulnerable() == 0 && harryContact(ctx, o, 0xf) && o.b(0x32) == kPounce) {
+        if (ctx.harry.invulnerable() == 0 && harryContact(ctx, o, 0xf) && state(o) == kPounce) {
             ctx.harry.b(0x465b55) = o.facing;       // shoved the way the jaguar is going
             ctx.pl.harryCall(0x427167);
         }
-        if (o.b(0x32) != kPounce) { int y = o.y + 0xd; ctx.floorSnap(o.x, y); o.y = int16_t(y - 0xd); }
+        if (state(o) != kPounce) { int y = o.y + 0xd; ctx.floorSnap(o.x, y); o.y = int16_t(y - 0xd); }
 
-        switch (o.b(0x32)) {
+        switch (state(o)) {
         case kIntro:                                // 0x411391
             if (!animStep(ctx, o, o.anim(0x36), kAnim_jaguarIntro, 3)) {
                 if (o.anim(0x36).tick == 0 && o.anim(0x36).pos == 0x25) spawnMeter(ctx, o);
@@ -5360,7 +5362,7 @@ void h_jaguar(ObjCtx& ctx, Obj& o) {
                 s->x = int16_t(ctx.camX + 0x80); s->y = int16_t(ctx.camY + 0x50);
             }
             o.w(0x68) = 0x3c;
-            o.b(0x32) = kGoWait;
+            setState(o, kGoWait);
             [[fallthrough]];
         case kGoWait: {                             // 0x4112e0
             o.w(0x68) -= 1;
@@ -5373,7 +5375,7 @@ void h_jaguar(ObjCtx& ctx, Obj& o) {
             // 0x411315: the intro is over (DAT_00465d49); take the sign down and leap into the arena
             ctx.harry.b(0x465d49) = 0;
             for (Obj* p : ctx.pl.objectSystem().list())
-                if (p->sprite && p->sprite->name() == "mi_go") { ctx.release(*p); break; }
+                if (ctx.sprIs(*p, "mi_go")) { ctx.release(*p); break; }
             startLeap(ctx, o);
             o.l(0x50) = -0x30000;
             o.l(0x38) = 0x68000;
@@ -5442,7 +5444,7 @@ void h_jaguar(ObjCtx& ctx, Obj& o) {
                     if (!(ctx.rnd() & 1)) o.script = kAnim2_jaguarCrouchRoar;
                     o.l(0x3e) = anim2Start(o.script);
                     o.sprite = ctx.spr("jgurn2lo");
-                    o.b(0x32) = kCrouch;
+                    setState(o, kCrouch);
                     continue;
                 }
             }
@@ -5457,7 +5459,7 @@ void h_jaguar(ObjCtx& ctx, Obj& o) {
             if (o.w(0x3a) == 0) o.l(0x38) = 0;
             else o.l(0x38) += o.w(0x3a) < 0 ? 0x8000 : -0x8000;
             moveX(o, o.l(0x38));
-            const bool roaring = o.sprite && o.sprite->name() == "jguroar";
+            const bool roaring = ctx.sprIs(o, "jguroar");
             auto run = [&] {                        // 0x41101a (and back to the object pass)
                 toRun(ctx, o, -0x50, 4);
                 o.l(0x38) = o.facing ? 0x30000 : -0x30000;
@@ -5477,7 +5479,7 @@ void h_jaguar(ObjCtx& ctx, Obj& o) {
             bool resume = o.b(0x4c) == 0x70;
             if (!resume) {
                 if (hitNow) o.b(0x4d) = 0xff;
-                const bool roaring = o.sprite && o.sprite->name() == "jguroar";
+                const bool roaring = ctx.sprIs(o, "jguroar");
                 if (roaring && o.frame != 5) return;
                 resume = o.b(0x4d) != 0 || between(o.x - ctx.harry.x(), -0x68, 0x68);
             }
@@ -5499,7 +5501,7 @@ void h_jaguar(ObjCtx& ctx, Obj& o) {
             return;
         }
         default:
-            o.b(0x32) = kIntro;
+            setState(o, kIntro);
             return;
         }
     }
@@ -5781,7 +5783,7 @@ void h_stoneJaguar(ObjCtx& ctx, Obj& o) {
             else o.l(0x38) = 0;
             moveX(o, o.l(0x38));
             o.b(0x5c) = 0;
-            if (o.sprite && o.sprite->name() == "jgulow" && o.b(0x5d) != 0) {
+            if (ctx.sprIs(o, "jgulow") && o.b(0x5d) != 0) {
                 o.l(0x5e) = int32_t(0xfffd8000);
                 setState(o, kJumpDown);
                 o.w(0x36) = 0;
@@ -5879,7 +5881,11 @@ void h_jaguarFight(ObjCtx& ctx, Obj& o) {
         ctx.pl.endBoss();                           // DAT_00466507 = 0
         o.x = 0x7b0; o.y = -0xa0;
         o.sprite = ctx.spr("r_r");
-        // (0x41ded0: the original also clears the frame of whichever record a5 was left pointing at)
+        // 0x41ded0: the frame of whichever record a5 was left pointing at is cleared (Harry's,
+        // when the jaguar's death was the last thing to put him there)
+        const uint32_t a5 = ctx.g.regA5();
+        if (Obj* r = ctx.pl.objAt(a5)) r->frame = 0;
+        else if (a5 >= Harry::kBase && a5 + 9 < Harry::kBase + Harry::kSize) h.b(a5 + 9) = 0;
         Obj* prev = &o;
         for (int i = 0; i < 8; ++i) {
             Obj* s = ctx.spawnFrom(*prev, true, 0);  // FUN_0043546e(0)
@@ -5960,10 +5966,10 @@ constexpr uint32_t kHidden = 0x41ecc3, kWake = 0x41ef24, kRoar = 0x41ee76, kRun 
 enum Flow { kDone, kRestart, kJump };              // return / `jmp 0x41e462` / a jump into another state's code
 
 void setState(Obj& o, uint32_t st) { o.l(0x32) = int32_t(st); }
-bool spriteIs(const Obj& o, const char* name) { return o.sprite && o.sprite->name() == name; }
-bool manForm(const Obj& o) {
+bool spriteIs(const ObjCtx& ctx, const Obj& o, const char* name) { return ctx.sprIs(o, name); }
+bool manForm(const ObjCtx& ctx, const Obj& o) {
     for (const char* n : {"jmzmorf2", "jmzmorfa", "jmzmorfb", "jmzswipe", "jm0swipe", "jm1swipe", "jmzready"})
-        if (spriteIs(o, n)) return true;
+        if (spriteIs(ctx, o, n)) return true;
     return false;
 }
 void snap(ObjCtx& ctx, Obj& o) {                   // 0x41ef8e
@@ -6034,7 +6040,7 @@ Flow body(ObjCtx& ctx, Obj& o, uint32_t st, uint32_t& next) {
         o.b(0x4c) += 1;
         if (o.b(0x4c) != 0x70) {
             if (h.b(0x466782)) o.b(0x4d) = 0xff;
-            if (spriteIs(o, "jguroar") && o.frame != 5) { snap(ctx, o); return kDone; }
+            if (spriteIs(ctx, o, "jguroar") && o.frame != 5) { snap(ctx, o); return kDone; }
             if (o.b(0x4d) == 0) {
                 const int16_t d = int16_t(o.x - h.x());
                 if (d < -0x68 || d >= 0x68) { snap(ctx, o); return kDone; }
@@ -6141,7 +6147,7 @@ Flow body(ObjCtx& ctx, Obj& o, uint32_t st, uint32_t& next) {
         for (int guard = 0; guard < 4; ++guard) {
             done = anim2Step(ctx, o, 0x50, 3);
             // without the claw, straight from the raised paw to the blow (0x45b45c)
-            if (spriteIs(o, "jmzswipe") && o.frame == 3 && o.l(0x56) == 0) { o.l(0x50) = anim2Start(o.script) + 0x1c; continue; }
+            if (spriteIs(ctx, o, "jmzswipe") && o.frame == 3 && o.l(0x56) == 0) { o.l(0x50) = anim2Start(o.script) + 0x1c; continue; }
             break;
         }
         if (!done) return kDone;
@@ -6160,7 +6166,7 @@ Flow body(ObjCtx& ctx, Obj& o, uint32_t st, uint32_t& next) {
     case kCharge: {                                // 0x41ebf4: the same, held in the charge until past Harry
         moveX(o, o.l(0x38));
         bool hold = false;
-        if (o.x >= 0x1690 && o.x < 0x1780 && spriteIs(o, "jmzmorf2") && o.frame == 2) {
+        if (o.x >= 0x1690 && o.x < 0x1780 && spriteIs(ctx, o, "jmzmorf2") && o.frame == 2) {
             int16_t d = int16_t(h.x() - o.x);
             if (o.facing) d = int16_t(-d);
             hold = d < -0x60;
@@ -6197,7 +6203,7 @@ void h_jagMan(ObjCtx& ctx, Obj& o) {
             h.b(0x466782) = 0xff;
             o.w(0x6c) += o.hits;
             if (!ctx.channel0Busy()) {
-                if (manForm(o)) ctx.sound0(0x13, 0xe);              // FUN_0042633d(0x13, 0x60, 0xe)
+                if (manForm(ctx, o)) ctx.sound0(0x13, 0xe);              // FUN_0042633d(0x13, 0x60, 0xe)
                 else if (ctx.rnd() & 1) ctx.sound0(0x2a, 0xe);       // FUN_0042633d(0x2a, 0x60, 0xe)
             }
         }
@@ -6214,7 +6220,7 @@ void h_jagMan(ObjCtx& ctx, Obj& o) {
         const uint32_t hc = h.cont();
         if (hc != 0x428dce && hc != 0x428cdb && h.invulnerable() == 0) {
             bool touched = false;
-            if (spriteIs(o, "jm0swipe") && o.frame == 3) {   // the blow, 0x80 px ahead to 8 behind
+            if (spriteIs(ctx, o, "jm0swipe") && o.frame == 3) {   // the blow, 0x80 px ahead to 8 behind
                 int16_t d = int16_t(h.x() - o.x);
                 if (o.facing) d = int16_t(-d);
                 if (d < 8 && d >= -0x80) { ctx.pl.hurtHarry(0x1e); touched = true; }   // FUN_00428233
@@ -6253,8 +6259,8 @@ void h_jagMan(ObjCtx& ctx, Obj& o) {
 void h_jagManClaw(ObjCtx& ctx, Obj& o) {
     const Obj* boss = ctx.pl.objAt(uint32_t(o.l(0x5a)));
     if (!boss) return;
-    if (jagMan::spriteIs(*boss, "jm0swipe")) { ctx.release(o); return; }
-    if (!jagMan::spriteIs(*boss, "jmzswipe")) { o.frame = 0xff; return; }
+    if (jagMan::spriteIs(ctx, *boss, "jm0swipe")) { ctx.release(o); return; }
+    if (!jagMan::spriteIs(ctx, *boss, "jmzswipe")) { o.frame = 0xff; return; }
     if (boss->frame != 3) return;
     if (animStep(ctx, o, o.anim(0x50), kAnim_jagManSwipeFx, 5)) ctx.release(o);
 }
@@ -6933,7 +6939,7 @@ void walk(ObjCtx&, Obj&); void rollHome(ObjCtx&, Obj&); void dying(ObjCtx&, Obj&
 
 int harryDx(const ObjCtx& ctx, const Obj& o) { return int16_t(ctx.harry.x() - o.x); }
 bool harryBehind(const ObjCtx& ctx, const Obj& o) { return ctx.harry.x() < o.x ? o.facing != 0 : o.facing == 0; }
-bool spriteIs(const Obj& o, const char* name) { return o.sprite && o.sprite->name() == name; }
+bool spriteIs(const ObjCtx& ctx, const Obj& o, const char* name) { return ctx.sprIs(o, name); }
 
 // 0x413a5b
 void toTurn(ObjCtx& ctx, Obj& o) { o.b(0x32) = kTurn; o.w(0x34) = 0; exitDespawnWide(ctx, o); }
@@ -6990,7 +6996,7 @@ void decide(ObjCtx& ctx, Obj& o) {
 void stoneKnocksBone(ObjCtx& ctx, Obj& o) {
     Harry& h = ctx.harry;
     if (h.l(0x466788) == 0) return;
-    if (spriteIs(o, "skiroll") || spriteIs(o, "skimorph") || spriteIs(o, "skijaw") || spriteIs(o, "skidie")) return;
+    if (spriteIs(ctx, o, "skiroll") || spriteIs(ctx, o, "skimorph") || spriteIs(ctx, o, "skijaw") || spriteIs(ctx, o, "skidie")) return;
     // (0x413337: every register saved around it, so a5 comes back as it was)
     struct KeepA5 { uint32_t& r; uint32_t v; ~KeepA5() { r = v; } } keep{ctx.g.regA5(), ctx.g.regA5()};
     Obj* b = spawnBone(ctx, o);
@@ -7105,7 +7111,7 @@ void chop(ObjCtx& ctx, Obj& o) {
         return;
     }
     if (harryBehind(ctx, o)) { toTurn(ctx, o); return; }
-    if (o.frame == 2 && (spriteIs(o, "skichop") || spriteIs(o, "sk0chop"))) {
+    if (o.frame == 2 && (spriteIs(ctx, o, "skichop") || spriteIs(ctx, o, "sk0chop"))) {
         const int16_t sx = o.x;
         o.x = int16_t(o.x + (o.facing ? 0x28 : -0x28));
         const bool hit = ctx.touchesHarry(o);               // FUN_00424af1
@@ -7225,7 +7231,7 @@ void h_skullWarrior(ObjCtx& ctx, Obj& o) {
         // (d5 is not loaded here: the weapon test runs with whatever value the code before
         // left in it.  0 stands in for it, so any hit kills.)
         if (!weaponHit(ctx, o, 0).z) {
-            if (spriteIs(o, "skiroll") || spriteIs(o, "skimorph") || spriteIs(o, "skijaw") || spriteIs(o, "skidie")) {
+            if (spriteIs(ctx, o, "skiroll") || spriteIs(ctx, o, "skimorph") || spriteIs(ctx, o, "skijaw") || spriteIs(ctx, o, "skidie")) {
                 ctx.sparkleBurst(o, (ctx.rnd() & 1) ? kSparkleOffsetsB : kSparkleOffsetsA);   // 0x433725
                 ctx.g.stats().score += 750;
                 ctx.spawnEffect(o, ctx.spr("fx_stone"), kAnim_turn7, 3);
@@ -7373,7 +7379,7 @@ void spawnRipple(ObjCtx& ctx, Obj& at, int dx, int dy, uint16_t flagAdd = 0) {
 // 0x41b92e: the ripple ring (fx_rippl, 17 frames; fxisplsh, 12) at 4 ticks; the twin copies
 // the frame; both go when the script ends.
 void h_ripple(ObjCtx& ctx, Obj& o) {
-    const bool splash = o.sprite && o.sprite->name() == "fxisplsh";
+    const bool splash = ctx.sprIs(o, "fxisplsh");
     const bool done = animStep(ctx, o, o.anim(0x32), splash ? kAnim_splashRing : kAnim_rippleRing, 4);
     ctx.setA5(uint32_t(o.l(0x50)));                                      // 0x41b97c: a5 = l50
     Obj* twin = ctx.linkAt(o, 0x50);
@@ -7742,7 +7748,7 @@ void h_firePit(ObjCtx& ctx, Obj& o) {
         t.y = int16_t(tailY);
     }
     o.behind = 0;
-    const bool secondSheet = o.sprite && o.sprite->name() == "fx0firep";
+    const bool secondSheet = ctx.sprIs(o, "fx0firep");
     if (!secondSheet && between(tailY, 0xd, 0x11)) o.behind = 0xff;    // (sic: compares the tail's absolute y)
     if (!ctx.frozen() && !secondSheet && int8_t(o.frame - 0xa) >= 0) harryContact(ctx, o, 0x28);
     const int dx = int16_t(o.x - ctx.camX), dy = int16_t(o.y - ctx.camY);   // 0x40f584: its own window
@@ -7845,7 +7851,7 @@ void h_roamingSnake(ObjCtx& ctx, Obj& o) {
         return;
     }
     Harry& h = ctx.harry;
-    if (!o.sprite || o.sprite->name() != "snimiss") harryContact(ctx, o, 10);
+    if (!ctx.sprIs(o, "snimiss")) harryContact(ctx, o, 10);
     if (o.b(0x33) == 0) {                                                // still a dot: rear up when Harry nears
         if (o.w(0x34) == 0) {
             const int16_t dx = int16_t(o.x - h.x()), dy = int16_t(h.y() - o.y);
@@ -8039,7 +8045,7 @@ void h_crocSwimmer(ObjCtx& ctx, Obj& o) {
         if (!harryOnBox(ctx, o, -26, 43, -5, 5)) return;
         if (int16_t(o.w(0x32) - 0x7a) < 0 && int16_t(o.w(0x32) - 0x16) >= 0) ctx.pl.carryHarry(o.l(0x36));
         h.y() = int16_t(o.y - 1);
-        if (o.sprite && o.sprite->name() == "crzrippl") h.y() += 2;
+        if (ctx.sprIs(o, "crzrippl")) h.y() += 2;
         h.vy() = 0;
         h.b(0x465b73) = 0xff;
     };
@@ -8089,13 +8095,13 @@ void h_crocLurker(ObjCtx& ctx, Obj& o) {
         o.w(0x32) = int16_t((ctx.rnd() & 0x3f) + 0x54);
     }
     Harry& h = ctx.harry;
-    const bool diving = o.sprite && o.sprite->name() == "crzdive";
+    const bool diving = ctx.sprIs(o, "crzdive");
     if (!diving && h.cont() == 0x427528 && int16_t(h.x() - o.x + 0x50) >= 0 && int16_t(h.x() - o.x - 0x50) < 0) {
         // 0x40b0dd: Harry drowning within 0x50 px
         if (o.w(0x56)) { o.w(0x56) -= 1; exitDespawnFar(ctx, o); return; }
         o.sprite = ctx.spr("crzdive");                                   // (FUN_004263c4 / FUN_004263a6(5): +0x26 only)
     }
-    if (diving || (o.sprite && o.sprite->name() == "crzdive")) {
+    if (diving || (ctx.sprIs(o, "crzdive"))) {
         if (animStep(ctx, o, o.anim(0x58), kAnim_crocDive, 4)) {
             ctx.sound0(0xd, 0x50);                                       // FUN_0042633d(0xd, 0x60)
             ctx.pl.restoreEntry(o); ctx.release(o);
@@ -8180,7 +8186,7 @@ void h_fireball(ObjCtx& ctx, Obj& o) {
 // the collapse hurries it - but on hard it reassembles with its hit count full, and the whip
 // only sends it back to the start of the fall.  15 contact damage while upright.
 void h_firePriest(ObjCtx& ctx, Obj& o) {
-    auto spriteIs = [&](const char* n) { return o.sprite && o.sprite->name() == n; };
+    auto spriteIs = [&](const char* n) { return ctx.sprIs(o, n); };
     constexpr uint32_t kMain = 0x45a82f, kRise = 0x45a814;               // the two scripts' addresses
     if (o.frame == 0xfe) {                                               // first tick
         int y = o.y + 0xd; ctx.floorSnap(o.x, y); o.y = int16_t(y - 0xd);
@@ -8292,7 +8298,7 @@ void h_arrow(ObjCtx& ctx, Obj& o) {
 // 0x39), high or low at random; every 3rd or 4th time it pauses longer.  30 hp, 13 contact
 // damage.  Faces left when b0b is set.
 void h_templeArcher(ObjCtx& ctx, Obj& o) {
-    auto spriteIs = [&](const char* n) { return o.sprite && o.sprite->name() == n; };
+    auto spriteIs = [&](const char* n) { return ctx.sprIs(o, n); };
     // 0x412079: stay on the floor; where the ledge ends ahead it turns round (true).
     auto ledgeEnds = [&]() -> bool {
         int y = o.y + 0xe; ctx.floorSnap(o.x, y); o.y = int16_t(y - 0xe);

@@ -1,6 +1,7 @@
 #include "ph/tables.h"
 
 #include "ph/arena.h"
+#include "ph/sprite.h"
 
 #include <cstring>
 
@@ -166,6 +167,14 @@ TriggerHit triggerAt(const ColumnTable& t, int x, int y) {
 } // namespace ph
 
 namespace ph {
+const SpriteHitbox* hitboxOf(const Sprite* s) {
+    if (!s) return nullptr;
+    const int w = s->boxWord();
+    if (w < 0) return hitbox(s->name().c_str());
+    if (w == 0xffff || w < 4 || (w - 4) % 12 != 0 || (w - 4) / 12 >= kHitboxCount) return nullptr;
+    return &kHitboxes[(w - 4) / 12];
+}
+
 const SpriteHitbox* hitbox(const char* sprite) {
     if (!sprite || !*sprite) return nullptr;
     for (int i = 0; i < kHitboxCount; ++i)

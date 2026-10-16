@@ -100,7 +100,8 @@ namespace { int jaguarTest(const std::string& dir); int bungeeTest(const std::st
             int transitionTest(const std::string& dir); int musicTest(const std::string& dir);
             int cutsceneTest(const std::string& dir); int titleTest(const std::string& dir); int earthwormTest(const std::string& dir);
             int cheatTest(const std::string& dir); int menuTest(const std::string& dir); int exitTest(const std::string& dir);
-            int leftoversTest(const std::string& dir); int pointersTest(const std::string& dir); }
+            int leftoversTest(const std::string& dir); int pointersTest(const std::string& dir);
+            int slotsTest(const std::string& dir); }
 namespace {
 // The engine's blocking parts run out: a command's fades and waits, a level load's fade in.
 int settle(game::Game& g, int cap = 1000) {
@@ -167,6 +168,7 @@ int gameplayTests(const std::string& dir) {
     fails += exitTest(dir);
     fails += leftoversTest(dir);
     fails += pointersTest(dir);
+    fails += slotsTest(dir);
     return fails;
 }
 }
@@ -1496,6 +1498,38 @@ int pointersTest(const std::string& dir) {
     } else {
         std::printf("pointers: Harry's sprite word %#x (%s in the load block); the bungee vine's 3 pieces and %d rope segment%s by their records' addresses\n",
                     h.ul(0x465b1d), hs->name().c_str(), segments, segments == 1 ? "" : "s");
+    }
+    return fails;
+}
+
+// The sprite slots as the original's loads leave them (FUN_004453a0, a call a sprite): a slot no
+// load has filled holds its name's address (jgustill's, which the jaguar man's hidden state takes
+// on level 8); level 17 loads ob_door3 twice, for its own slot and for ob_door's, at two
+// addresses; a sprite collides with the box of the slot it was loaded for (level 3's bat,
+// btrfly, with btzfly's).
+int slotsTest(const std::string& dir) {
+    int fails = 0;
+    engine::Options opts;
+    game::Game g(dir, opts);
+    const game::SpriteSlots& sl = g.spriteSlots();
+    g.startLevel(8);
+    const uint32_t still = sl.of(game::spriteSlotOf("jgustill"));
+    g.startLevel(17);
+    const uint32_t d3 = sl.of(game::spriteSlotOf("ob_door3")), d = sl.of(game::spriteSlotOf("ob_door"));
+    const ph::Sprite* a = sl.at(d3);
+    const ph::Sprite* b = sl.at(d);
+    const bool doors = a && b && a != b && a->name() == "ob_door3" && b->name() == "ob_door3";
+    g.startLevel(3);
+    const ph::Sprite* bat = sl.at(sl.of(game::spriteSlotOf("btzfly")));
+    const ph::SpriteHitbox* box = ph::hitboxOf(bat);
+    const bool bats = bat && bat->name() == "btrfly" && box && std::strcmp(box->sprite, "btzfly") == 0;
+    if (still != 0x470acc || !doors || !bats) {
+        std::printf("FAIL: slots: jgustill's %#x, level 17's doors %#x / %#x, level 3's bat %s with %s's box\n",
+                    still, d3, d, bat ? bat->name().c_str() : "-", box ? box->sprite : "no");
+        ++fails;
+    } else {
+        std::printf("slots: jgustill's slot holds its name's address (%#x) on level 8; level 17's two ob_door3 at %#x / %#x; level 3's btrfly with btzfly's box\n",
+                    still, d3, d);
     }
     return fails;
 }

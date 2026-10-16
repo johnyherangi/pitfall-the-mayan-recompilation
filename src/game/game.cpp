@@ -176,14 +176,31 @@ void Game::setCdVolume(int pct) {
 void Game::setLogic(std::unique_ptr<LevelLogic> logic) { logic_ = std::move(logic); autoLogic_ = false; }
 
 void Game::fillSpriteSlots(bool level) {
-    // The slots INIT.PH's sprites go to (FUN_004457d0), or a level's (FUN_00447190, the slots
-    // bound to its sprites under other names included); the others keep what they held.
-    auto loaded = [&](auto add) {
+    // FUN_004453a0, once for each sprite FUN_004457d0 (INIT.PH) or FUN_00447190 (the level) loads:
+    // the slot that call names takes the address the sprite was put at (a sprite the level loads
+    // for two slots is two copies, one in each); the other slots keep what they held.
+    const std::span<const ph::ArenaSprite> list = level ? ph::levelArenaSprites(levelNo_) : ph::initArenaSprites();
+    const auto& sprites = level ? level_->sprites : assets_->sprites;
+    for (size_t k = 0; k < list.size() && k < sprites.size(); ++k)
+        if (sprites[k]->arenaAddr()) spriteSlots_.set(list[k].slot, sprites[k]->arenaAddr());
+    spriteSlots_.index([&](auto add) {
         for (const auto& s : assets_->sprites) add(s.get());
         if (level_) for (const auto& s : level_->sprites) add(s.get());
-    };
-    if (level) spriteSlots_.fill([&](const char* n) -> const ph::Sprite* { return level_->sprite(n); }, loaded);
-    else spriteSlots_.fill([&](const char* n) -> const ph::Sprite* { return assets_->sprite(n); }, loaded);
+    });
+}
+
+SpriteRef Game::slotSprite(uint32_t slot) const {
+    SpriteRef r;
+    r.addr = spriteSlots_.of(slot);
+    r.p = spriteSlots_.at(r.addr);
+    return r;
+}
+
+SpriteRef Game::slotSprite(const char* name) const {
+    if (const uint32_t slot = spriteSlotOf(name)) return slotSprite(slot);
+    SpriteRef r;
+    r = findSprite(name);
+    return r;
 }
 
 const ph::Sprite* Game::findSprite(const std::string& name) const {

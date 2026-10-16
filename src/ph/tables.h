@@ -100,6 +100,10 @@ struct SpriteHitbox {
 extern const SpriteHitbox kHitboxes[];
 extern const int kHitboxCount;
 const SpriteHitbox* hitbox(const char* sprite);  // nullptr when the sprite has none
+// The box a sprite record's +8 word leads to (0x468824 + word: entry (word - 4) / 12); nullptr for
+// 0xffff.  A sprite not loaded through FUN_004453a0 (word -1): its box by name.
+class Sprite;
+const SpriteHitbox* hitboxOf(const Sprite* s);
 
 // Trigger ids with known meaning.
 enum TriggerId : uint8_t {

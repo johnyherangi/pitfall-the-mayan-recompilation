@@ -10,12 +10,13 @@ showed is in `docs/RECONSTRUCTION_LEDGER.md`.
 Linux with Wine 9, Xvfb, xdotool, bc, ffmpeg (for the frames), Python 3 and gcc / g++.  The
 original's files (`PITFALL.EXE`, `WAIL32.DLL`, `INIT.PH`, `LEVEL00.PH` ..) go in a folder of their own
 (`PF_GAME`, by default `original/`), and Wine needs a 32-bit prefix in which the game runs without
-its CD:
+its CD (and, for the driven runs below, with its fly cheat, which only Ctrl brings on):
 
 ```
 export WINEPREFIX=$HOME/.wine-pitfall WINEARCH=win32
 wineboot -i
 wine reg add 'HKLM\Software\Activision\Pitfall' /v Option_Slow /t REG_DWORD /d 1 /f
+wine reg add 'HKLM\Software\Activision\Pitfall' /v Debug_AllowCheat /t REG_DWORD /d 1 /f
 ```
 
 The scripts start their own virtual display (`PF_DISPLAY`, `:91` by default, 1024x768), dismiss
@@ -40,8 +41,9 @@ g++ -std=c++20 -O2 -Isrc re/verify/memdump.cpp \
 memory through `/proc/<pid>/mem` about every 300 microseconds (`memsample.c`), a record whenever
 anything changed: the engine's tick count (`0x46fb74`), the logic's (`0x4601d9`), the random
 generator, the level, a5 (`DAT_004601b4`), the logic's memory `0x465800 .. 0x4668ff`, the 80 object
-records and the joypad.  With `JOYOUT=<file>` a second sampler reads the two tick counts and the
-joypad alone without a pause, so that every tick's joypad is seen.
+records and the joypad.  With `JOYOUT=<file>` a second sampler reads the two tick counts, the
+joypad, the "vampire" cheat's flag (`DAT_0046d054`) and the lives alone without a pause, so that
+every tick's joypad is seen.
 
 `memdump` runs the port with the level picked from the menu (`MENU=<level>@<step>`) and the
 original's joypad given to it tick by tick (`PAD=<file>`, through `Game::joypadHook`), and prints its
@@ -57,10 +59,13 @@ What has to be right for the comparison to mean something:
 
 * **A tick's state.**  Within an engine tick the engine's count goes up first, then the joypad is
   polled, then the logic runs, its count going up at its end; a sample taken in between is half a
-  tick.  `ticks.py` keeps, for each tick, its last sample whose logic count is the finished one (the
-  one the ticks around it have), and leaves out a tick seen only before its end (the game was not
-  scheduled between the two, which can take a whole tick's time); `memsample` drops a record during
-  which a tick began (it reads the engine's count again after the rest).
+  tick.  `ticks.py` keeps, for each tick, its last sample whose logic count is the steady distance
+  ahead of the engine's (it goes up with a load's ticks and down for good with an engine exit), and
+  leaves out a tick seen only before its end: the game was not scheduled between the two, which can
+  take a whole tick's time, or it ran ticks back to back after a pause and the sampler saw each of
+  them half done (the distance comes back within 60 ticks); `memsample` drops a record during
+  which a tick began (it reads the engine's count again after the rest).  The original's timing
+  suffers when anything else keeps the machine busy during a capture: run them alone.
 * **The joypad.**  Under Wine the original runs about 38 ticks a second, and after a pause (a death's
   waits, a load) it runs the missed ticks back to back, a tenth of a millisecond each; the keys it
   reads with `GetAsyncKeyState` can change in the middle of such a run.  Only the joypad sampler
@@ -87,3 +92,28 @@ click came, which the logic's tick count and the clouds go by (try the steps aro
 held key only from the tick it went down (try the ticks before the frame where Harry first moves).
 The original's loads (its dark red screen while the files load) and its boot do not match: they
 take wall time without ticks.
+
+## Driven runs
+
+`capmem.sh` with `DRIVE="<level> <plan>"` hands the level, once it runs, to `drive.py`, which plays
+it from the original's memory: after each logic tick it reads Harry's record and the object list
+through `/proc/<pid>/mem` and presses the keys the plan wants for the next tick through XTest.  It
+flies Harry with the game's own cheat (Ctrl and the arrows, 7 px a tick, `Debug_AllowCheat` in the
+registry), types its cheats once the level runs (`CHEATS`, by default "vampire": no damage; with
+"meowmeowlikemeowman" too, 10 lives), and then follows its plan:
+
+| plan | what it does |
+|------|--------------|
+| `jaguar` | level 0: over the arena to its right edge and down, then the whip at the jaguar until it dies and the level ends |
+| `stones` | level 3: to the stone jaguars' ledge, the whip at the awake ones, then up the rope their death leaves and out |
+| `jaguarman` | level 8: down beside the arena and back up, the whip at the jaguar man, then into the stone face's mouth |
+| `spirit` | level 10: the whip and the sling at the Warrior Spirit |
+| `sweep` | any level: rows across the whole level, top to bottom, `ROW` px apart (160) |
+| `vault` | levels 11 to 13: the Simon game played right, from the combination in memory, round after round |
+| `play` | any level: dropped at spots across it (`PLAYX` x `PLAYY` px apart) and played at random there for `PLAY` ticks each (`SEED`) |
+
+`mkpad.py` turns the cheat's flag in the joypad capture into a line `type <tick> vampire` (the cheat
+came in after that tick: `WM_CHAR` runs between two ticks), and the lives turning 99 into one for
+"meowmeowlikemeowman", which `memdump` types into the port before the same tick (`Game::typeChar`); the rest is the joypad, the fly cheat's Ctrl bit (`0x100`)
+in it.  A run is compared as a level's: `mkpad.py`, `memdump` with the level's menu step and as many
+steps as the capture has ticks, `cmpmem.py`.

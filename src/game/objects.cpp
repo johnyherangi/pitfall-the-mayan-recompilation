@@ -45,7 +45,13 @@ Trg ObjCtx::trigger(int x, int y) const { return pl.trg(x, y); }
 
 bool ObjCtx::frozen() const { return static_cast<const Harry&>(harry).w(0x46652f) != 0; }
 
-const ph::Sprite* ObjCtx::spr(const char* name) { return g.findSprite(name); }
+SpriteRef ObjCtx::spr(const char* name) { return g.slotSprite(name); }
+
+bool spriteWordIs(const Game& g, const Obj& o, const char* name) {
+    if (!spriteSlotOf(name)) return o.sprite && o.sprite->name() == name;
+    const uint32_t word = o.rawBox ? o.rawBox->va : o.sprite.addr;
+    return word == g.slotSprite(name).addr;
+}
 
 Obj* ObjCtx::spawn(bool tail) { return tail ? pl.objectSystem().allocTail() : pl.objectSystem().allocHead(); }
 Obj* ObjCtx::spawnFrom(Obj& parent, bool tail, int d0) {
@@ -66,7 +72,7 @@ Obj* ObjCtx::linkAt(const Obj& o, int off) {
 
 void ObjCtx::setLink(Obj& o, int off, const Obj* to) { o.l(off) = int32_t(pl.addrOf(to)); }
 
-Obj* ObjCtx::spawnEffect(Obj& at, const ph::Sprite* sprite, const uint8_t* script, int ticks) {
+Obj* ObjCtx::spawnEffect(Obj& at, const SpriteRef& sprite, const uint8_t* script, int ticks) {
     // 0x433914: a type 0x68 effect at the object's position playing `script`.
     Obj* e = spawn();                                  // FUN_004356bc(2): every caller passes d2 = 2
     if (!e) return nullptr;
@@ -105,7 +111,7 @@ namespace {
 // 0xffff = none); three objects point +0xe at a box record of their own instead (Obj::rawBox).
 const ph::SpriteHitbox* boxOf(const Obj& o) {
     if (o.rawBox) return o.rawBox;
-    return o.sprite ? ph::hitbox(o.sprite->name().c_str()) : nullptr;
+    return ph::hitboxOf(o.sprite);
 }
 // The overlap test of FUN_00424af1 for a5 at (ax, ay) with box ha and a6 at (bx, by) with box hb
 // (16-bit compares, as the listing does them; no mirroring by facing).
@@ -159,7 +165,8 @@ bool ObjCtx::touchesHarry(Obj& o, int16_t* d1) {
     setA5(kHarryAddr);
     const char* hs = harry.sprite();
     if (!*hs || (!o.sprite && !o.rawBox)) return false;
-    if (!overlap(harry.x(), harry.y(), ph::hitbox(hs), o.x, o.y, boxOf(o), d1)) return false;
+    const ph::Sprite* rec = harry.spriteRecord();
+    if (!overlap(harry.x(), harry.y(), rec ? ph::hitboxOf(rec) : ph::hitbox(hs), o.x, o.y, boxOf(o), d1)) return false;
     return harry.b(0x465b72) == 0;
 }
 
@@ -651,7 +658,7 @@ bool webHit(ObjCtx& ctx, Obj& o, bool* cut) {
     Harry& h = ctx.harry;
     if (o.whipCool) { o.whipCool -= 1; return false; }
     auto snd = [&] { ctx.sound1((ctx.rnd() & 0x80) ? 0xcb : 0x47, 9); };
-    const bool angled = o.sprite && o.sprite->name() == "obiaweb";
+    const bool angled = ctx.sprIs(o, "obiaweb");
     if ((angled || o.type == 0x20) && whipTouches(ctx, o)) {
         o.w(0x36) = 1;
         o.whipCool = 0x1c;

@@ -121,7 +121,7 @@ function boundaries are unreliable there; the full decompilation is kept in
 | `0x462854` .. `0x464ab3` | the 0x50 object records, never cleared (x, y and their fractions kept from a record's last use, a level before too; a freed record keeps all its bytes) | `ObjectSystem`, `Game::objectRecords` (between levels), `recordByte` |
 | a record's `+0x0e` / `+0x14` / `+0x18` / `+0x1c` | its sprite (the sprite record's address in the load block, a slot's content; or a box record of its own, `0x4186b4`), the list's links (record addresses, -1 for none) and its `.als` entry's address | `Obj::sprite` (`SpriteRef`: the sprite and its address), `Obj::prev / next`, `Obj::entry` |
 | a record's links to records | the address of another record at an offset of the handler's (a mirrored half at `+0x50` / `+0x5a`, a bat roost's bats at `+0x3c` / `+0x40`, the floor spikes' pieces at `+0x3c ..`, a wheel's at `+0x3c .. +0x48`, the bungee vine's top / stretch / stub at `+0x50` / `+0x54` / `+0x6a` and its segment list of words at the stretch piece's `+0x32 ..` (the record's address less `0x46284a`), a boss meter's digits at `+0x32` / `+0x36` / `+0x60`, ...), followed whether that record still lives or not | `ObjCtx::linkAt / setLink` |
-| `0x46ffc8 ..` | the sprite slots: each holds a sprite's address in the load block, as `FUN_004457d0` (INIT.PH's) and `FUN_00447190` (a level's, with the slots bound under other names) fill them; a slot the level does not fill keeps an earlier load's | `SpriteSlots`, `Game::fillSpriteSlots` |
+| `0x46ffc8 ..` | the sprite slots: each holds a sprite's address in the load block, as `FUN_004457d0` (INIT.PH's) and `FUN_00447190` (a level's, with the slots bound under other names) fill them; a slot the level does not fill keeps an earlier load's, and one no load has filled the address of its sprite's name, as the executable has it (the jaguar man's hidden state on level 8 stores `jgustill`'s, `0x470acc`, a level 3 sprite).  The code stores a slot's word at a record's +0xe (`mov eax,[slot]`, the `.als` templates' `[template + 4]` too) and compares the word with a slot's | `SpriteSlots` (from `kSpriteSlots[].init`), `Game::fillSpriteSlots`, `Game::slotSprite`, `ObjCtx::spr` |
 | `DAT_00465b1d` | Harry's sprite (his record's `+0x0e`): a slot's content, the sprite's address; the scripts' `f1` and the whip-reach table (`FUN_0042b2bc`) compare slots' contents with it | `Harry::setSprite / spriteIs / spriteSlotIs / spriteRecord` |
 | `0x453080`   | palette entry flags                      | `ph::Palette::flags_`        |
 | `0x4503c0`   | local→global colour remap table          | `ph::Palette::remap_`        |
@@ -363,7 +363,7 @@ which `FUN_0043628c` counts down to `*6` (back to the Lost City of Copan).
 | `DAT_00466870` / `0x466874 ..` | the HUD list: `0x4150a2` puts the record's address at the end and a 0 after it; the pass start (`0x405170`, `FUN_00433116`) clears only the first entry's low word, and `FUN_0043348e` walks the list in memory, so after a pass that listed objects an empty one starts with `0x00460000` (its "type" `0x460008` = 0x0c is no HUD type) and goes on to the old entries | `PlayLogic::hudAdd / hudReset / hudPlacement` |
 | `DAT_0046615c` / `DAT_00466160` | the collision planes' addresses (`DAT_00450fc0` / `DAT_00450518`), set by the logic's start and restart for the probes | `PlayLogic::keepPlanes` (the probes read `det()` / `dt2()`) |
 | `DAT_00465886` | Harry's Genesis tile base, which the PC only writes (`FUN_00434f6c`: 0x400, 0xf80 hidden, 0x1200 on the continue screen; `FUN_00435174`: 0x7000) | `PlayLogic::displayList / listAll` |
-| `FUN_00424af1` | sprite box overlap test; boxes come from the `0x468824` table through the sprite header word at +8 | `ObjCtx::boxesOverlap / touchesHarry`, `ph::kHitboxes` |
+| `FUN_00424af1` | sprite box overlap test; boxes come from the `0x468824` table through the sprite header word at +8, which the load gave for the slot it filled (a level's sprite bound to a slot of another name has that slot's box: level 3's bats `btrfly` as `btzfly`, the pits, level 5's branches and ropes, level 8's tongue, gargoyle and axe) | `ObjCtx::boxesOverlap / touchesHarry`, `ph::hitboxOf` (`Sprite::boxWord`), `ph::kHitboxes` |
 | `0x407aff` | Harry contact every 6th tick, hurt by `d5` | `harryContact` |
 | `FUN_00428233` | hurt Harry: `+d5` damage, cap 0xa0, 0x46 ticks invulnerable, hit sounds 0x17/0x2f/0x30/0x31 | `PlayLogic::hurt` |
 | `0x4301ce` | triggers 0x30 / 0x31 toggle the in-front flag; it leaves `FUN_004251f9`'s results, which several callers test next | `priorityTrigger` (returns the `Trg`) |
@@ -408,7 +408,7 @@ which `FUN_0043628c` counts down to `*6` (back to the Lost City of Copan).
 | `DAT_00466510..25` | level-script flags (lever pulled, one-way door shut, crate blown): a level start clears 0x00..0x13 (`FUN_0043256f`), a lost life 0x00..0x11 (`FUN_00430eb6`), a new game all (`FUN_004324c6`: 0x14 / 0x15, the crates of level 2, last the game) | `Game::levelFlags_` (index = address - 0x466510) |
 | `DAT_004658c0` | runtime copy of the trigger class table, rebuilt from `0x461f8e` at level start and restart (`FUN_00432713`): doors of pulled levers cleared, flag 0x15 clears id 0x5d, one-way doors 0x90..0xaf with flag 3 become class 3 | `PlayLogic::trgClass_`, `triggerClassOf / clearTriggerClass / setTriggerClass` |
 | `DAT_0046650d` + `0x45b9c0 / 0x45b9d0` | temple piston cycle (0x50 steps, one every 5 ticks), phase offsets by trigger id 0xa0..0xa7 and the frame table | `PlayLogic::pistonPhase_ / pistonTick_`, `kPistonPhase / kPistonFrames` |
-| `FUN_00447190` | binds the Genesis sprite slots to the level's sprites by name (slot `obzpit2a` -> `obrpit2a` in level 3, `obtpit2a` in level 4, `obfpit2a` in levels 5 / 8, `fxleaf*2` leaves, the level-8 `obftung2 / fxpltof2 / ob_door2`, ...) | `ph::kSlotBindings` (generated `slot_bindings_data.cpp`), aliased in `ph::loadLevel` |
+| `FUN_00447190` | a level's sprites, one `FUN_004453a0(name, slot)` each: the sprite named is put in the load block and the slot takes its address and its box word (slot `obzpit2a` gets `obrpit2a` in level 3, `obtpit2a` in level 4, `obfpit2a` in levels 5 / 8, the `fxleaf*2` leaves, the level-8 `obftung2 / fxpltof2 / ob_door2`, ...; a sprite named twice is loaded twice, level 17's `ob_door3` for `ob_door3` and for `ob_door`); the other slots keep what they held | `ph::levelArenaSprites` (each call's slot), `Game::fillSpriteSlots`; `ph::kSlotBindings` (generated `slot_bindings_data.cpp`) for lookups by a slot's name |
 | `DAT_00465b41` / `0x42a6e7`, `0x41aaa0` / `0x46168e`, `0x417c93` / `0x42cdb6`, `DAT_00465b9a` | Harry pulling a lever (`hyipull`, 11 steps x 4 ticks, movement frozen), tripping over a skull (`hyitrip1`, 8 frames x 5 ticks), somersaulting off a tongue plant (`hyisomr2`), ticks spent running (>= 0x14 = running) | `Harry::lever / leverTicks / tripTicks / somersault / runTicks`, `PlayLogic::pullLever / trip / somersault / running` |
 
 ### Handlers ported (type: name in `handlers.cpp` `PC address`)
@@ -446,8 +446,9 @@ stoneJaguarBase `0x41d47a`, 142 heart `0x41d520`, 147 coin
 174 leanLever `0x4208f8`, 176 lastLetter `0x420abf`; 24 (`0x40b880`, the continue screen's P-I-T-F-A-L-L letters)
 jumps straight on (`h_inert`).
 
-Notes on some of them: the jaguar boss's states are INTRO `0x411391`, GO `0x41124d`, POUNCE `0x411054`, REVERSE
-`0x41190f`, RUN `0x411651`, CROUCH `0x410f1f`, ROAR `0x41119c`, STOP `0x41156b`; the bungee vine drives Harry's state
+Notes on some of them: the jaguar boss keeps its state as the continuation address at +0x32: INTRO `0x411391` (which
+puts the GO sign up at `0x41124d`), GO `0x4112e0`, POUNCE `0x411054`, REVERSE `0x41190f`, RUN `0x411651`, CROUCH
+`0x410f1f`, ROAR `0x41119c`, STOP `0x41156b`; the bungee vine drives Harry's state
 `0x429fe2` with the triple-format scripts at `0x45aaa4` and releases through `0x42c3bc` / `0x42c2cc`; the condor and the
 hawk share the stun tumble `0x4073d3` / `0x407555`, the wall turn `0x40769b` and the climb `0x40775b`.  On the vault levels
 11..13 the lever (26, `0x40b9e0`) runs the Simon game: the first lever to run leads (`DAT_0046617c`, whose top byte
@@ -474,7 +475,8 @@ list's tail), a health meter for each jaguar (type 0x30 with b5a 1 / 2 and l50 =
 base, 141, crumbles; 0x27 ticks later it roars) and the second after the first's sixth hit, then swaps the roles
 b5b (charge), b5c (attack: crouch and pounce, the leap onto the ledge) and b5d (come down) every 750 / 700 ticks;
 with both dead it turns into the head of the rope (154) with eight type-0 segments, which Harry climbs to jump
-onto the walkway that leads to the exit trigger 0x5f.  The fight start also copies the jaguars' colours into the
+onto the walkway that leads to the exit trigger 0x5f; on the way (`0x41ded0`) it clears the frame of whatever record
+a5 was left at, which is Harry's when the last jaguar's death left it there.  The fight start also copies the jaguars' colours into the
 Genesis palette line at `0x462654` and sets the Genesis music byte `DAT_004627bd`; the PC reads neither.
 
 The jaguar man of level 8 (158) keeps its state the same way: HIDDEN `0x41ecc3` (until Harry is up at x >= 0x1640

@@ -105,7 +105,7 @@ void PlayLogic::harryUpdate() {
             sound1(0xc8, 0x46);
             if (Obj* a3 = newObjAtHarry(1)) {
                 a3->type = 0x7a;
-                a3->sprite = game_->findSprite("fxisplsh");
+                a3->sprite = game_->slotSprite("fxisplsh");
                 a3->flags = 0xa000;
                 a3->x = h_.x(); a3->y = int16_t(h_.y() - 0x10);
                 a3->behind = 0xff;
@@ -113,7 +113,7 @@ void PlayLogic::harryUpdate() {
                     a3->l(0x50) = int32_t(addrOf(a5));     // (written twice)
                     std::memcpy(a3->s + 0x12, a5->s + 0x12, 2);
                     a3->w(0x26) = 0x6663;
-                    a5->sprite = game_->findSprite("fxisplsh");
+                    a5->sprite = game_->slotSprite("fxisplsh");
                     a5->flags = 0xa000;
                     a5->l(0x50) = int32_t(addrOf(a3));      // (the twin has no type: drawn, never run)
                     a5->x = h_.x(); a5->y = int16_t(h_.y() - 0x10);
@@ -191,7 +191,7 @@ void PlayLogic::leanShadow() {
         if (h_.ul(0x465898)) return;
         Obj* a5 = newObjAtHarry(3);
         if (!a5) { h428dfa(); return; }                    // (sic: je 0x428dfa)
-        a5->sprite = game_->findSprite("hyilean");
+        a5->sprite = game_->slotSprite("hyilean");
         a5->frame = 0;
         a5->facing = h_.facing();
         a5->flags = h_.flags();
@@ -723,7 +723,7 @@ void PlayLogic::h428cdb() {
     h428d36();
     Obj* a0 = objAt(h_.ul(0x465b55));
     if (a0 && a0->type == 0x9e) {
-        if (!(a0->sprite && a0->sprite->name() == "jm0swipe" && a0->frame == 3)) return;
+        if (!(spriteWordIs(*game_, *a0, "jm0swipe") && a0->frame == 3)) return;
     }
     h428d7b();
 }
@@ -995,11 +995,11 @@ void PlayLogic::h42989c() {
     h_.setCont(0x4299ad);
     h_.frame() = 0xff;
     Obj* a3 = newObjAtHarry(5, true);                      // the lit floor, two halves
-    if (a3) { a3->flags = 0x6000; a3->sprite = game_->findSprite("fxifloor"); }
+    if (a3) { a3->flags = 0x6000; a3->sprite = game_->slotSprite("fxifloor"); }
     h_.setUl(0x465b55, addrOf(a3));
     Obj* a5 = newObjAtHarry(0, true);
     if (a5) {
-        a5->flags = 0x6000; a5->sprite = game_->findSprite("fxifloor");
+        a5->flags = 0x6000; a5->sprite = game_->slotSprite("fxifloor");
         a5->l(0x50) = int32_t(addrOf(a3));                  // (the other half)
         a5->w(0x26) = 0x6663;
         a5->facing = 0xff;
@@ -1007,7 +1007,7 @@ void PlayLogic::h42989c() {
     h_.setUl(0x465b5f, addrOf(a5));
     a5 = newObjAtHarry(2, true);                           // the torch
     if (a5) {
-        a5->flags = 0x6000; a5->sprite = game_->findSprite("fxitrch");
+        a5->flags = 0x6000; a5->sprite = game_->slotSprite("fxitrch");
         a5->behind = 0xff;
         a5->x -= 2;
     }
@@ -1054,7 +1054,7 @@ void PlayLogic::h4299ad() {
             if (h_.b(0x465b51) != 0) {
                 const int c = std::min(game_->stats().continues, 9) + 0x1a;
                 for (Obj* p : objects_.list())
-                    if (p->sprite && p->sprite->name() == "ltr_sm" && p->frame == c) { p->frame -= 1; break; }
+                    if (spriteWordIs(*game_, *p, "ltr_sm") && p->frame == c) { p->frame -= 1; break; }
             }
             h428dfa();
             return;
@@ -1559,11 +1559,11 @@ void PlayLogic::h42acc2() {
                 const uint32_t r = random() & 0x7fff;
                 a5->l(0x36) = int32_t(r);
                 if (r & 1) {
-                    a5->sprite = game_->findSprite("fx_leaf1");
+                    a5->sprite = game_->slotSprite("fx_leaf1");
                     a5->l(0x32) = 0x4619df;           // its script, where a feather keeps it
                     a5->l(0x36) += 0x6000;
                 } else {
-                    a5->sprite = game_->findSprite("fxzleaf2");
+                    a5->sprite = game_->slotSprite("fxzleaf2");
                     a5->l(0x32) = 0x4619e8;
                     a5->l(0x36) += 0x10000;
                 }
@@ -2130,12 +2130,12 @@ Obj* PlayLogic::h43124c() {
     if (!a5) return nullptr;
     if (!big) {
         ammo(0) -= 1;
-        a5->sprite = game_->findSprite("obrston0");
+        a5->sprite = game_->slotSprite("obrston0");
         a5->type = 5;
     } else {
         ammo(2) -= 1;
         if (ammo(2) == 0) weaponSel() = 0;
-        a5->sprite = game_->findSprite("mi_stone");
+        a5->sprite = game_->slotSprite("mi_stone");
         a5->type = 4;
         h_.b(0x465b3d) = 0x4c;
         a5->behind = 0xff;
@@ -2160,7 +2160,7 @@ void PlayLogic::h4313aa() {
     if (ammo(1) == 0) weaponSel() = 0;
     h_.setUl(0x46681c, addrOf(a5));
     sound0(0x59, 0xc);
-    a5->sprite = game_->findSprite("fxrbmrng");
+    a5->sprite = game_->slotSprite("fxrbmrng");
     a5->x = h_.x();
     a5->y = int16_t(h_.y() - 0x40);
     a5->flags = uint16_t(0x6000 + h_.uw(0x465b92));
@@ -2598,11 +2598,11 @@ void PlayLogic::h42d2ec() {
         h_.w(0x465ae5) = h_.x();
         h_.l(0x465aa1) = 0;
         uint32_t a4 = 0x465aa1;
-        const char* spr = spriteSlotName(ml(0x431516 + uint32_t(game_->levelNumber()) * 4));
+        const uint32_t slot = ml(0x431516 + uint32_t(game_->levelNumber()) * 4);
         for (int d5 = 6; d5 >= 0; --d5) {
             Obj* a5 = objects_.allocTail();                  // FUN_00435780
             if (!a5) { freeChain(); return; }
-            a5->sprite = game_->findSprite(spr);
+            a5->sprite = game_->slotSprite(slot);
             if (a4 == 0x465aa1) h_.setUl(0x465ae7, addrOf(a5));
             else if (Obj* p = objAt(a4)) p->l(0x46) = int32_t(addrOf(a5));
             a4 = addrOf(a5);
@@ -2960,7 +2960,7 @@ void PlayLogic::h42dfe0() {
         if (h_.b(0x465b4a) != 0) {
             h_.b(0x465b4a) -= 1;
             if (Obj* a5 = newObjAtHarry(1, true)) {        // a puff of dust
-                a5->sprite = game_->findSprite("fxrdust2");
+                a5->sprite = game_->slotSprite("fxrdust2");
                 a5->type = 0x41;
                 a5->l(0x32) = int32_t(0xffff0000);
                 a5->facing = 0xff;
@@ -3018,7 +3018,7 @@ void PlayLogic::h42e1b4() {
         if (h_.b(0x465b4a) != 0) {
             h_.b(0x465b4a) -= 1;
             if (Obj* a5 = newObjAtHarry(1, true)) {
-                a5->sprite = game_->findSprite("fxrdust2");
+                a5->sprite = game_->slotSprite("fxrdust2");
                 a5->type = 0x41;
                 a5->l(0x32) = 0x10000;
                 a5->x += 0x18;
@@ -3335,7 +3335,7 @@ void PlayLogic::h42ee90() {
     if (h_.b(0x465b4a) == 0) return;
     h_.b(0x465b4a) -= 1;
     if (Obj* a5 = newObjAtHarry(1, true)) {
-        a5->sprite = game_->findSprite("fxrdust2");
+        a5->sprite = game_->slotSprite("fxrdust2");
         a5->type = 0x41;
         a5->y += 5;
         a5->l(0x32) = int32_t(0xffff0000);
@@ -3809,7 +3809,7 @@ void PlayLogic::h42bd09() {
     h_.vx() = 0;
     h_.l(0x465b53) = 0;
     if (Obj* a5 = newObjAtHarry(1, true)) {               // the vine in his hands
-        a5->sprite = game_->findSprite("ob_sling");
+        a5->sprite = game_->slotSprite("ob_sling");
         a5->frame = 0xff;
         a5->flags = 0x6000;
         h_.setUl(0x465b53, addrOf(a5));
@@ -3868,11 +3868,11 @@ void PlayLogic::h42bda7() {
                         const uint32_t r = random() & 0x7fff;
                         a5->l(0x36) = int32_t(r);
                         if (r & 1) {
-                            a5->sprite = game_->findSprite("fx_leaf1");
+                            a5->sprite = game_->slotSprite("fx_leaf1");
                             a5->l(0x32) = 0x4619df;           // its script, where a feather keeps it
                             a5->l(0x36) += 0x6000;
                         } else {
-                            a5->sprite = game_->findSprite("fxzleaf2");
+                            a5->sprite = game_->slotSprite("fxzleaf2");
                             a5->l(0x32) = 0x4619e8;
                             a5->l(0x36) += 0x10000;
                         }

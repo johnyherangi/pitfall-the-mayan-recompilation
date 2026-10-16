@@ -7,7 +7,12 @@
 
 namespace game {
 
-PlayLogic* g_debugLogic = nullptr;   // the most recent PlayLogic, for the debugging tools
+PlayLogic* g_debugLogic = nullptr;   // the live PlayLogic, for the debugging tools
+
+PlayLogic::~PlayLogic() {
+    objects_.saveImage(records_);
+    if (g_debugLogic == this) g_debugLogic = nullptr;
+}
 
 namespace {
 inline bool neg(int v) { return int16_t(v) < 0; }     // the sign test of a 16-bit cmp (js)

@@ -31,7 +31,7 @@ class PlayLogic;
 // scripts, tables), or nullptr when the address was not extracted.
 const uint8_t* harryMem(uint32_t va);
 uint32_t harryMemAddr(const uint8_t* p);   // the address of bytes harryMem gave (0: not theirs)
-struct SpriteSlot { uint32_t va; const char* name; };
+struct SpriteSlot { uint32_t va; const char* name; uint32_t init; };   // init: the slot in the executable (its name's address)
 extern const SpriteSlot kSpriteSlots[];   // 0x46ffc8..0x470470: slot address -> sprite name
 extern const int kSpriteSlotCount;
 const char* spriteSlotName(uint32_t va);  // "" when unknown
@@ -39,18 +39,17 @@ uint32_t spriteSlotOf(const char* name);  // 0 when unknown
 
 // The sprite slots' contents: each holds the address of a sprite in the load block, as the
 // loads fill them (FUN_004457d0 the INIT.PH sprites', FUN_00447190 a level's; a slot the level
-// does not fill keeps what an earlier load put there), and the sprites now at those addresses.
+// does not fill keeps what an earlier load put there, and one no load has filled the address of
+// its sprite's name, as the executable has it), and the sprites now at those addresses.
 class SpriteSlots {
 public:
     SpriteSlots();
     uint32_t of(uint32_t slot) const;                  // the slot's content (0 for an unknown slot)
     uint32_t of(const char* name) const { return of(spriteSlotOf(name)); }
     const ph::Sprite* at(uint32_t addr) const;         // the sprite at that address (nullptr: none)
-    // A load: each slot the finder knows a sprite for takes its address; `loaded` are the
-    // sprites now in the block (INIT.PH's and the level's).
-    template <class Find, class Each> void fill(Find find, Each loaded) {
-        for (size_t i = 0; i < value_.size(); ++i)
-            if (const ph::Sprite* s = find(kSpriteSlots[i].name)) value_[i] = s->arenaAddr();
+    void set(uint32_t slot, uint32_t addr);            // FUN_004453a0's store (an unknown slot: none)
+    // The sprites now in the block (INIT.PH's and the level's), for at().
+    template <class Each> void index(Each loaded) {
         at_.clear();
         loaded([&](const ph::Sprite* s) { if (s->arenaAddr()) at_.emplace(s->arenaAddr(), s); });
     }

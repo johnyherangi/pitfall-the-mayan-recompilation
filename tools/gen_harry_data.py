@@ -13,7 +13,8 @@ tools/harry_data.json lists what to copy:
                                            following 0xf3 jumps and 0xf2/0xf4/0xf5 branches
   "raw":     {"0xaddr": "0xlen", ...}      fixed-length tables
 Sprite slot pointers inside the scripts (0xf1) stay slot addresses; the slot names come from
-tools/sprite_slots.json (kSpriteSlots).
+tools/sprite_slots.json (kSpriteSlots, each with what the slot holds in the executable: the
+address of its sprite's name, which a slot keeps until a load finds the sprite).
 """
 import json, os, struct, sys
 
@@ -116,7 +117,8 @@ out.append('}')
 out.append('')
 out.append('const SpriteSlot kSpriteSlots[] = {')
 for k, v in sorted(slots.items(), key=lambda kv: int(kv[0], 16)):
-    out.append(f'    {{{int(k, 16):#x}, "{v}"}},')
+    init = struct.unpack('<I', rd(int(k, 16), 4))[0]       # what the slot holds before a load fills it
+    out.append(f'    {{{int(k, 16):#x}, "{v}", {init:#x}}},')
 out.append('};')
 out.append(f'const int kSpriteSlotCount = {len(slots)};')
 out.append('')

@@ -30,7 +30,9 @@ uint32_t spriteSlotOf(const char* name) {
     return it == map.end() ? 0 : it->second;
 }
 
-SpriteSlots::SpriteSlots() : value_(size_t(kSpriteSlotCount), 0) {}
+SpriteSlots::SpriteSlots() : value_(size_t(kSpriteSlotCount), 0) {
+    for (int i = 0; i < kSpriteSlotCount; ++i) value_[size_t(i)] = kSpriteSlots[i].init;
+}
 
 uint32_t SpriteSlots::of(uint32_t slot) const {
     int lo = 0, hi = kSpriteSlotCount - 1;
@@ -40,6 +42,15 @@ uint32_t SpriteSlots::of(uint32_t slot) const {
         if (kSpriteSlots[mid].va < slot) lo = mid + 1; else hi = mid - 1;
     }
     return 0;
+}
+
+void SpriteSlots::set(uint32_t slot, uint32_t addr) {
+    int lo = 0, hi = kSpriteSlotCount - 1;
+    while (lo <= hi) {
+        const int mid = (lo + hi) / 2;
+        if (kSpriteSlots[mid].va == slot) { value_[size_t(mid)] = addr; return; }
+        if (kSpriteSlots[mid].va < slot) lo = mid + 1; else hi = mid - 1;
+    }
 }
 
 const ph::Sprite* SpriteSlots::at(uint32_t addr) const {
@@ -253,7 +264,7 @@ void PlayLogic::padOverrides() {
         if (h_.x() == 0xd08 || h_.x() == 0xd07 || h_.x() == 0xd06) {
             if (Obj* a5 = newObjAtHarry(1, true)) {                // FUN_0043546e(1): the level's name scrolls by
                 a5->x = 0; a5->type = 0x97; a5->behind = 0xff;
-                a5->setSprite(game_->findSprite("m2_text")); a5->frame = 0; a5->flags = 0xe000;
+                a5->setSprite(game_->slotSprite("m2_text")); a5->frame = 0; a5->flags = 0xe000;
             }
         }
         if (int16_t(h_.x() - 0xfb2) >= 0) h_.b(0x465d49) = 2;
@@ -270,7 +281,7 @@ void PlayLogic::padOverrides() {
         if (h_.b(0x465d49) == 0x1e) {
             if (Obj* a5 = newObjAtHarry(2, true)) {                // FUN_0043546e(2)
                 a5->x = 0; a5->behind = 0xff; a5->type = 0x9b;
-                a5->setSprite(game_->findSprite("mi_go")); a5->frame = 0; a5->flags = 0xe000;
+                a5->setSprite(game_->slotSprite("mi_go")); a5->frame = 0; a5->flags = 0xe000;
                 h_.w(0x46679e) = 0xf96; h_.w(0x4667a0) = 0x4a; h_.w(0x4667a2) = 0xf92; h_.b(0x4667a4) = 0xff;
                 h_.b(0x465d49) = 0x76;
             }
@@ -536,7 +547,7 @@ Obj* PlayLogic::spawnTemplateAtHarry(uint32_t t) {
     o->type = mb(t);
     o->frame = mb(t + 1);
     o->flags = mw(t + 2);
-    o->sprite = game_->findSprite(spriteSlotName(ml(t + 4)));
+    o->sprite = game_->slotSprite(ml(t + 4));
     return o;
 }
 

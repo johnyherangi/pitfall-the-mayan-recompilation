@@ -5,7 +5,8 @@
 // the sprite's address in the load block, the list's links and the .als entry's address).
 //
 //   MENU=<level>@<step>  the level picked from the menu before that step (the original's start + 40)
-//   PAD=<file>           mkpad.py's joypad, replayed tick by tick from the level's start (Game::joypadHook)
+//   PAD=<file>           mkpad.py's joypad, replayed tick by tick from the level's start (Game::joypadHook),
+//                        and its "type <tick> <text>" lines: the cheats typed after that tick of the original
 //   KEYS=vk@from-to,...  or keys held (Windows key codes, from one step to before another, -1: on)
 //
 // Build it as re/drivers' and run it from the repository root (it loads original/).
@@ -36,12 +37,15 @@ int main(int argc, char** argv) {
     // PAD=<file from mkpad.py>: the original's joypad replayed by engine tick from the level's start
     // (the port's first tick on the menu's level against the original's), through the default keys
     std::vector<int> pad; int oStart = -1, pStart = -1;
+    std::vector<std::pair<int, std::string>> typed;        // (the original's tick, the text typed after it)
     if (const char* pf = std::getenv("PAD")) {
         FILE* f = std::fopen(pf, "r");
         char line[128];
         while (f && std::fgets(line, sizeof line, f)) {
             int a = 0, b = 0;
+            char text[64];
             if (std::sscanf(line, "start %d", &a) == 1) { oStart = a; continue; }
+            if (std::sscanf(line, "type %d %63s", &a, text) == 2) { typed.emplace_back(a, text); continue; }
             if (std::sscanf(line, "%d %d", &a, &b) == 2 && a >= 0) {
                 if (size_t(a) >= pad.size()) pad.resize(size_t(a) + 1, 0);
                 pad[size_t(a)] = b;
@@ -60,6 +64,12 @@ int main(int argc, char** argv) {
         engine::HostInput hi;
         for (const auto& k : keys) if (t >= k[1] && (k[2] < 0 || t < k[2])) hi.keyDown[size_t(k[0])] = true;
         if (!pad.empty() && pStart < 0 && t > menuTick && menuTick >= 0 && g.levelNumber() == menuLevel) pStart = int(g.state().globalFrame);
+        // a cheat typed between two of the original's ticks (its WM_CHAR, 0x439868) comes in before the later one
+        for (auto& [at, text] : typed)
+            if (pStart >= 0 && at >= 0 && long(g.state().globalFrame) + 1 - pStart + oStart > at) {
+                for (char c : text) g.typeChar(uint8_t(c));
+                at = -1;
+            }
         g.tick(hi);
         g.render();
         std::printf("%d %d %u %d ", t, g.state().globalFrame, g.logicTicks(), g.levelNumber());
@@ -83,6 +93,9 @@ int main(int argc, char** argv) {
         if (game::g_debugLogic)
             for (uint32_t a = game::kObjPoolAddr; a < game::kObjPoolAddr + 0x50 * game::kObjSize; ++a)
                 std::printf("%02x", game::g_debugLogic->memByte(a));
+        else                                                  // (no logic, as on the title: the records as the last left them)
+            for (const auto& rec : g.objectRecords())
+                for (uint8_t b : rec) std::printf("%02x", b);
         std::printf("\n");
     }
 }

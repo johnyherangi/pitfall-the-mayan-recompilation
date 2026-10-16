@@ -57,6 +57,11 @@ public:
     // address its sprite slot and the records that show it hold; 0 when not loaded there.
     uint32_t arenaAddr() const { return arenaAddr_; }
     void setArenaAddr(uint32_t a) { arenaAddr_ = a; }
+    // The word FUN_004453a0 puts at the record's +8 for the slot its load filled (FUN_004361ee:
+    // 4 + 12 * the slot's entry in the box table at 0x468824, 0xffff without one), from which
+    // FUN_00424af1 takes the box; -1 when the record was not loaded through such a call.
+    int boxWord() const { return boxWord_; }
+    void setBoxWord(int w) { boxWord_ = w; }
 
     // Decode a frame into an 8-bit index bitmap; 0xff marks transparent pixels.
     std::vector<uint8_t> decode(int frame) const;
@@ -68,6 +73,7 @@ private:
     uint32_t palOff_ = 0;
     int ncolors_ = 0;
     uint32_t arenaAddr_ = 0;
+    int boxWord_ = -1;
 };
 
 class RawImage {

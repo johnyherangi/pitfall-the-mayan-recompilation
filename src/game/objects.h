@@ -52,6 +52,7 @@ struct SpriteRef {
     SpriteRef& operator=(const ph::Sprite* s) { p = s; addr = s ? s->arenaAddr() : 0; return *this; }
     operator const ph::Sprite*() const { return p; }
     const ph::Sprite* operator->() const { return p; }
+    bool operator==(const SpriteRef& o) const { return addr == o.addr; }   // (the words, as the original compares them)
 };
 
 struct Obj {
@@ -87,12 +88,15 @@ struct Obj {
     FieldRef<int32_t> l(int off) { return {s + off}; }
     AnimCursor& anim(int off) { return *reinterpret_cast<AnimCursor*>(s + off); }
     void setSprite(const ph::Sprite* spr) { sprite = spr; rawBox = nullptr; }
+    void setSprite(const SpriteRef& spr) { sprite = spr; rawBox = nullptr; }
 };
 
 // The record's byte at +off as the original lays it out (0x6e bytes): its sprite's address in
 // the load block (or its box record's) and the list's links as record addresses (-1: none)
 // where the port keeps references.
 uint8_t recordByte(const Obj& o, int off);
+// The record's +0xe word against a sprite slot's (a name without a slot: the sprite's name).
+bool spriteWordIs(const Game& g, const Obj& o, const char* name);
 
 // FUN_004251f9: the trigger under (x, y).  cls = the class byte (0 when >= 0xf0, d2),
 // id = the trigger id (d3), raw = the class byte itself (d6); found is false when the
@@ -143,9 +147,12 @@ struct ObjCtx {
     // followed whether that record still lives or not, as the original follows the pointer).
     Obj* linkAt(const Obj& o, int off);
     void setLink(Obj& o, int off, const Obj* to);
-    Obj* spawnEffect(Obj& at, const ph::Sprite* spr, const uint8_t* script, int ticks);   // 0x433914
+    Obj* spawnEffect(Obj& at, const SpriteRef& spr, const uint8_t* script, int ticks);   // 0x433914
     void sparkleBurst(Obj& at, const int16_t* offsets);                                    // 0x433747
-    const ph::Sprite* spr(const char* name);
+    // A sprite slot's content (Game::slotSprite): what the original's `mov eax,[slot]` stores at +0xe.
+    SpriteRef spr(const char* name);
+    // The record's +0xe against that slot's word (`mov eax,[slot]; cmp [edi+0xe],eax`).
+    bool sprIs(const Obj& o, const char* name) const { return spriteWordIs(g, o, name); }
 };
 
 using Handler = void (*)(ObjCtx&, Obj&);

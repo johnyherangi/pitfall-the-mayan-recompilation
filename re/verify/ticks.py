@@ -2,12 +2,13 @@
 #
 # Within an engine tick (FUN_00443370) the engine's count (0x46fb74) goes up first, then the joypad
 # is polled (FUN_00444940), then the logic runs (FUN_0043628c) and its count (0x4601d9) goes up at its
-# end (0x4363fb).  A sample is therefore a tick's finished state when its logic count is the one the
-# finished states around it have (lt - gf the largest found within three ticks); the last such sample
-# of a tick is the tick's state.  A tick seen only with a smaller count is one whose end was not seen
-# (the game was not scheduled between its start and its end, which can take a whole tick's time),
-# unless the ticks after it keep the smaller count (the logic did not run in it: an engine exit).
-# A tick without a finished sample is left out.
+# end (0x4363fb).  A finished tick's sample therefore has the logic count a steady distance ahead of
+# the engine's: the distance goes up with a load's ticks and down by one for good with an engine exit
+# (the logic did not finish that tick), and a tick seen only with a smaller distance that the ticks
+# after it come back up from (within 60 ticks: the game was not scheduled between the tick's start
+# and its end, or it ran ticks back to back after a pause, all of them seen before their ends) is a
+# tick whose end was not seen.  The last sample of a tick at the steady distance is the tick's state;
+# a tick without one is left out.
 
 def le(h):
     return int.from_bytes(bytes.fromhex(h), 'little')
@@ -30,13 +31,20 @@ def finished(samples):
     off = {}
     for i, g in enumerate(gf):
         off[g] = max(off.get(g, -10**9), lt[i] - g)
-    def kept(g):
-        later = [off[g + d] for d in range(1, 9) if (g + d) in off]
-        return len(later) >= 3 and max(later) == off[g]
+    ticks = sorted(off)
+    steady, cur = {}, None
+    for j, g in enumerate(ticks):
+        o = off[g]
+        if cur is None or o >= cur:
+            cur = o                                     # (up: a load's ticks)
+        else:
+            later = [off[h] for h in ticks[j + 1:j + 61] if h - g <= 60]
+            if len(later) >= 3 and max(later) < cur:
+                cur = o                                 # down for good: an engine exit
+        steady[g] = cur
     fin = {}
     for i, g in enumerate(gf):
-        want = max(off[g + d] for d in range(-3, 4) if (g + d) in off)
-        if lt[i] - g >= want or (lt[i] - g == off[g] and kept(g)):
+        if lt[i] - g >= steady[g]:
             fin[g] = i
     return fin
 

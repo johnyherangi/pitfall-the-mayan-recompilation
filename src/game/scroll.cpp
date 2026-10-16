@@ -307,7 +307,8 @@ void PlayLogic::spawnEntry(Obj& o, size_t e, const ph::ObjectTemplate& t) {
     o.type = t.type;
     o.frame = t.sub;
     o.flags = t.flags;
-    o.setSprite(t.sprite[0] ? game_->findSprite(t.sprite) : nullptr);
+    if (t.sprite[0]) o.setSprite(game_->slotSprite(t.sprite));    // [template + 4]: the slot, whose content goes to +0xe
+    else o.setSprite(nullptr);
     o.entry = ph::Arena::kAddress + game_->arenaLayout().als + uint32_t(e);   // +0x1c
     o.id = alsByte(e + 1);                               // +0x20
     alsMem_[e + 1] = 0;
@@ -344,7 +345,7 @@ void PlayLogic::preSpawn() {
                 if (id == 0xc9) {
                     if (Obj* o = objects_.allocTail()) {
                         o->frame = 0;
-                        o->setSprite(game_->findSprite("ob_float"));
+                        o->setSprite(game_->slotSprite("ob_float"));
                         o->flags = 0;
                         o->type = 0x6f;
                         o->x = int16_t(col << 4);
@@ -374,7 +375,7 @@ void PlayLogic::preSpawn() {
                             alsMem_[e] = 0;
                             o->y = 0;
                             o->type = 0x13;
-                            o->setSprite(game_->findSprite("ob_mcar"));
+                            o->setSprite(game_->slotSprite("ob_mcar"));
                             o->x = h_.w(0x46589c); o->y = 0xc9;
                             if (right) { o->x = h_.w(0x46589e); o->y = 0x151; }
                             o->frame = 0xff;

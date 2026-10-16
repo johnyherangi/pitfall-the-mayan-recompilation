@@ -23,8 +23,10 @@
 namespace ph {
 
 // A sprite record's header as FUN_004453a0 leaves it: +4 the address of its name, +8 the word
-// FUN_004361ee gives for its slot (4 + 12 * its entry in the box table at 0x468824, or 0xffff).
-struct ArenaSprite { uint32_t name; uint16_t box; const char* text; };
+// FUN_004361ee gives for its slot (4 + 12 * its entry in the box table at 0x468824, or 0xffff);
+// and the sprite slot the call fills with the record's address (the level's binding of a slot to
+// a sprite of another name among them).
+struct ArenaSprite { uint32_t name; uint16_t box; const char* text; uint32_t slot; };
 std::span<const ArenaSprite> initArenaSprites();             // FUN_004457d0's order
 std::span<const ArenaSprite> levelArenaSprites(int level);   // FUN_00447190's
 

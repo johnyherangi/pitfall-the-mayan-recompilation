@@ -10,6 +10,8 @@
 #   PTRSKIP=1         leave out a record's 4-byte fields that hold an address of the executable or
 #                     of the load block in the original (to look past pointers while a port of
 #                     them is under way)
+#   FOLLOW=1          go on past the level's end, through the levels after it (the map, the next
+#                     level, the title), the ticks counted on as the engine's are
 import os
 import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -22,19 +24,21 @@ fin = finished(samples)
 orig = {}
 for gf, i in fin.items():
     r = samples[i]
-    orig[gf] = (bytes.fromhex(r[6]), bytes.fromhex(r[7]))
+    orig[gf] = (le(r[4]), bytes.fromhex(r[6]), bytes.fromhex(r[7]))
 o_start = level_start(samples, lv) + int(os.environ.get('PRETICKS', '0'))
 
+follow = bool(os.environ.get('FOLLOW'))
 port = {}
 p_start = None
 for line in open(sys.argv[2]):
     r = line.split()
-    if int(r[3]) != lv:
+    plv = int(r[3])
+    if plv != lv and (p_start is None or not follow):
         continue
     gf = int(r[1])
     if p_start is None:
         p_start = gf
-    port[gf - p_start] = (int(r[0]), bytes.fromhex(r[5]), bytes.fromhex(r[6]))
+    port[gf - p_start] = (int(r[0]), plv, bytes.fromhex(r[5]), bytes.fromhex(r[6]) if len(r) > 6 else b'')
 print('original level start: tick', o_start, '- port:', p_start)
 
 skip = set()
@@ -62,8 +66,11 @@ for k in sorted(port):
     if g not in orig:
         continue
     compared += 1
-    (om, orr), (t, pm, prr) = orig[g], port[k]
+    (olv, om, orr), (t, plv, pm, prr) = orig[g], port[k]
     diffs = []
+    if olv != plv:
+        diffs.append(('level', '%d / %d' % (olv, plv)))
+        om = pm = orr = prr = b''
     md = [i for i in range(len(om)) if om[i] != pm[i] and (0x465800 + i) not in skip]
     groups = []
     for i in md:
@@ -73,7 +80,7 @@ for k in sorted(port):
             groups.append([i, i])
     for a, b in groups:
         diffs.append(('mem %#x' % (0x465800 + a), om[a:b + 1].hex() + ' / ' + pm[a:b + 1].hex()))
-    for n in range(0x50):
+    for n in range(0x50 if orr and prr else 0):
         ob, pb = orr[n * 0x6e:(n + 1) * 0x6e], prr[n * 0x6e:(n + 1) * 0x6e]
         rs = recskip.get(ob[8], set()) | recskip.get(pb[8], set())
         idx = [i for i in range(0x6e) if ob[i] != pb[i] and i not in rs]

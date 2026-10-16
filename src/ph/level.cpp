@@ -192,6 +192,7 @@ LevelData loadLevel(int level, const std::string& dataDir, Palette& pal, Arena* 
         spr->remapInPlace(pal.remap().data());
         if (arena) spr->setArenaAddr(Arena::kAddress + next);
         next = putSprite(arena, next, *spr, k < infos.size() ? &infos[k] : nullptr);
+        if (k < infos.size()) spr->setBoxWord(infos[k].box);
         ++k;
         lv.spriteByName[name] = spr.get();
         lv.sprites.push_back(std::move(spr));
@@ -239,6 +240,7 @@ AssetBank loadInit(const std::string& dataDir, Palette& pal, Arena* arena) {
             spr->remapInPlace(pal.remap().data());
             if (arena) spr->setArenaAddr(Arena::kAddress + next);
             next = putSprite(arena, next, *spr, k < infos.size() ? &infos[k] : nullptr);
+            if (k < infos.size()) spr->setBoxWord(infos[k].box);
             ++k;
             bank.spriteByName[e.name] = spr.get();
             bank.sprites.push_back(std::move(spr));

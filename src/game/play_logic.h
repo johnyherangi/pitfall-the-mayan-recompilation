@@ -30,7 +30,7 @@ public:
     // mem: the logic's memory (0x465800 .. 0x4668ff), the Game's, kept from level to level;
     // records: the object records (the Game's while no logic holds them), taken and given back.
     PlayLogic(Harry& mem, ObjectSystem::Image& records) : h_(mem), records_(records) { objects_.loadImage(records_); }
-    ~PlayLogic() override { objects_.saveImage(records_); }
+    ~PlayLogic() override;
     PlayLogic(const PlayLogic&) = delete;
     PlayLogic& operator=(const PlayLogic&) = delete;
     void enter(Game& g) override;               // FUN_00435fc0 / FUN_0043256f: a level starts
