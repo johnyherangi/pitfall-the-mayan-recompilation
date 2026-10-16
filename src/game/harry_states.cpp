@@ -2119,6 +2119,7 @@ void PlayLogic::h430912() {
 void PlayLogic::h42bc03(bool done) {
     // Keep running the way he was going (the direction saved at +0x36) at 3 (5) px/tick.
     const uint16_t pad = h_.uw(0x466767);
+    h_.d5 = (h_.d5 & 0xffff0000u) | pad;                 // 0x42bc13: mov d5, ax
     h_.uw(0x466767) = h_.uw(0x465b45);
     h43011c(0x3000, h_.b(0x466503) ? 5 : 3, 0x3000);
     if (done) {
@@ -2617,13 +2618,17 @@ void PlayLogic::h42d2ec() {
         h_.l(0x465aa1) = 0;
         uint32_t a4 = 0x465aa1;
         const uint32_t slot = ml(0x431516 + uint32_t(game_->levelNumber()) * 4);
-        for (int d5 = 6; d5 >= 0; --d5) {
+        h_.d5 = 6;                                           // (the loop's count in d5: 0xffff after it)
+        for (;;) {
             Obj* a5 = objects_.allocTail();                  // FUN_00435780
             if (!a5) { freeChain(); return; }
             a5->sprite = game_->slotSprite(slot);
             if (a4 == 0x465aa1) h_.setUl(0x465ae7, addrOf(a5));
             else if (Obj* p = objAt(a4)) p->l(0x46) = int32_t(addrOf(a5));
             a4 = addrOf(a5);
+            const uint16_t n = uint16_t(h_.d5);
+            h_.d5 = (h_.d5 & 0xffff0000u) | uint16_t(n - 1);
+            if (n == 0) break;                               // sub d5.w, 1 / jae
         }
     }
     h_.b(0x465ae4) = 0;
@@ -2631,8 +2636,11 @@ void PlayLogic::h42d2ec() {
 update:
     {
         int16_t d5 = int16_t(h_.y() - 0x40);
-        if (neg16(d5 - 4)) d5 = 4;
+        uint32_t hi = h_.d5 & 0xffff0000u;                   // (d5's upper word: mov d5.l, 4 clears it)
+        if (neg16(d5 - 4)) { d5 = 4; hi = 0; }
         d5 &= int16_t(0xfff0);
+        auto keepD5 = [&] { h_.d5 = hi | uint16_t(d5); };
+        keepD5();
         uint8_t d4 = 0xff;                                 // drawn behind Harry
         if (h_.spriteIs("hyidrope")) {
             const uint8_t f = h_.frame();
@@ -2668,12 +2676,14 @@ update:
             if (id < 0) {                                  // a gap in the rope
                 o->frame = 0xff;
                 d5 += 0x10;
+                keepD5();
                 row += 1;
                 continue;
             }
             o->x = int16_t(h_.w(0x465ae5) - 2);
             o->y = int16_t(d5 - 0x10);
             d5 += 0x10;
+            keepD5();
             row += 1;
             o->behind = d4;
             o->frame = 0;
@@ -3145,12 +3155,15 @@ void PlayLogic::h42e59a() {
     // a running jump against a high wall while holding up: a back flip off it
     const int16_t d0 = int16_t(h_.x() + (h_.facing() ? -0x40 : 0x20));
     int16_t d1 = int16_t(h_.y() - 0x18);
+    h_.d5 = 3;
     for (int d5 = 3; d5 >= 0; --d5) {
         d1 -= 0x10;
         if (!(trg(d0, d1).cls & 1)) { h42e808(); return; }
+        h_.d5 = uint32_t(d5 - 1) & 0xffffu;              // sub d5.w, 1 / jae
     }
     d1 = int16_t(h_.y() - 0x18);
     for (int d2 = 3; d2 >= 0; --d2) {
+        probeD5(false, h_.x() - 0x10, d1);
         if (ph::probeNear(det(), h_.x() - 0x10, d1).hit) { h42e808(); return; }
         d1 -= 0x10;
     }

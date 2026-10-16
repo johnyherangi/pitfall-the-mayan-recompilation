@@ -84,8 +84,13 @@ void Game::titleAmbient() {
         if (mixer_.channelBusy(1)) return;               // FUN_004261d1
         const uint32_t d0 = random() & 7;
         if (d0 == 7) continue;
-        // FUN_004261e2 at priority 0: the channel is free, so it plays
-        if (m.b(0x465b72) == 0 && m.w(0x46652f) == 0 && m.w(0x46652b) == 0) playChannel(1, int(d0 + 0x9b));
+        // FUN_004261e2 at priority 0: the channel is free, so it plays (its sound and priority
+        // kept, DAT_004627c1 / DAT_004627c0)
+        if (m.b(0x465b72) == 0 && m.w(0x46652f) == 0 && m.w(0x46652b) == 0) {
+            m.sound[3] = uint8_t(d0 + 0x9b);
+            m.sound[2] = 0;
+            playChannel(1, int(d0 + 0x9b));
+        }
         return;
     }
 }

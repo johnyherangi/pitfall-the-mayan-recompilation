@@ -41,8 +41,10 @@ g++ -std=c++20 -O2 -Isrc re/verify/memdump.cpp \
 memory through `/proc/<pid>/mem` about every 300 microseconds (`memsample.c`), a record whenever
 anything changed: the engine's tick count (`0x46fb74`), the logic's (`0x4601d9`), the random
 generator, the level, a5 (`DAT_004601b4`), the logic's memory `0x465800 .. 0x4668ff`, the 80 object
-records and the joypad (`WATCH` gives other ranges: with `456000:2528` after them, the cutscenes'
-data too, which `cmpmem.py` then compares).  With `JOYOUT=<file>` a second sampler reads the two
+records, the joypad and the sound channels' state (`0x4627be .. c2`: channel 0's priority and
+sound, channel 1's, channel 0's hold; `WATCH` gives other ranges: with `456000:2528` before the last,
+the cutscenes' data too, which `cmpmem.py` then compares, as it does the sound's where a capture
+has it).  With `JOYOUT=<file>` a second sampler reads the two
 tick counts, the joypad, the "vampire" cheat's flag (`DAT_0046d054`), the lives and the engine's
 start key (`DAT_0046fb88`) alone without a pause, so that every tick's joypad is seen.
 
@@ -74,7 +76,12 @@ What has to be right for the comparison to mean something:
   else from the tick's last record (the game can stop between the count's step and the poll for tens
   of milliseconds while the keys change; but a 0 there may be a load's clearing, which the records of
   the tick's first 5 ms tell apart), and for a tick the joypad sampler missed, from the main
-  capture's sample of its end.  The engine's start key, which any key's `WM_KEYDOWN` sets between
+  capture's sample of its end.  A record can come before the tick's poll, showing the last tick's
+  joypad (a tick whose end no record shows, or ticks run back to back, where the sampler sees each
+  once, before its logic): the joypad sampler also reads the keys the logic made of the joypad
+  (`DAT_00466761 .. 68`) and the blink count (`DAT_00466796`, which the fly cheat stops), and such a
+  tick takes the next tick's first joypad when that one, and not its own record's, is what its logic
+  read.  The engine's start key, which any key's `WM_KEYDOWN` sets between
   two ticks (a held key's repeats too) and the logic reads and clears (the map, the scenes, the 2600
   game's end, the title), is replayed as it stood before each tick (`memdump` sets it at the poll).
 * **The level's start.**  The first tick after the one in which the level variable (`0x451a2c`)
@@ -130,4 +137,13 @@ came in after that tick: `WM_CHAR` runs between two ticks), and the lives turnin
 in it.  A run is compared as a level's: `mkpad.py`, `memdump` with the level's menu step and as many
 steps as the capture has ticks, `cmpmem.py`; with `FOLLOW=1` the comparison goes on past the level's
 end, the ticks counted on as the engine's, through the map screen and the next level (a run that
-ends its level: the bosses' plans, or random play that reaches the exit).
+ends its level: the bosses' plans, or random play that reaches the exit).  A run on the hard
+difficulty (`Option_Difficulty` 1 under `HKLM\Software\Activision\Pitfall` in the original's
+registry) is replayed with `HARD=1` for `memdump`.
+
+A value the logic keeps only in a register at some call (the registers are globals, `d0` at
+`0x460180` ..) can be read from a copy of `PITFALL.EXE` whose call goes through a cave: the 15
+`int3` bytes at `0x4261a1` take `mov eax, [register]`, `mov [0x4627b0], eax` (an address no code
+uses) and a `jmp` on to the called function; the sampler reads `0x4627b0` with the rest (a
+`WATCH` range `4627b0:4`).  So d5 was read at the mine carts' weapon tests; `memdump` with
+`CARTD5=1` prints the port's d5 at them as a last column to set beside it.

@@ -188,7 +188,7 @@ the title's start key and attract (`0x44476e`), so the stones' clearing of the s
 | `FUN_00434eef` | object → display-list entry (+0x10, flags 0x40 hflip / 0x80 vflip / 0x20 front) | `PlayLogic::displayEntry` |
 | `FUN_004251f9` | trigger lookup at `(x + 0x20, y)` | `PlayLogic::trg`, `ObjCtx::trigger` |
 | `FUN_00430229` | trigger handlers (`_` exit, plane switch, …) | `PlayLogic::h430229` |
-| `FUN_00430a69` / `FUN_00430eb6` | death / respawn, `.als` + `.trg` restore, game over / a life lost | `PlayLogic::harryDeath` / `h430eb6` |
+| `FUN_00430a69` / `FUN_00430eb6` | death / respawn, `.als` + `.trg` restore, game over / a life lost; the deaths that end in the 0x40-tick wait `0x43118d` (sliced, crawling, run into a wall: `hyihwall` played to its frame 7, `hyirn2cl` to its 5) leave it to Harry's state `0x4311a5`, which `0x430a83` then passes by; `DAT_00466501` (`0x430a76`, the Genesis input script) is never set on the PC | `PlayLogic::harryDeath` / `h430eb6` |
 | `0x465b0f` / `0x465b13` | Harry x / y | `Harry::x / y` |
 | `0x465ba4` / `0x465ba8` | Harry vx / vy (16.16) | `Harry::vx / vy` |
 | `0x465b70` / `0x465bb3` / `0x465aff` | on ground / collision plane / jump hold | `Harry` fields |
@@ -408,7 +408,8 @@ which `FUN_0043628c` counts down to `*6` (back to the Lost City of Copan).
 | `0x427528` | Harry drowning (sinks; the crocodiles let go) | `Harry::drowning`, `HarryState::Drowning` |
 | `FUN_004351c5` | spawn from a 9-byte template `{type, frame, flags, sprite slot, class}` at the parent's position (`FUN_0043546e` copies x / y) | `spawnFromTemplate` |
 | `DAT_00466504` | the level's hidden 1-up has been revealed (types 113 / 174); cleared at the exit trigger and on a new game | `PlayerStats::secret1up` |
-| `FUN_004261e2` / `FUN_004262d9` / `FUN_0042633d` | the two sound channels: 1 (priority `0x4627c0`, skipped while Harry dies or the stop-watch runs) and 0 (priority `0x4627be`, an 8-tick hold `0x4627c2`); a lower-priority sound is dropped while the channel plays; `FUN_004262c8` / `FUN_004261d1` test whether a channel is playing | `PlayLogic::sound0 / sound1 / sound1Now / channel0Busy / channel1Busy` |
+| `DAT_00460194` (d5) | a register of the translated code, a global as they all are: the objects put their damage or hit points in it for `FUN_00407aff` / `0x407b0f` / `FUN_00428233` / `FUN_00424171` (the hurt adds 0x28 to a blow of 0x46 or more), `FUN_00425d6f` / `FUN_00425f88` leave the probe's row in its word, the spawner the rows it scans (`FUN_00404016`: camY / 16 - 3; `FUN_00404269` / `FUN_004042fe`: the row), loops count in it (the ropes' 7 links, the spikes' 3 pieces, the fight's rope, the vault note's colours, the back flip's tests: 0xffff after them), the whip on the run keeps the joypad's word there, the ropes their y, the cart its wheels' dy, the sparkles their mirroring bit, a lost life the `.als` copy's last byte, the music's end 0; the mine carts (`0x40ab96`, `0x4186d1`) call the weapon test with whatever it holds | `Harry::d5` |
+| `FUN_004261e2` / `FUN_004262d9` / `FUN_0042633d` | the two sound channels: 1 (priority `0x4627c0`, sound `0x4627c1`, skipped while Harry dies or the stop-watch runs) and 0 (priority `0x4627be`, sound `0x4627bf`, an 8-tick hold `0x4627c2`); a lower-priority sound is dropped while the channel plays (and always without sound: `FUN_0043cbc0` reads a channel as playing then); `FUN_004262c8` / `FUN_004261d1` test whether a channel is playing; `FUN_0042624a` stops channel 0 and clears its sound (and `0x4627b8` / `0x4627ba`, read by nothing), not its priority; a level's start (`FUN_00433116`) clears the sounds and the hold, so the priorities go on from one level to the next | `PlayLogic::sound0 / sound1 / sound1Now / stopSound0 / channel0Busy / channel1Busy`, `Harry::sound` |
 | `0x45b1fc` | level script table, 12-byte entries `{leverTrgId, doorTrgId, flagAddr, w6, w8, param}`; the lever handler (`FUN_0041804b`) finds the entry by the trigger under the lever and sets its flag, the door / chute handlers look their own trigger up to see whether the flag is set | `kLevelScript[16]`, `scriptByLever / scriptByDoor`, `levelScriptPull` |
 | `DAT_00466510..25` | level-script flags (lever pulled, one-way door shut, crate blown): a level start clears 0x00..0x13 (`FUN_0043256f`), a lost life 0x00..0x11 (`FUN_00430eb6`), a new game all (`FUN_004324c6`: 0x14 / 0x15, the crates of level 2, last the game) | `Game::levelFlags_` (index = address - 0x466510) |
 | `DAT_004658c0` | runtime copy of the trigger class table, rebuilt from `0x461f8e` at level start and restart (`FUN_00432713`): doors of pulled levers cleared, flag 0x15 clears id 0x5d, one-way doors 0x90..0xaf with flag 3 become class 3 | `PlayLogic::trgClass_`, `triggerClassOf / clearTriggerClass / setTriggerClass` |
@@ -506,8 +507,12 @@ the throw ends with a `ret` that ends the object pass, `ObjectSystem::endPass`),
 `0x422260` / `0x422423`, WALK BACK `0x422359` / `0x422479`, JUMP OFF `0x421b3e` (Harry behind it: up off the screen,
 then RAIN `0x421d88` / `0x421e44`, its parts falling about until they gather where it lands) and IDLE `0x4214a0`;
 `0x42154a` / `0x4217bd` and the despawn at `0x4224b9` are never reached.  The head (the last part with a frame
-below 3) takes the hits (w6a >> 4, 0x30 kill); the decision's long-range path reads d1 without setting it (taken as
-the weapon test's low byte, or 0x60 after a hit's sound).  Dead (`0x421bd3`, 50000 points), the parts fly apart and
+below 3) takes the hits (w6a >> 4, 0x30 kill); the decision's long-range path (`0x4215be`) reads d1's word without
+setting it.  d0 .. d7 and a0 .. a7 are globals (`0x460180`, `0x4601a0`), so that word is what the code before it
+left: the weapon test `0x424171` puts its result in the low byte over what its box compares (`FUN_00424af1`, the
+whip box at `0x424510`) wrote, the head's hit sound 0x60, a pose's random sound (0xfb) its pitch, a move
+(`FUN_004226e6`) its dy, the blow's hurt (`FUN_00428233`) 0x60, the suction its pull and then Harry's y from his
+feet (`FUN_00425455`).  A word from before the handler (no stone, boomerang or whip out) is taken as 0.  Dead (`0x421bd3`, 50000 points), the parts fly apart and
 burst, and the last letter (176) falls at x 0xf0: picking it up is the end of the game (0x430912).  It keeps its
 own pointers in the `.als` buffer: +0x1c6 "dead", +0x1ca the pouch of stones it drops (or itself).
 

@@ -242,6 +242,7 @@ void PlayLogic::spawnColumn(uint16_t col) {
     if (off == 0) return;
     const int16_t cy = int16_t(uint16_t(h_.w(0x4658b6)) >> 4);
     const int16_t d5 = int16_t(cy - 3), d4 = int16_t(cy + 0x10);
+    h_.d5 = (h_.d5 & 0xffff0000u) | uint16_t(d5);
     for (size_t e = size_t(int16_t(off)); ; e += 2) {
         const uint8_t row = alsByte(e);
         if (!(d5 >= row)) {
@@ -270,7 +271,8 @@ void PlayLogic::spawnBottomRow() {
 
 void PlayLogic::spawnRow(int16_t row) {
     // 0x40438e: 29 columns from 0x40 px left of the camera (DAT_00466782 counts them), the first
-    // entry of each in this row
+    // entry of each in this row (d5's word)
+    h_.d5 = (h_.d5 & 0xffff0000u) | uint16_t(row);
     int16_t d0 = int16_t(h_.w(0x4658b4) - 0x40);
     if (d0 < 0) d0 = 1;
     const uint16_t col0 = uint16_t(d0) >> 4;
@@ -301,6 +303,7 @@ void PlayLogic::spawnEntry(Obj& o, size_t e, const ph::ObjectTemplate& t) {
     o.x = int16_t((h_.w(0x466782) << 4) + 0x18 + t.xOff);
     o.y = int16_t((alsByte(e) << 4) - 0x10 + t.yOff);
     if (t.snap != 0) {
+        probeD5(false, o.x, int16_t(o.y + t.snap));
         const ph::FloorHit f = ph::probeNear(det(), o.x, int16_t(o.y + t.snap));   // FUN_00425d6f
         if (f.hit) o.y = int16_t(f.surfaceY - t.snap);
     }

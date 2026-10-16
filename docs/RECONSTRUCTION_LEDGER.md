@@ -83,7 +83,13 @@ through its lives into the continue screen (6,600 ticks), and Harry dropped out 
 gone takes its "yes" back to the level and its "no" to the game over, the title and the first demo (2,400 ticks each);
 and the Warrior Spirit, shot down from the fly, drops its last
 letter, which Harry picks up, and the reunion and the end's words and credits play out to their key (17,900 ticks, the
-scenes' data, `0x456000 .. 0x4569df`, compared every tick too).
+scenes' data, `0x456000 .. 0x4569df`, compared every tick too).  On the hard difficulty, with Harry hurt and killed
+(ten lives from "meowmeowlikemeowman", no "vampire"), random play on levels 0, 4 and 9 and the four boss fights (the
+Ceiba jaguar's, the stone jaguars', the jaguar man's and the Warrior Spirit's: 5,100 to 15,100 ticks each) match every
+byte as well, and so does random play without "vampire" on the normal difficulty on levels 0 to 9 and 16 to 18 (5,300
+to 6,800 ticks each; on level 3 the original faults 2,100 ticks in, at the stone jaguars' second meter, as below),
+with the sound channels' state (`0x4627be .. c2`: each channel's priority and sound, channel 0's hold) compared every
+tick too.
 
 ## Approximated
 
@@ -97,6 +103,7 @@ scenes' data, `0x456000 .. 0x4569df`, compared every tick too).
 | Help | WinHelp of `PITFALL0.HLP` as the original (modern Windows no longer has WinHelp; Wine's shows it) |
 | The fades on a true-colour display | the port's screen shows the palette's fades (`FUN_0043e470` / `FUN_0043e810`: `AnimatePalette` between two `SetDIBColorTable`s, no blit) as a 256-colour display does; on today's displays the original's screen holds still through them: the last frame through a fade out, the cleared view's dark red through a load and its fade in |
 | Where the original faults | the stone jaguars' second boss meter: a fight on level 3 that starts with one jaguar in the object list (random play with the fly cheat found it) leaves the meter no jaguar (`l50` 0), so it reads the boss's record from the address at the trigger record's `+0x1f4`, which this fight leaves as the level's trigger bytes (`0xfe262b55`): the original faults there (`0x410358`) and the game stops; the port finds no record at that address and keeps the meter hidden |
+| Registers left over | d0 .. d7 are globals in the PC build, and a few reads take what the code before them left.  The port keeps d1 where the Warrior Spirit's decision reads it (through the weapon test, its poses, moves, blow and suction) and d5 through the whole logic (`Harry::d5`: the objects' damage and hit points, the `.det` probes' rows, the spawner's rows, the rope's and the loops' counts, the whip's saved joypad, ...) for the mine carts' weapon tests, which give no hit points of their own: read in an instrumented copy of the original at those calls, d5 matches on every tick of a run of the Tazamul Mines, and so does the carts' hit sound (0xcd) it decides.  One guess is left: the Warrior Spirit's long-range decision with no stone, boomerang or whip out, where d1's word from before its handler is taken as 0 |
 | The load block's surroundings | the block is taken as 32-byte aligned and zero at the start (`GlobalAlloc` decides both in the original); a walk that reads before or past it finds nothing where the original would read on through other memory |
 | The CD's launcher | `pitstart.exe` is `PITSTART.EXE` (`src/app/pitstart_win32.cpp`, its code by address): the window, its pictures with their palettes, the logo, More..., the two About pictures, *Technical Help*, the registration program (also before the first game), the joystick's button, `pitstart.wav`, the intro in MCIWnd (`intro.avi`, Indeo 3.2: it plays where the system can still decode it; elsewhere MCI's message comes up and its box stays black until a key, as the original's), all its dialogs, pictures and icon read from the CD's `PITSTART.EXE`; under Wine its window, the More... buttons, the two About pictures and the intro's box match the original's pixel for pixel.  Play runs the port's `pitfall.exe` where the original copied `PITFALL.EXE` and `WAIL32.DLL` to the TEMP folder and ran them from there; the settings it checks and Uninstall deletes are the port's `pitfall.ini` (and WinHelp's index files), not the registry key |
 

@@ -127,7 +127,9 @@ struct ObjCtx {
     // FUN_00424af1 with a5 = Harry; `d1`, when given, receives what the test leaves in d1 (the
     // object's box edge it stopped at; unchanged when either box is missing).
     bool touchesHarry(Obj& o, int16_t* d1 = nullptr);
-    bool boxesOverlap(const Obj& a, const Obj& b);     // FUN_00424af1 (the caller has put a in a5)
+    // FUN_00424af1 (the caller has put a in a5); *d1: the word of d1 the compares leave (untouched
+    // when either has no box)
+    bool boxesOverlap(const Obj& a, const Obj& b, int16_t* d1 = nullptr);
     // DAT_004601b4, the a5 the translated code keeps in memory (Game::regA5): what a routine
     // leaves there is what the next one finds (see h_feather).
     void setA5(uint32_t addr);
@@ -259,8 +261,9 @@ int32_t anim2Pos(const Obj& o, int pcOff);
 // 0x424171: hits from Harry's stones, the boomerang or the whip accumulate in o.hits.
 // d1: something hit this tick; d0: hits + 1 > hitPoints; z: the flag the callers that branch
 // straight after the call test (z == !d0, but when the big stone passes through: d0 = 1, z set).
-struct WeaponHit { bool d0 = false, d1 = false, z = true; };
-WeaponHit weaponHit(ObjCtx& ctx, Obj& o, int hitPoints);
+// d1w: the word of d1 it leaves (d1In, what d1 held before, where no box compare wrote it).
+struct WeaponHit { bool d0 = false, d1 = false, z = true; uint16_t d1w = 0; };
+WeaponHit weaponHit(ObjCtx& ctx, Obj& o, int hitPoints, uint16_t d1In = 0);
 // The callers that test d1 (the return) and d0 (*killed).
 inline bool weaponHits(ObjCtx& ctx, Obj& o, int hitPoints, bool* killed) {
     const WeaponHit r = weaponHit(ctx, o, hitPoints);

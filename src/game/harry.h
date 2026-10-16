@@ -67,6 +67,15 @@ struct Harry {
     // 0x465800 .. 0x4668ff by original address (little-endian, as the PC build lays it out).
     static constexpr uint32_t kBase = 0x465800, kSize = 0x1100;
     uint8_t mem[kSize] = {};
+    // DAT_004627be .. c2, outside the block: channel 0's priority and sound, channel 1's, channel
+    // 0's hold (FUN_004262d9 / FUN_004261e2).  Kept here as the original keeps them, from one
+    // level to the next: a level's start clears the sounds and the hold, never the priorities.
+    uint8_t sound[5] = {};
+    // The translated code's d5 (DAT_00460194, a global like every register of the PC build) as
+    // the ported code sets it: an object's damage (FUN_00407aff / 0x407b0f / FUN_00428233) and
+    // hit points (FUN_00424171), for the reads of what it holds from before (the mine carts'
+    // weapon tests).
+    uint32_t d5 = 0;
     uint8_t* at(uint32_t a) { return mem + (a - kBase); }
     const uint8_t* at(uint32_t a) const { return mem + (a - kBase); }
     FieldRef<uint8_t> b(uint32_t a) { return {at(a)}; }

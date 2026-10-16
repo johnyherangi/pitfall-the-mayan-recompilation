@@ -16,8 +16,10 @@
 #                     (the title's: no logic tick tells it apart), where the port's line shows
 #                     the old one until that tick: such a tick is left out
 #
-# A capture with a ninth range, the cutscenes' data (WATCH's 456000:2528, memdump's last column),
-# has it compared too ('cut' differences).  Its frame's copy of the actors (0x4564bf .. 0x45673e) and
+# A capture with the cutscenes' data (WATCH's 456000:2528, memdump's column after the records)
+# has it compared too ('cut' differences), and one with the sound channels' state (4627be:5, the
+# capmem.sh default's last range, memdump's last column: channel 0's priority and sound, channel
+# 1's, channel 0's hold) that ('snd').  Its frame's copy of the actors (0x4564bf .. 0x45673e) and
 # the record of the last one drawn (0x45673f .. 0x456752) are the frame's (FUN_00443c90), which the
 # original's main loop composes when it can: on a tick after which it composed none (its copy not
 # its actors), they are left out.
@@ -30,10 +32,21 @@ samples = load(sys.argv[1], 8)
 lv = int(sys.argv[3])
 show_all = '--all' in sys.argv[4:]
 fin = finished(samples)
+CUT, SND = 0x9e0, 5                                             # (the optional ranges by their sizes)
+
+
+def extra(cols, n):
+    """the optional range of n bytes among a line's last columns (b'' without one)"""
+    for c in cols:
+        if len(c) == 2 * n:
+            return bytes.fromhex(c)
+    return b''
+
+
 orig = {}
 for gf, i in fin.items():
     r = samples[i]
-    orig[gf] = (le(r[4]), bytes.fromhex(r[6]), bytes.fromhex(r[7]), bytes.fromhex(r[9]) if len(r) > 9 else b'')
+    orig[gf] = (le(r[4]), bytes.fromhex(r[6]), bytes.fromhex(r[7]), extra(r[9:], CUT), extra(r[9:], SND))
 o_start = level_start(samples, lv) + int(os.environ.get('PRETICKS', '0'))
 
 follow = bool(os.environ.get('FOLLOW'))
@@ -48,7 +61,7 @@ for line in open(sys.argv[2]):
     if p_start is None:
         p_start = gf
     port[gf - p_start] = (int(r[0]), plv, bytes.fromhex(r[5]), bytes.fromhex(r[6]) if len(r) > 6 else b'',
-                          bytes.fromhex(r[7]) if len(r) > 7 else b'')
+                          extra(r[7:], CUT), extra(r[7:], SND))
 print('original level start: tick', o_start, '- port:', p_start)
 
 skip = set()
@@ -75,14 +88,14 @@ for k in sorted(port):
     g = o_start + k
     if g not in orig:
         continue
-    (olv, om, orr, oc), (t, plv, pm, prr, pc) = orig[g], port[k]
+    (olv, om, orr, oc, osd), (t, plv, pm, prr, pc, psd) = orig[g], port[k]
     if olv != plv and follow and port.get(k + 1, (0, None))[1] == olv and orig.get(g - 1, (None,))[0] == plv:
         continue                                                # (the load's tick, sampled before its engine tick)
     compared += 1
     diffs = []
     if olv != plv:
         diffs.append(('level', '%d / %d' % (olv, plv)))
-        om = pm = orr = prr = oc = pc = b''
+        om = pm = orr = prr = oc = pc = osd = psd = b''
     md = [i for i in range(len(om)) if om[i] != pm[i] and (0x465800 + i) not in skip]
     groups = []
     for i in md:
@@ -104,6 +117,8 @@ for k in sorted(port):
                 cgroups.append([i, i])
     for a, b in cgroups:
         diffs.append(('cut %#x' % (0x456000 + a), oc[a:b + 1].hex() + ' / ' + pc[a:b + 1].hex()))
+    if osd and psd and osd != psd:
+        diffs.append(('snd', osd.hex() + ' / ' + psd.hex()))
     for n in range(0x50 if orr and prr else 0):
         ob, pb = orr[n * 0x6e:(n + 1) * 0x6e], prr[n * 0x6e:(n + 1) * 0x6e]
         rs = recskip.get(ob[8], set()) | recskip.get(pb[8], set())

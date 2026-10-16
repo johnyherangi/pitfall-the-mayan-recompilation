@@ -123,9 +123,10 @@ void PlayLogic::sound1Now(int id) {
 }
 
 void PlayLogic::stopSound0() {
-    // FUN_0042624a
+    // FUN_0042624a: the sound id goes (0x4627bf; 0x4627b8 / ba too, which nothing reads), the
+    // priority 0x4627be stays: a lower one after it waits for the channel to fall silent
     game_->playChannel(0, 0x8000);
-    ch0Id_ = 0; ch0Pri_ = 0;                                        // 0x4627bf / 0x4627be (0x4627b8 / ba: unused here)
+    ch0Id_ = 0;
 }
 
 bool PlayLogic::channel0Busy() const { return game_->channelBusy(0); }   // FUN_004262c8
@@ -355,6 +356,7 @@ bool PlayLogic::snapFeet(bool plane2) {
     // FUN_0042562b / FUN_004256a5: FUN_00425d6f / FUN_00425f88 at the feet.
     if (h_.b(0x465b73)) return true;
     if (h_.y() < 0) return false;
+    probeD5(plane2, h_.x() - 0x10, h_.y() + 0xe);
     const ph::FloorHit f = ph::probeNear(plane2 ? dt2() : det(), h_.x() - 0x10, h_.y() + 0xe);
     if (!f.hit) return false;
     h_.y() = int16_t(f.surfaceY - 0xe);
@@ -551,6 +553,23 @@ Obj* PlayLogic::spawnTemplateAtHarry(uint32_t t) {
     return o;
 }
 
+void PlayLogic::probeD5(bool plane2, int x, int y) {
+    // FUN_00425d6f / FUN_00425f88 put the probe's row in d5's word (y >> 4) once past their two
+    // early exits: y under 0x12 and an empty column (its big-endian word at ((x >> 3) & 0xfffe) + 4).
+    if (int16_t(int16_t(y) - 0x12) < 0) return;
+    const ph::LevelData& lv = game_->level();
+    const bool second = plane2 && !lv.collision2.empty();
+    const ph::ColumnTable& t = second ? lv.collision2 : lv.collision;
+    const std::vector<uint8_t>& raw = second ? lv.dt2 : lv.det;
+    const int64_t col = uint16_t(((uint16_t(x) >> 3) & 0xfffe) + 4);
+    auto at = [&](int64_t i) -> uint32_t {
+        if (t.arena()) return t.arena()->at(int64_t(t.base()) + i);
+        return i >= 0 && size_t(i) < raw.size() ? raw[size_t(i)] : 0u;
+    };
+    if ((at(col) << 8 | at(col + 1)) == 0) return;
+    h_.d5 = (h_.d5 & 0xffff0000u) | uint16_t(uint16_t(y) >> 4);
+}
+
 const ph::ColumnTable& PlayLogic::det() const { return game_->level().collision; }
 const ph::ColumnTable& PlayLogic::dt2() const {
     const ph::LevelData& lv = game_->level();
@@ -561,6 +580,7 @@ const ph::ColumnTable& PlayLogic::dt2() const {
 
 bool PlayLogic::hurtHarry(int d5) {
     // FUN_00428233
+    h_.d5 = uint32_t(d5);                                          // (the caller's mov d5.l)
     if (h_.invulnerable() != 0 || h_.b(0x465b72) || h_.b(0x465b01)) return false;
     const uint32_t c = h_.cont();
     static const uint32_t kKeep[] = {0x42aa3b, 0x42a048, 0x42a017, 0x42acc2, 0x429fe2, 0x42fa1a, 0x42fadf, 0x428aaa,
@@ -591,7 +611,10 @@ bool PlayLogic::hurtHarry(int d5) {
     if (int16_t(d - 0xa0) >= 0) d = 0xa0;
     h_.damage() = uint8_t(d);
     h_.invulnerable() = 0x46;
-    if (int16_t(d5) >= 0x46) h_.invulnerable() = int16_t(int16_t(d5) + 0x28);
+    if (int16_t(d5) >= 0x46) {
+        h_.d5 = (h_.d5 & 0xffff0000u) | uint16_t(d5 + 0x28);       // add d5.w, 0x28
+        h_.invulnerable() = int16_t(h_.d5);
+    }
     return true;
 }
 

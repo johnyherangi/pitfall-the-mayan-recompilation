@@ -3,7 +3,8 @@
 // memory 0x465800 .. 0x4668ff (with the player's numbers the port keeps apart put at their
 // addresses), the 80 object records, every byte as the original lays them out (recordByte:
 // the sprite's address in the load block, the list's links and the .als entry's address), and the
-// cutscenes' data 0x456000 .. 0x4569df (their scripts' cursor and counts, the texts, the actors).
+// cutscenes' data 0x456000 .. 0x4569df (their scripts' cursor and counts, the texts, the actors)
+// and the sound channels' state 0x4627be .. c2.
 //
 //   MENU=<level>@<step>  the level picked from the menu before that step (the original's start less 2,
 //                        less the load's 13 ticks on levels 0, 2, 5, 8 and 16: the port's ticks are the original's)
@@ -22,7 +23,7 @@
 #include <cstring>
 #include <string>
 #include <vector>
-namespace game { extern PlayLogic* g_debugLogic; }
+namespace game { extern PlayLogic* g_debugLogic; extern uint32_t g_debugCartD5; }
 int main(int argc, char** argv) {
     const int t1 = std::atoi(argv[1]);
     engine::Options opts; opts.soundEnabled = false; opts.slow = true;
@@ -108,6 +109,10 @@ int main(int argc, char** argv) {
                 for (uint8_t b : rec) std::printf("%02x", b);
         std::printf(" ");
         for (size_t i = 0; i < 0x9e0; ++i) std::printf("%02x", g.cutsceneData()[i]);
+        std::printf(" ");
+        for (uint8_t b : g.logicMemory().sound) std::printf("%02x", b);   // DAT_004627be .. c2
+        if (std::getenv("CARTD5"))                    // d5 at the carts' weapon tests (an instrumented original's 0x4627b0)
+            for (int i = 0; i < 4; ++i) std::printf(i ? "%02x" : " %02x", (game::g_debugCartD5 >> (8 * i)) & 0xff);
         std::printf("\n");
     }
 }

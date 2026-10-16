@@ -28,6 +28,7 @@ const ph::ColumnTable& ObjCtx::dt2() const { return lv.collision2.empty() ? lv.c
 
 bool ObjCtx::floorSnap(int x, int& y, bool plane2) const {
     // FUN_00425d6f / FUN_00425f88: the cell of (x, y), then the row above, then below.
+    pl.probeD5(plane2, x, y);
     ph::FloorHit f = ph::probeNear(plane2 ? dt2() : det(), x, y);
     if (!f.hit) return false;
     y = f.surfaceY;
@@ -92,6 +93,7 @@ void ObjCtx::sparkleBurst(Obj& at, const int16_t* offsets) {
     // (when `at` was just freed, the first sparkle is that very record).
     const uint32_t r = rnd();
     const bool mx = (r & 1) != 0, my = (r & 2) != 0;
+    harry.d5 = (harry.d5 & 0xffffff00u) | (r & 2);       // mov d5, al / and d5.b, 2
     do {
         Obj* e = spawn();                              // FUN_00435905
         if (!e) return;
@@ -130,10 +132,10 @@ bool overlap(int ax, int ay, const ph::SpriteHitbox* ha, int bx, int by, const p
 }
 } // namespace
 
-bool ObjCtx::boxesOverlap(const Obj& a, const Obj& b) {
+bool ObjCtx::boxesOverlap(const Obj& a, const Obj& b, int16_t* d1) {
     // FUN_00424af1 with a5 = a, a6 = b.
     setA5(&a);
-    return overlap(a.x, a.y, boxOf(a), b.x, b.y, boxOf(b));
+    return overlap(a.x, a.y, boxOf(a), b.x, b.y, boxOf(b), d1);
 }
 
 void ObjCtx::setA5(uint32_t addr) { g.regA5() = addr; }
@@ -572,21 +574,22 @@ bool whipBox(const Obj& o, ph::SpriteHitbox& box) {
 
 // The whip box (DAT_00465aeb x0, 0x465aed x1, 0x465aef y0, 0x465af1 y1; x0 == 0 while the whip
 // is not out) against the object's box (no test of the box's width).
-bool whipTouches(ObjCtx& ctx, const Obj& o) {
+bool whipTouches(ObjCtx& ctx, const Obj& o, int16_t* d1Out = nullptr) {
     const Harry& h = ctx.harry;
     if (h.w(0x465aeb) == 0) return false;
     ph::SpriteHitbox box{};
     if (!whipBox(o, box)) return false;
     const ph::SpriteHitbox* b = &box;
     int16_t d1 = int16_t(o.x + b->dx + b->w);
-    if (int16_t(d1 - h.w(0x465aeb)) < 0) return false;
+    auto done = [&](bool r) { if (d1Out) *d1Out = d1; return r; };   // (d1 as the compares leave it)
+    if (int16_t(d1 - h.w(0x465aeb)) < 0) return done(false);
     d1 = int16_t(d1 - b->w);
-    if (int16_t(d1 - h.w(0x465aed)) >= 0) return false;
+    if (int16_t(d1 - h.w(0x465aed)) >= 0) return done(false);
     d1 = int16_t(o.y + b->dy + b->h);
-    if (int16_t(d1 - h.w(0x465aef)) < 0) return false;
+    if (int16_t(d1 - h.w(0x465aef)) < 0) return done(false);
     d1 = int16_t(d1 - b->h);
-    if (int16_t(d1 - h.w(0x465af1)) >= 0) return false;
-    return true;
+    if (int16_t(d1 - h.w(0x465af1)) >= 0) return done(false);
+    return done(true);
 }
 } // namespace
 
@@ -595,14 +598,27 @@ void debrisPuff(ObjCtx& ctx, Obj& at) {
     ctx.sparkleBurst(at, (ctx.rnd() & 1) ? kSparkleOffsetsB : kSparkleOffsetsA);
 }
 
-WeaponHit weaponHit(ObjCtx& ctx, Obj& o, int hitPoints) {
+WeaponHit weaponHit(ObjCtx& ctx, Obj& o, int hitPoints, uint16_t d1In) {
     // 0x424171 (d5 = hitPoints): a stone in flight (DAT_00466808, five slots), else the
     // boomerang (DAT_0046681c), else the whip box hits the object; each adds to o.hits (+0xa).
     // d1: something hit; d0: hits + 1 > d5 (killed); z: the flag a caller's je tests (= !d0 but
-    // for the big stone, which leaves d0 = 1 and the flag of its type compare).
+    // for the big stone, which leaves d0 = 1 and the flag of its type compare).  d1w: the word
+    // of d1 it leaves, the low byte the result over what the box compares wrote (d1In before).
     Harry& h = ctx.harry;
+    h.d5 = uint32_t(hitPoints);                         // (the caller's mov d5.l, or what d5 held)
     h.uw(0x466788) = 0;
-    auto done = [&](bool hit, bool k) { WeaponHit r; r.d1 = hit; r.d0 = k; r.z = !k; return r; };
+    uint16_t d1w = d1In;
+    auto box = [&](const Obj& a) {                              // FUN_00424af1, a5 = a, a6 = o
+        int16_t d1 = int16_t(d1w);
+        const bool r = ctx.boxesOverlap(a, o, &d1);
+        d1w = uint16_t(d1);
+        return r;
+    };
+    auto done = [&](bool hit, bool k) {
+        WeaponHit r; r.d1 = hit; r.d0 = k; r.z = !k;
+        r.d1w = uint16_t((d1w & 0xff00) | (hit ? 1 : 0));       // mov d1.b, 0 / 1
+        return r;
+    };
     auto killTest = [&] {                                       // 0x424682
         if (int16_t(hitPoints - (int(o.hits) + 1)) >= 0) {     // 0x4246c7: a hit that does not kill
             ctx.sound1(o.type == 0x42 ? 0x8c : 0xcd, 9);
@@ -612,13 +628,12 @@ WeaponHit weaponHit(ObjCtx& ctx, Obj& o, int hitPoints) {
     };
     for (uint32_t a = 0x466808; a <= 0x466818; a += 4) {
         Obj* st = ctx.pl.objAt(h.ul(a));
-        if (!st || !ctx.boxesOverlap(*st, o)) continue;
+        if (!st || !box(*st)) continue;
         if (st->type == 4) {
             // The big stone goes on through and only marks itself; the routine returns with the
             // flags of the type compare (je taken) and d1 left by FUN_00424af1 (the top of o's box).
             st->b(0x37) = 0xff;
-            const ph::SpriteHitbox* b = boxOf(o);
-            WeaponHit r; r.d0 = true; r.z = true; r.d1 = b && uint8_t(o.y + b->dy) != 0;
+            WeaponHit r; r.d0 = true; r.z = true; r.d1 = uint8_t(d1w) != 0; r.d1w = d1w;
             return r;
         }
         h.setUl(a, 0);
@@ -638,7 +653,7 @@ WeaponHit weaponHit(ObjCtx& ctx, Obj& o, int hitPoints) {
     }
     if (Obj* bm = ctx.pl.objAt(h.ul(0x46681c))) {
         // While the boomerang is out the whip does not count.
-        if (!ctx.boxesOverlap(*bm, o)) return done(false, false);
+        if (!box(*bm)) return done(false, false);
         if (h.b(0x466507) != 0 && ctx.levelNo != 5) {
             // against a boss (but in level 5) it breaks
             bm->b(0x5b) = 2;
@@ -658,8 +673,14 @@ WeaponHit weaponHit(ObjCtx& ctx, Obj& o, int hitPoints) {
         return done(true, true);
     }
     if (o.whipCool) { o.whipCool -= 1; return done(false, false); }
-    if (!whipTouches(ctx, o) || o.type == 0x20) return done(false, false);
+    {
+        int16_t d1 = int16_t(d1w);
+        const bool t = whipTouches(ctx, o, &d1);
+        d1w = uint16_t(d1);
+        if (!t || o.type == 0x20) return done(false, false);
+    }
     o.whipCool = 0x14;
+    d1w = 0x60;
     ctx.sound0(0x19, 9);                                        // FUN_0042633d(0x19, 0x60)
     o.hits = uint8_t(o.hits + (ctx.hard ? 9 : 0xa));
     return killTest();
@@ -822,6 +843,7 @@ void killObject(ObjCtx& ctx, Obj& o) {
 
 bool harryContact(ObjCtx& ctx, Obj& o, int damage, int16_t* d1) {
     // 0x407aff: every 6th call (o+0x2e counts down 5..0) the test of 0x407b0f.
+    ctx.harry.d5 = uint32_t(damage);                    // (the caller's mov d5.l)
     o.touchTick = uint8_t(o.touchTick - 1);
     if (int8_t(o.touchTick) >= 0) return false;
     o.touchTick = 5;
@@ -831,6 +853,7 @@ bool harryContact(ObjCtx& ctx, Obj& o, int damage, int16_t* d1) {
 bool harryContactNow(ObjCtx& ctx, Obj& o, int damage, int16_t* d1) {
     // 0x407b0f: the box test against Harry; a hit hurts him by `damage` (FUN_00428233, d5).
     Harry& h = ctx.harry;
+    h.d5 = uint32_t(damage);
     if (h.b(0x465b72) != 0) return false;
     auto test = [&] {                                   // 0x407b25
         if (!ctx.touchesHarry(o, d1)) return false;

@@ -58,6 +58,7 @@ public:
     void grabHarry(Obj& bat) { h4285d7(bat); }  // FUN_004285d7 (a5 = the bat)
     // FUN_00425455 with DAT_00465b70 held at 0xff around it (0x4221f7): the floor under Harry's
     // feet (y snaps to it); true when there is one.
+    void probeD5(bool plane2, int x, int y);    // what FUN_00425d6f / FUN_00425f88 leave in d5 (Harry::d5)
     bool harryFeetGrounded() { const uint8_t g = h_.onGround(); h_.onGround() = 0xff; const bool r = feet(); h_.onGround() = g; return r; }
 
     // --- services for the object handlers (game/objects.h) ---
@@ -70,6 +71,7 @@ public:
     bool channel1Busy() const;                 // FUN_004261d1
     void stopChannel0() { stopSound0(); }      // FUN_0042624a
     uint8_t channel0Id() const { return ch0Id_; }   // DAT_004627bf: the last channel-0 sound
+
     void clearChannel0Hold() { ch0Hold_ = 0; }      // DAT_004627c2 = 0: the next channel-0 sound plays at once
     void healHarry() { h_.damage() = 0; }      // fx_hrtbt
     void startChili() { h_.w(0x46652b) = 0x380; }   // mi_chili (0x405a5b)
@@ -289,9 +291,9 @@ private:
     void clearKillList();
     bool exiting_ = false;
     int deathTimer_ = 0;
-    // Sound channel state (FUN_004262d9 / FUN_004261e2).
-    uint8_t ch0Pri_ = 0, ch0Id_ = 0, ch0Hold_ = 0;   // DAT_004627be / DAT_004627bf / DAT_004627c2
-    uint8_t ch1Pri_ = 0, ch1Id_ = 0;                 // DAT_004627c0 / DAT_004627c1
+    // Sound channel state (FUN_004262d9 / FUN_004261e2), in the logic's memory (Harry::sound).
+    uint8_t &ch0Pri_ = h_.sound[0], &ch0Id_ = h_.sound[1], &ch0Hold_ = h_.sound[4];   // DAT_004627be / DAT_004627bf / DAT_004627c2
+    uint8_t &ch1Pri_ = h_.sound[2], &ch1Id_ = h_.sound[3];                           // DAT_004627c0 / DAT_004627c1
     uint8_t& trgByte(int off);                  // [DAT_00450510] + off in the load block
     uint8_t trgAt(int off) const;
     std::vector<uint32_t> strayReturns_;   // return addresses left on the stack during the object pass

@@ -11,6 +11,7 @@
 #include <cstring>
 
 namespace game {
+extern uint32_t g_debugCartD5;   // (play_logic.cpp, for re/verify)
 
 // (dx, dy) tables used by the sparkle spawners, 0x8000-terminated.
 const int16_t kSparkleOffsetsA[] = {9, 8, -7, 11, -4, -10, -3, -3, -10, -4, 9, 4, -4, -10, int16_t(0x8000)};   // 0x4620f0
@@ -1434,7 +1435,8 @@ void h_pushLever(ObjCtx& ctx, Obj& o) {
 void h_runawayCart(ObjCtx& ctx, Obj& o) {
     static const ph::SpriteHitbox kWeaponBox{"", -0x20, 0x3e, -0xf, 0x24, 0x4186b4}, kHarryBox{"", 0xd, 0x10, -0x14, 0x27, 0x4186bc};
     o.rawBox = &kWeaponBox;
-    weaponHit(ctx, o, 0);                     // (with whatever d5 holds; nothing tests the result)
+    g_debugCartD5 = ctx.harry.d5;
+    weaponHit(ctx, o, int(ctx.harry.d5));     // (with whatever d5 holds: its hit sound; nothing tests the result)
     o.setSprite(ctx.spr("ob_mcar"));
     if (!ctx.channel1Busy()) ctx.sound1(0xd1, 6);
     Harry& h = ctx.harry;
@@ -1545,6 +1547,7 @@ void h_mineCart(ObjCtx& ctx, Obj& o) {
         if (Obj* w1 = part(0x5a)) {
             const uint32_t t = 0x45b864 + uint32_t(o.frame) * 8;
             int16_t d2 = cartWord(t), d3 = cartWord(t + 2), d4 = cartWord(t + 4), d5 = cartWord(t + 6);
+            ctx.harry.d5 = (ctx.harry.d5 & 0xffff0000u) | uint16_t(d5);
             if (o.facing) { d2 = int16_t(-d2); d4 = int16_t(-d4); }
             w1->x = int16_t(o.x + d2); w1->y = int16_t(o.y + d3);
             w1->behind = in(0x42aa3b) ? 0xff : 0;
@@ -1690,9 +1693,11 @@ void h_mineCart(ObjCtx& ctx, Obj& o) {
     if (probe) {
         // 0x409473: the track under the front (or back, running left) of the cart
         const int16_t px = int16_t(o.w(0x6a) - (o.b(0x4a) ? 0xd : 0));
+        ctx.pl.probeD5(false, px, o.y + 0xd);
         ph::FloorHit f = ph::probeNear(ctx.det(), px, o.y + 0xd);          // FUN_00425d6f
         if (f.hit) o.y = int16_t(f.surfaceY - 0xd);
         if (!f.hit) {
+            ctx.pl.probeD5(true, px, o.y + 0xd);
             f = ph::probeNear(ctx.dt2(), px, o.y + 0xd);                    // FUN_00425f88
             if (f.hit) o.y = int16_t(f.surfaceY - 0xd);
         }
@@ -1860,7 +1865,8 @@ void h_pushCart(ObjCtx& ctx, Obj& o) {
     else h.w(0x46589e) = o.x;
     static const ph::SpriteHitbox kWeaponBox{"", -0x20, 0x3e, -0xf, 0x24, 0x4186b4};
     o.rawBox = &kWeaponBox;
-    weaponHit(ctx, o, 0);                     // (with whatever d5 holds; nothing tests the result)
+    g_debugCartD5 = ctx.harry.d5;
+    weaponHit(ctx, o, int(ctx.harry.d5));     // (with whatever d5 holds: its hit sound; nothing tests the result)
     o.setSprite(ctx.spr("ob_mcar"));
     for (int off : {0x5a, 0x5e}) {
         if (o.l(off) != 0) continue;
@@ -2255,6 +2261,7 @@ void h_rope(ObjCtx& ctx, Obj& o) {
     const uint8_t* tbl = held ? kData_ropeSwingHarry : kData_ropeSwing;
     size_t a0 = size_t(int16_t(ropeWord(tbl, size_t(h.b(0x466796)) * 2)));
     const int16_t d4 = o.w(0x36), d5 = o.w(0x38);
+    h.d5 = (h.d5 & 0xffff0000u) | uint16_t(d5);
     uint8_t d6 = 0;
     for (Obj* a4 = &o; a4; ) {
         if (int8_t((ropeWord(tbl, a0 + 4) & 0x7f) - 0x15) >= 0) {
@@ -3874,6 +3881,7 @@ void vaultNote(ObjCtx& ctx, int lever) {
     // at 0x462654 and marks them changed (DAT_0046654f, which nothing on the PC clears); the port
     // does not keep those colours, so the flash is not shown.  Then the lever's note (0x45aa04).
     ctx.setA5(0x45b954 + uint32_t(lever) * 0x20 + 0x20);   // (a5 ends past the line it copied)
+    ctx.harry.d5 = 0xffff;                                  // (the copy's count, 0xf down past 0)
     ctx.harry.b(0x46654f) = 0xff;
     static const uint8_t kNote[3] = {0xcc, 0xc5, 0xee};
     ctx.sound1(kNote[lever], 0x12);
@@ -4533,6 +4541,7 @@ void h_floorSpikes(ObjCtx& ctx, Obj& o) {
         o.b(0x32) = 0xff;
         Obj* parts[3] = {nullptr, nullptr, nullptr};
         for (int i = 0; i < 3; ++i) {
+            ctx.harry.d5 = uint32_t(2 - i) & 0xffffu;   // (the loop's count in d5, 2 down to 0xffff)
             parts[i] = ctx.spawnFrom(o, true);        // FUN_0043546e
             if (!parts[i]) { for (int k = 0; k < i; ++k) ctx.release(*parts[k]); ctx.pl.restoreEntry(o); ctx.release(o); return; }
             ctx.setLink(o, 0x3c + 4 * i, parts[i]);   // l3c / l40 / l44
@@ -4540,6 +4549,7 @@ void h_floorSpikes(ObjCtx& ctx, Obj& o) {
             parts[i]->sprite = ctx.spr(i == 1 ? "ob_spik1" : "ob_spik2"); parts[i]->flags = 0x4000;
             parts[i]->w(0x26) = 0x6663;
         }
+        ctx.harry.d5 = 0xffff;
         ctx.setA5(parts[0]);                                       // 0x4106d2: a5 = l3c
         parts[0]->x -= 4; parts[0]->y += 6; parts[0]->facing = 0xff; parts[0]->behind = 0xff;
         ctx.setA5(parts[2]);                                       // 0x410711: a5 = l44
@@ -5096,10 +5106,12 @@ void h_bungee(ObjCtx& ctx, Obj& o) {
         }
         still = true;
         o.frame = 0xff;
+        ctx.harry.d5 &= 0xffffff00u;                     // mov d5.b, 0
     } else {
         still = false;
         if (stub) stub->frame = 0xff;
         o.frame = 6;
+        ctx.harry.d5 = (ctx.harry.d5 & 0xffffff00u) | 6;   // mov d5.b, 6
     }
     int16_t d0 = int16_t(o.y - o.w(0x38) + 0x10);
     const uint8_t segFrame = int16_t(d0 - 0xc8) >= 0 ? 5 : 4;
@@ -5219,7 +5231,9 @@ void spawnMeter(ObjCtx& ctx, Obj& boss) {
     }
     d[0]->type = 0x30;
     ctx.setLink(*d[0], 0x32, d[1]); ctx.setLink(*d[0], 0x36, d[2]); ctx.setLink(*d[0], 0x60, d[3]);
-    // 0x411499: the Genesis boss music (0x42); FUN_004263a2 is a stub in the PC build.
+    // 0x411499: the Genesis boss music (0x42); FUN_004263a2 is a stub in the PC build.  (d5 is
+    // left with DAT_00462696 * 3, the Genesis driver's byte: 0.)
+    ctx.harry.d5 = 0;
 }
 
 // 0x415b92: the boss is dead - score, a death cloud, then the type 0x51 burst sequence.
@@ -5442,6 +5456,7 @@ void h_jaguar(ObjCtx& ctx, Obj& o) {
                 int d = ctx.harry.x() - o.x;
                 bool fast = o.w(0x3a) >= 3;
                 if (!fast && o.w(0x3a) < -3) { fast = true; d = -d; }
+                if (fast) ctx.harry.d5 = (ctx.harry.d5 & 0xffff0000u) | uint16_t(ctx.pl.tw(0x1ea));
                 if (fast && between(d - int16_t(ctx.pl.tw(0x1ea)), -10, 10)) {
                     ctx.pl.setTw(0x1ea, ctx.pl.tw(0x1ea) == 0x64 ? 0x90 : 0x64);
                     o.script = kAnim2_jaguarCrouchA;
@@ -5580,7 +5595,9 @@ void startFight(ObjCtx& ctx, Obj& o) {
     o.b(0x6d) = 0xff;
     h.b(0x466507) = 0xff;                            // a boss fight (trg+0x1f4 is left alone)
     // 0x41c6ac: the Genesis boss music (FUN_004263a2(0x3c), a stub in the PC build) and the
-    // Genesis driver's byte DAT_004627bd (= DAT_00462696 * 3), which nothing on the PC reads.
+    // Genesis driver's byte DAT_004627bd (= DAT_00462696 * 3), which nothing on the PC reads
+    // (d5 holds it: 0).
+    h.d5 = 0;
     if (Obj* f = ctx.spawnFrom(o, true, 1)) f->type = 0x99;   // FUN_0043546e(1)
     h.b(0x465c60) = 0xff;
     h.setUl(0x465c58, ctx.pl.addrOf(&o));
@@ -5642,6 +5659,7 @@ void h_stoneJaguar(ObjCtx& ctx, Obj& o) {
                 o.w(0x6a) += o.hits;
             }
             o.hits = uint8_t(uint16_t(o.w(0x6a)) >> 3);
+            h.d5 = kHitPoints;                       // 0x41ca4e: mov d5.l, 0x26
             if (o.hits + 1 > kHitPoints) {
                 if (h.ul(0x465c58) != ctx.pl.addrOf(&o)) h.setUl(0x465c5c, 0);
                 else h.setUl(0x465c58, 0);
@@ -5892,6 +5910,7 @@ void h_jaguarFight(ObjCtx& ctx, Obj& o) {
         if (Obj* r = ctx.pl.objAt(a5)) r->frame = 0;
         else if (a5 >= Harry::kBase && a5 + 9 < Harry::kBase + Harry::kSize) h.b(a5 + 9) = 0;
         Obj* prev = &o;
+        h.d5 = 7;                                    // (the loop's count in d5, 7 down to 0xffff)
         for (int i = 0; i < 8; ++i) {
             Obj* s = ctx.spawnFrom(*prev, true, 0);  // FUN_0043546e(0)
             if (!s) return;                          // (the original then writes through a null pointer)
@@ -5899,6 +5918,7 @@ void h_jaguarFight(ObjCtx& ctx, Obj& o) {
             s->sprite = ctx.spr("r_r");
             prev->l(0x46) = int32_t(ctx.pl.addrOf(s));
             prev = s;
+            h.d5 = uint32_t(6 - i) & 0xffffu;
         }
         prev->frame = 1;                             // the rope's end
         return;
@@ -6310,8 +6330,9 @@ int32_t getFixed(Obj& o, int off) { return int32_t(uint32_t(uint16_t(o.w(off))) 
 // FUN_00422806 (cursor at +0x36): every `ticks` + 1 ticks the next byte of the script: the
 // sound opcodes are played, a pose number is shown (b33) and sends every part towards its
 // place in the pose (8 steps); any other negative byte ends the script, which starts again
-// with its first pose.  True when it ended.
-bool pose(ObjCtx& ctx, Obj& o, uint32_t table, uint32_t script, int ticks) {
+// with its first pose.  True when it ended.  (*d1: the register, which the random sound's
+// pitch is worked out in.)
+bool pose(ObjCtx& ctx, Obj& o, uint32_t table, uint32_t script, int ticks, int32_t* d1 = nullptr) {
     const uint8_t* s = kData_spiritScripts + (script - kScripts);
     uint8_t& pos = o.s[0x36];
     uint8_t& tick = o.s[0x37];
@@ -6326,7 +6347,11 @@ bool pose(ObjCtx& ctx, Obj& o, uint32_t table, uint32_t script, int ticks) {
         if (int8_t(b) >= 0) break;
         if (b == 0xfc) { ctx.sound0(s[pos + 1], s[pos + 2]); pos = uint8_t(pos + 3); tick = 0; continue; }   // FUN_004262d9
         if (b == 0xfd) { ctx.sound1(s[pos + 1], s[pos + 2]); pos = uint8_t(pos + 3); tick = 0; continue; }   // FUN_004261e2
-        if (b == 0xfb) { ctx.rnd(); ctx.sound0(s[pos + 1], s[pos + 5]); pos = uint8_t(pos + 6); tick = 0; continue; }   // FUN_0042633d
+        if (b == 0xfb) {                            // FUN_0042633d, d1 = rnd & s[3] + (int8) s[4] + s[2] (not used)
+            const uint32_t r = ctx.rnd();
+            if (d1) *d1 = int32_t((r & s[pos + 3]) + uint32_t(int32_t(int8_t(s[pos + 4]))) + s[pos + 2]);
+            ctx.sound0(s[pos + 1], s[pos + 5]); pos = uint8_t(pos + 6); tick = 0; continue;
+        }
         pos = 0;
         b = s[0];
         ended = true;
@@ -6398,33 +6423,42 @@ bool deflect(ObjCtx& ctx, Obj& o) {
     return false;
 }
 
-// 0x421ae6: a blow: 16 damage and Harry knocked away from it.
-void blow(ObjCtx& ctx, Obj& o) {
+// 0x421ae6: a blow: 16 damage and Harry knocked away from it.  True when the hurt went
+// through (FUN_00428233 has put 0x60 in d1 for its sound).
+bool blow(ObjCtx& ctx, Obj& o) {
     Harry& h = ctx.harry;
-    ctx.pl.hurtHarry(0x10);
+    const bool hurt = ctx.pl.hurtHarry(0x10);
     h.facing() = o.facing;
     h.b(0x465b55) = uint8_t((h.facing() & 1) ^ 1);
     h.facing() = 0;
     ctx.pl.harryCall(0x42715b);
+    return hurt;
 }
 
 // 0x4220f7: Harry sucked towards its hand (0x28 px ahead), faster and faster up to 6 px/tick;
-// true once he is there and on the floor (stunned, his state 0x427316).
-bool suckHarry(ObjCtx& ctx, Obj& o) {
+// true once he is there and on the floor (stunned, his state 0x427316).  d1: the pull, then
+// what FUN_00425455 leaves (his y, or y + 0xe when it returns early).
+bool suckHarry(ObjCtx& ctx, Obj& o, int32_t& d1) {
     Harry& h = ctx.harry;
     if (!ctx.channel1Busy()) ctx.sound1(0xd0, 3);
     const int16_t hand = int16_t(o.x + (o.facing ? 0x28 - 0x50 : 0x28));
     if (o.facing) {
         if (o.w(0x56) < 6) o.l(0x54) += 0x3800;
+        d1 = o.l(0x54);
         ctx.pl.carryHarry(o.l(0x54));
         if (int16_t(hand - h.x()) >= 0) return false;
     } else {
         if (o.w(0x56) >= -6) o.l(0x54) -= 0x3800;
+        d1 = o.l(0x54);
         ctx.pl.carryHarry(o.l(0x54));
         if (int16_t(hand - h.x()) < 0) return false;
     }
     // (0x4221da: tests of DAT_00462695 that change nothing)
-    if (!ctx.pl.harryFeetGrounded()) return false;
+    const int16_t y0 = h.y();
+    const bool early = h.b(0x465b73) != 0 || y0 < 0;
+    const bool grounded = ctx.pl.harryFeetGrounded();
+    d1 = int32_t((uint32_t(d1) & 0xffff0000u) | uint16_t(early ? int16_t(y0 + 0xe) : h.y()));
+    if (!grounded) return false;
     if (h.cont() != 0x427316) { h.setCont(0x427316); h.w(0x465b47) = 0x702f; h.w(0x465b45) = 0; }
     return true;
 }
@@ -6445,11 +6479,16 @@ void rain(ObjCtx& ctx, Obj& o) {
     }
 }
 
-// The code of state `st`; `d1` is what the original's d1 register holds when the decision
-// reads it on one path without having set it (see below).
-Flow body(ObjCtx& ctx, Obj& o, uint32_t st, uint32_t& next, int32_t d1) {
+// The code of state `st`; `d1` is the original's d1 register, which the decision reads on one
+// path without having set it (see below).
+Flow body(ObjCtx& ctx, Obj& o, uint32_t st, uint32_t& next, int32_t& d1) {
     Harry& h = ctx.harry;
     auto go = [&](uint32_t s) { next = s; return kJump; };
+    // the poses and the moves as the original calls them, d1 kept: a move's d1 is its dy
+    auto pose = [&](ObjCtx& c, Obj& ob, uint32_t table, uint32_t script, int ticks) { return spirit::pose(c, ob, table, script, ticks, &d1); };
+    auto move = [&](ObjCtx& c, Obj& ob, int32_t dx, int32_t dy) { d1 = dy; spirit::move(c, ob, dx, dy); };
+    auto blow = [&](ObjCtx& c, Obj& ob) { if (spirit::blow(c, ob)) d1 = 0x60; };
+    auto suckHarry = [&](ObjCtx& c, Obj& ob) { return spirit::suckHarry(c, ob, d1); };
     switch (st) {
     case kIntro:                                    // 0x4214d6: until Harry comes down
         pose(ctx, o, 0x457420, 0x4600f4, 8);
@@ -6819,7 +6858,9 @@ void h_warriorSpirit(ObjCtx& ctx, Obj& o) {
         // (0x4211c7 compares the head's +0x46, the pose's step count, with two state addresses:
         // never equal)
         head->hits = 0;
-        if (weaponHits(ctx, *head, 0x30, nullptr)) {
+        const WeaponHit hit = weaponHit(ctx, *head, 0x30, uint16_t(d1));
+        d1 = hit.d1w;
+        if (hit.d1) {
             h.b(0x466782) = 0xff;
             ctx.sound0(0x51, 0xa);                    // FUN_0042633d(0x51, 0x60, 0xa)
             d1 = 0x60;
@@ -6840,9 +6881,12 @@ void h_warriorSpirit(ObjCtx& ctx, Obj& o) {
         if (dx >= 0) { if (dx < 0x24) h.x() = int16_t(o.x - 0x24); }
         else if (dx >= -0x24) h.x() = int16_t(o.x + 0x24);
     }
-    // The decision at 0x4215be reads d1 on its long-range path without setting it: there the
-    // register keeps the low byte the weapon test left (0 or 1) or 0x60 after a hit's sound,
-    // and whatever came before in its upper bytes, taken as 0 here.
+    // The decision at 0x4215be reads d1's word on its long-range path without setting it: there
+    // the register holds what the weapon test left, its result (0 or 1) in the low byte over
+    // what its box compares wrote (FUN_00424af1: the head's box against a stone or the
+    // boomerang, or the whip's box), 0x60 after a hit's sound, or what a state's pose or move
+    // put in it before jumping to the decision.  With nothing out, the word from before the
+    // handler (another object's, Harry's) is taken as 0.
     uint32_t st = uint32_t(o.l(0x46)), next = 0;
     Flow f = kJump;
     for (int hop = 0; hop < 8 && f == kJump; ++hop) { f = body(ctx, o, st, next, d1); st = next; }
@@ -7599,6 +7643,7 @@ void h_wheel(ObjCtx& ctx, Obj& o) {
             if (o.w(0x3a) == 0) ctx.pl.setShake(0);
         }
     }
+    ctx.harry.d5 &= 0xffffff00u;                                         // 0x41434a: mov d5.b, 0
     wheel::tail(ctx, o);
 }
 
@@ -7637,6 +7682,7 @@ void h_pitWheel(ObjCtx& ctx, Obj& o) {
     if (o.b(0x4f) == 0) { if (o.w(0x52) != -4) o.l(0x50) -= 0x1000; }
     else                { if (o.w(0x52) != 4) o.l(0x50) += 0x800; }
     moveX(o, o.l(0x50));
+    ctx.harry.d5 = (ctx.harry.d5 & 0xffffff00u) | 1;                     // 0x41dbe5: mov d5.b, 1
     wheel::tail(ctx, o);
 }
 

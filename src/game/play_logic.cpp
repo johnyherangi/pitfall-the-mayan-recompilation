@@ -8,6 +8,7 @@
 namespace game {
 
 PlayLogic* g_debugLogic = nullptr;   // the live PlayLogic, for the debugging tools
+uint32_t g_debugCartD5 = 0;          // d5 as the last mine cart's weapon test took it (re/verify)
 
 PlayLogic::~PlayLogic() {
     objects_.saveImage(records_);
@@ -503,6 +504,7 @@ void PlayLogic::timers() {
         }
         if (h_.w(timer) != 0) return true;
         sound1Now(0x89);
+        h_.d5 = 0;                                     // (DAT_00462696 * 3, the Genesis driver's byte)
         ch1Id_ = 0;
         return false;
     };
@@ -535,7 +537,8 @@ void PlayLogic::harryDeath() {
     // FUN_00430a69
     const uint8_t b72 = h_.b(0x465b72);
     if (b72 == 0) return;
-    if (h_.cont() == 0x4311a5) { h4311a5(); return; }     // (runs as Harry's state)
+    // (0x430a76: DAT_00466501, the Genesis input script, takes 0x430c30; nothing on the PC sets it)
+    if (h_.cont() == 0x4311a5) return;                    // 0x430a83: it runs as Harry's state (FUN_00426810)
     h_.uw(0x465b92) = 0x8000;
     if (b72 == 0xfa) { h430eb6(); return; }
     if (h_.spriteIs("hyislice")) { h43118d(); return; }
@@ -570,7 +573,7 @@ void PlayLogic::harryDeath() {
     if (h_.spriteIs("hyirn2cl")) { if (h_.frame() == 5) h43118d(); return; }
     if (h_.spriteIs("hyidie")) return;
     if (h_.spriteIs("hyifcrwl")) { h43118d(); return; }
-    if (h_.spriteIs("hyihwall") && h_.frame() == 7) { h43118d(); return; }
+    if (h_.spriteIs("hyihwall")) { if (h_.frame() == 7) h43118d(); return; }   // (0x430df8: until its last frame)
     // 0x430e06: Harry dies (hyidie), and the code runs on into the state's first tick
     h_.setCont(0x430e3a);
     h_.setSprite("hyidie");
@@ -643,6 +646,7 @@ void PlayLogic::h430eb6() {
     ammo(0) = 0x14;
     if (ammo(1) < 2) ammo(1) = 2;
     if (ammo(2) == 0) ammo(2) = 1;
+    h_.d5 = (h_.d5 & 0xffffff00u) | alsMem_[0x7ff];      // (d5's byte: each working-copy byte in turn, the last one left)
     for (size_t i = 0; i < 0x800; ++i) {                   // [DAT_004504e4] from [DAT_004504c4]
         const uint8_t d4 = alsMem_[0x800 + i];
         if (alsMem_[i] == d4) continue;
