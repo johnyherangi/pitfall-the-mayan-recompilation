@@ -144,7 +144,7 @@ int staticColours() {
         }
     }
     ReleaseDC(g_app.hwnd, dc);
-    if (n == 0)
+    if (n == 0 && g_app.options.warning256)              // (Shell_Warning256=0 in pitfall.ini leaves it out)
         MessageBoxW(nullptr, L"Pitfall must be played in 256 color mode for optimum performance.", L"Pitfall", MB_OK | MB_ICONHAND);
     return n;
 }

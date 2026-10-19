@@ -22,10 +22,30 @@ tests/           asset round-trip and gameplay tests
 third_party/stb/ stb_vorbis (public domain / MIT), for Ogg rips of the CD's music
 ```
 
-## Building (Visual Studio 2022 or 2026)
+## Two shells
+
+The game is one; it comes in two windows, chosen when building (`-DPITFALL_SHELL=`):
+
+* **`classic`** (Windows, the default there): the original's window as Windows 95 showed it, its
+  menu bar with the levels, status bar, property sheet, dialogs, the CD's launcher and the
+  "256 color mode" warning.  The look of 1995, down to the warning (`Shell_Warning256=0` in
+  `pitfall.ini` leaves that out).
+* **`modern`** (Windows, macOS and Linux; the default off Windows): an SDL2 window of today, the
+  picture scaled by whole pixels (2x, 3x, 4x or fitted; `Shell_Scale`), full screen on F11 or
+  Alt+Enter, gamepads through SDL's mapping, and in place of the menu bar and the property sheet
+  an in-game menu on Esc (or a pad's Start), drawn in the game's own font over the paused picture:
+  resume, new game, the levels the original's File menu offered as they are unlocked, the options
+  (sound, music, ambient sounds, the volumes, the difficulty, the window, the keys) and quit.  On
+  macOS it builds as `Pitfall.app`; the settings go to `~/Library/Application Support/Activision/Pitfall/`
+  (Linux: `~/.local/share/Activision/Pitfall/`), the game's files are looked for in `original`
+  next to the program (or inside the bundle's Resources, or given on the command line).
+
+## Building
+
+Windows, the classic shell (Visual Studio 2022 or 2026):
 
 ```
-cmake -S . -B build -G "Visual Studio 18 2026" -A x64
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64      (or "Visual Studio 18 2026")
 cmake --build build --config Release
 ctest --test-dir build -C Release
 ```
@@ -33,10 +53,19 @@ ctest --test-dir build -C Release
 This produces `build\Release\pitfall.exe` (the game), `pitstart.exe` (the CD's
 launcher), `phdump.exe` and `ph_tests.exe`.  The code builds with MSVC at `/W4 /permissive-` without a
 warning (checked with MSVC 14.50 and the Windows 10.0.26100 SDK, `ph_tests`
-giving the same results as the g++ build).  No third-party dependencies are needed for the Win32 build
-beyond the vendored `third_party/stb/stb_vorbis.c`.  For a portable SDL2 build
-add `-DPITFALL_USE_SDL=ON` (SDL 2.30 is fetched by CMake).  A MinGW / clang
-cross build works too (checked with llvm-mingw 20240619):
+giving the same results as the g++ build).  No third-party dependencies are needed for the classic shell
+beyond the vendored `third_party/stb/stb_vorbis.c`.
+
+The modern shell, on any of the three (SDL 2.30 is fetched and built by CMake; on Linux the X11
+and ALSA development packages are wanted, on macOS Xcode's command-line tools):
+
+```
+cmake -S . -B build-modern -DCMAKE_BUILD_TYPE=Release -DPITFALL_SHELL=modern
+cmake --build build-modern
+./build-modern/pitfall original                  (macOS: open build-modern/Pitfall.app)
+```
+
+A MinGW / clang cross build of either shell works too (checked with llvm-mingw 20240619):
 
 ```
 cmake -S . -B build-win -G Ninja -DCMAKE_SYSTEM_NAME=Windows ^
@@ -96,15 +125,15 @@ original's registry value names.
 | select | Space | button 4 |
 | pause  | Pause (any other key ends it) | |
 | help   | F1    |          |
-| quit   | Esc   |          |
+| quit   | Esc (the modern shell: Esc opens its menu, F11 full screen) |          |
 | Harry's special idle | F10 or Alt+Y |  |
 | full screen | Alt+Enter (an addition; the original has it in the System page) | |
 
 A gamepad works alongside the keyboard without any setting (an addition: the
 original's JoyStick option is the joystick API's one stick and four buttons).
-An Xbox pad is read through XInput, a PlayStation (DualShock, DualSense) or
-other pad through the joystick API with its d-pad; the SDL build uses SDL's
-controller mapping.  The d-pad or the left stick moves, A / cross jumps, B /
+In the classic shell an Xbox pad is read through XInput, a PlayStation (DualShock, DualSense) or
+other pad through the joystick API with its d-pad; the modern shell uses SDL's
+controller mapping, and its Start button opens the menu.  The d-pad or the left stick moves, A / cross jumps, B /
 circle shoots, X / square whips, Y / triangle (or Start, Back / Options,
 Create) selects; in the vaults the shoot, jump and whip buttons pull levers 1,
 2 and 3, and any button serves where "any key" does (the title, the scenes,

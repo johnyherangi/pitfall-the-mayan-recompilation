@@ -92,6 +92,9 @@ bool Options::load(const std::string& iniPath) {
         keys.key[size_t(i)] = geti(kv, KeyBindings::registryName(Action(i)), keys.key[size_t(i)]);
     static const char* const joyNames[] = {"Joy_Jump", "Joy_Shoot", "Joy_Whip", "Joy_Select"};
     for (int i = 0; i < 4; ++i) keys.joyButton[size_t(i)] = geti(kv, joyNames[i], keys.joyButton[size_t(i)]);
+    scale        = geti(kv, "Shell_Scale", scale);
+    fullscreen   = geti(kv, "Shell_Fullscreen", fullscreen) != 0;
+    warning256   = geti(kv, "Shell_Warning256", warning256) != 0;
     return true;
 }
 
@@ -114,6 +117,7 @@ bool Options::save(const std::string& iniPath) const {
         f << KeyBindings::registryName(Action(i)) << "=" << keys.key[size_t(i)] << "\n";
     static const char* const joyNames[] = {"Joy_Jump", "Joy_Shoot", "Joy_Whip", "Joy_Select"};
     for (int i = 0; i < 4; ++i) f << joyNames[i] << "=" << keys.joyButton[size_t(i)] << "\n";
+    f << "Shell_Scale=" << scale << "\nShell_Fullscreen=" << fullscreen << "\nShell_Warning256=" << warning256 << "\n";
     return true;
 }
 

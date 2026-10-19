@@ -10,7 +10,7 @@ project(PitfallMayanRecompilation LANGUAGES CXX)
 #   pitfall_game    - game flow, display list, HUD, attract/demo playback
 #   phdump          - command line asset extractor / frame renderer (portable)
 #   pitfall         - the game executable (Win32/GDI front end, like the original;
-#                     optional SDL2 front end with -DPITFALL_USE_SDL=ON)
+#                     the modern SDL2 shell with -DPITFALL_SHELL=modern)
 #
 # Build (Visual Studio 2022, or 2026 with "Visual Studio 18 2026"):
 #   cmake -S . -B build -G "Visual Studio 17 2022" -A x64
@@ -23,7 +23,21 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-option(PITFALL_USE_SDL     "Build the SDL2 front end instead of the Win32/GDI one" OFF)
+# The shell: "classic" is the original's window (Win32: its menu bar, status bar, property sheet,
+# dialogs and the "256 color mode" warning; Windows only), "modern" the SDL2 front end for Windows,
+# macOS and Linux (an in-game menu, whole-pixel scaling, full screen).  The game under them is one.
+set(PITFALL_SHELL "" CACHE STRING "The shell: classic (Win32, the default there) or modern (SDL2, the default elsewhere)")
+option(PITFALL_USE_SDL     "(the old name of PITFALL_SHELL=modern)" OFF)
+if(PITFALL_SHELL STREQUAL "")
+    if(PITFALL_USE_SDL OR NOT WIN32)
+        set(PITFALL_SHELL "modern")
+    else()
+        set(PITFALL_SHELL "classic")
+    endif()
+endif()
+if(PITFALL_SHELL STREQUAL "classic" AND NOT WIN32)
+    message(FATAL_ERROR "The classic shell is the original's Windows window: build it on Windows, or use -DPITFALL_SHELL=modern")
+endif()
 option(PITFALL_BUILD_TESTS "Build the asset round-trip tests" ON)
 option(PITFALL_WARNINGS    "Enable strict compiler warnings" ON)
 
@@ -86,7 +100,7 @@ add_executable(phdump src/tools/phdump.cpp)
 target_link_libraries(phdump PRIVATE pitfall_game)
 
 # ---- the game executable ---------------------------------------------------
-if(PITFALL_USE_SDL)
+if(PITFALL_SHELL STREQUAL "modern")
     include(FetchContent)
     FetchContent_Declare(SDL2
         GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
@@ -96,9 +110,23 @@ if(PITFALL_USE_SDL)
     set(SDL_SHARED OFF CACHE BOOL "" FORCE)
     set(SDL_STATIC ON CACHE BOOL "" FORCE)
     FetchContent_MakeAvailable(SDL2)
-    add_executable(pitfall WIN32 src/app/main_sdl.cpp)
+    add_executable(pitfall WIN32 MACOSX_BUNDLE src/app/main_sdl.cpp)
     target_link_libraries(pitfall PRIVATE pitfall_game SDL2::SDL2-static SDL2::SDL2main)
-elseif(WIN32)
+    if(MINGW)
+        target_link_options(pitfall PRIVATE -static)   # (no MinGW DLLs to ship)
+    endif()
+    if(APPLE)
+        set_target_properties(pitfall PROPERTIES
+            OUTPUT_NAME "Pitfall"
+            MACOSX_BUNDLE_BUNDLE_NAME "Pitfall: The Mayan Adventure"
+            MACOSX_BUNDLE_GUI_IDENTIFIER "com.activision.pitfall.recompilation"
+            MACOSX_BUNDLE_BUNDLE_VERSION "1.0"
+            MACOSX_BUNDLE_SHORT_VERSION_STRING "1.0"
+            MACOSX_BUNDLE_ICON_FILE "pitfall.icns")
+        target_sources(pitfall PRIVATE src/app/pitfall.icns)
+        set_source_files_properties(src/app/pitfall.icns PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+    endif()
+elseif(PITFALL_SHELL STREQUAL "classic")
     add_executable(pitfall WIN32 src/app/main_win32.cpp src/app/win32_sheet.cpp src/app/win32_cd.cpp src/app/win32_gamepad.cpp src/app/pitfall.rc)
     target_link_libraries(pitfall PRIVATE pitfall_game winmm gdi32 user32 shell32 comctl32)
     if(MINGW)

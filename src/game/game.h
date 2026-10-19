@@ -128,6 +128,7 @@ public:
 
     // Presentation.
     const engine::Framebuffer& framebuffer() const { return fb_; }
+    engine::Framebuffer& framebuffer() { return fb_; }    // (a shell draws its menu over the frame)
     const ph::Palette& palette() const { return palette_; }
     ph::Palette& palette() { return palette_; }
     int viewScrollX() const { return snap_.scrollX; }   // for the (scrollX & 7) blit offset

@@ -34,6 +34,11 @@ struct Options {
     uint32_t levelBits = 1;    // Option_Level    DAT_0046d38c: the menu's levels that are on (a bit a level),
                                //                kept as DAT_00453190's 64 bytes (levelBitsEncode)
     KeyBindings keys;
+    // The port's own (Shell_...): the modern shell's window scale (1 .. 4, 0: fit the window) and
+    // full screen, and whether the classic shell shows the "256 color mode" warning
+    int  scale        = 3;
+    bool fullscreen   = false;
+    bool warning256   = true;
     // Not a setting but what the display is (FUN_0043e1c0's GetDeviceCaps): a palette device keeps
     // its static colours, half of them at each end (DAT_00453184: 10, the free range [10, 246)); a
     // true-colour display, as every display now, none (the free range [0, 256), after the "256
