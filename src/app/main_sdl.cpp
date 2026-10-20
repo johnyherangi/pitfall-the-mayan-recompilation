@@ -110,19 +110,64 @@ bool isFullscreen(SDL_Window* win) {
 #endif
 }
 
-void setFullscreen(SDL_Window* win, bool on) {
 #ifdef __APPLE__
-    if (on == isFullscreen(win)) return;
-    // as SDL itself does it: toggleFullScreen: on the main thread's next turn (the window is then
-    // surely on the screen, at the start too); the change comes back as SDL window events
-    void* w = nsWindow(win);
-    if (!w) return;
-    objcSend<void (*)(void*, SEL, SEL, void*, BOOL)>()(w, sel_registerName("performSelectorOnMainThread:withObject:waitUntilDone:"),
-                                                      sel_registerName("toggleFullScreen:"), nullptr, BOOL(0));
-#else
-    SDL_SetWindowFullscreen(win, on ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
+// The Mac's full screen changes through an animation, and a toggle sent during one can lose the
+// window (as Electron and VLC found), so one change at a time.  A toggle goes to the main thread's
+// next turn (as SDL sends its own: the window is then surely on the screen, at the start too) and
+// counts as under way until the window shows its state (or two seconds pass); AppKit's animation
+// is under way while SDL's window delegate says so (isInFullscreenSpaceTransition).  What is asked
+// for meanwhile waits for settle().
+struct MacFullscreen {
+    Uint64 sentAt = 0;                                   // a toggle sent, not yet seen through (0: none)
+    bool sentFor = false;                                // the state it was sent for
+    bool waiting = false;                                // asked for while a change was under way
+    bool was = false;                                    // the window's state when last settled
+
+    static bool animating(void* w) {
+        void* delegate = objcSend<void* (*)(void*, SEL)>()(w, sel_registerName("delegate"));
+        const SEL query = sel_registerName("isInFullscreenSpaceTransition");
+        return delegate && objcSend<BOOL (*)(void*, SEL, SEL)>()(delegate, sel_registerName("respondsToSelector:"), query) &&
+               objcSend<BOOL (*)(void*, SEL)>()(delegate, query);
+    }
+    bool changing(SDL_Window* win) const {
+        void* w = nsWindow(win);
+        return sentAt != 0 || (w && animating(w));
+    }
+    void send(SDL_Window* win, bool on) {
+        void* w = nsWindow(win);
+        if (!w) return;
+        objcSend<void (*)(void*, SEL, SEL, void*, BOOL)>()(w, sel_registerName("performSelectorOnMainThread:withObject:waitUntilDone:"),
+                                                          sel_registerName("toggleFullScreen:"), nullptr, BOOL(0));
+        sentAt = SDL_GetTicks64();
+        sentFor = on;
+    }
+    void request(SDL_Window* win, bool on) {
+        if (changing(win)) waiting = true;
+        else if (on != isFullscreen(win)) send(win, on);
+    }
+    // Once nothing is changing, what was asked for meanwhile is sent; otherwise the window's state is
+    // the one that counts (follow: the option takes it).  left: the window has come out of full screen.
+    struct Settled { bool follow = false, left = false; };
+    Settled settle(SDL_Window* win, bool wanted) {
+        Settled s;
+        void* w = nsWindow(win);
+        if (!w || animating(w)) return s;
+        const bool now = isFullscreen(win);
+        if (sentAt) {
+            if (now != sentFor && SDL_GetTicks64() - sentAt < 2000) return s;    // (not begun yet)
+            sentAt = 0;
+        }
+        s.left = was && !now;
+        was = now;
+        if (waiting) {
+            waiting = false;
+            if (now != wanted) { send(win, wanted); return s; }
+        }
+        s.follow = now != wanted;
+        return s;
+    }
+};
 #endif
-}
 
 // ----------------------------------------------------------------- files --
 // The settings: next to the executable where that can be written (Windows: as the classic shell),
@@ -195,8 +240,29 @@ struct Shell {
     bool quit = false;
     // the font's colours, found among the palette's entries the font's glyphs use
     uint8_t cWhite = 0, cGrey = 0, cDark = 0, cDim = 0, cBlack = 0;
+#ifdef __APPLE__
+    MacFullscreen mac;
+#endif
 
     Shell(game::Game& game, engine::Options& o) : g(game), options(o) {}
+
+#ifdef __APPLE__
+    // (on window events and every 50 ms) the green button's or Ctrl+Cmd+F's change taken by the
+    // option, and a window out of full screen given the scale's size, as applyWindow does elsewhere
+    bool settleFullscreen() {
+        const MacFullscreen::Settled s = mac.settle(win, options.fullscreen);
+        if (s.follow) {
+            options.fullscreen = !options.fullscreen;
+            SDL_RenderSetIntegerScale(ren, options.scale > 0 || options.fullscreen ? SDL_TRUE : SDL_FALSE);
+            refreshValues();
+        }
+        if (s.left && !options.fullscreen && options.scale > 0) {
+            SDL_SetWindowSize(win, engine::kViewW * options.scale, engine::kViewH * options.scale);
+            SDL_SetWindowPosition(win, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+        }
+        return s.follow || s.left;
+    }
+#endif
 
     bool open() const { return page != Page::None; }
 
@@ -501,13 +567,14 @@ struct Shell {
 
 void Shell::applyWindow() {
 #ifdef __APPLE__
-    // (a window leaving the Mac's full screen takes back its own size at the animation's end, which
-    // a size set now would not survive: the scale's size is for a window that stays a window)
-    const bool sized = !options.fullscreen && !isFullscreen(win);
+    // (a change under way finishes first; a window leaving full screen takes back its own size at
+    // the animation's end, so the scale's size is set then, by settleFullscreen)
+    mac.request(win, options.fullscreen);
+    const bool sized = !options.fullscreen && !mac.changing(win) && !isFullscreen(win);
 #else
+    SDL_SetWindowFullscreen(win, options.fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
     const bool sized = !options.fullscreen;
 #endif
-    setFullscreen(win, options.fullscreen);
     if (sized && options.scale > 0) {
         SDL_SetWindowSize(win, engine::kViewW * options.scale, engine::kViewH * options.scale);
         SDL_SetWindowPosition(win, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
@@ -563,9 +630,6 @@ int main(int argc, char** argv) {
     SDL_RenderSetIntegerScale(ren, scale > 0 || options.fullscreen ? SDL_TRUE : SDL_FALSE);
     SDL_SetRenderDrawColor(ren, 0, 0, 0, 255);
     SDL_Texture* tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, engine::kViewW, engine::kViewH);
-#ifdef __APPLE__
-    if (options.fullscreen) setFullscreen(win, true);
-#endif
 
     SDL_AudioSpec want{}, have{};
     want.freq = engine::Mixer::kOutputRate; want.format = AUDIO_S16SYS; want.channels = 2; want.samples = 1024;
@@ -587,6 +651,10 @@ int main(int argc, char** argv) {
 
     Shell shell(*g, options);
     shell.win = win; shell.ren = ren;
+#ifdef __APPLE__
+    if (options.fullscreen) shell.mac.request(win, true);      // (the Mac's own full screen, the window open)
+    Uint64 lastSettle = 0;
+#endif
 
     engine::HostInput host;
     Uint64 last = SDL_GetPerformanceCounter();
@@ -595,18 +663,14 @@ int main(int argc, char** argv) {
     bool running = true, redraw = true;
     while (running) {
         SDL_Event ev;
+#ifdef __APPLE__
+        bool windowEvent = false;
+#endif
         while (SDL_PollEvent(&ev)) {
             if (ev.type == SDL_QUIT) running = false;
             if (ev.type == SDL_CONTROLLERDEVICEADDED || ev.type == SDL_CONTROLLERDEVICEREMOVED) openPads();
 #ifdef __APPLE__
-            // the green button, Ctrl+Cmd+F or the end of the option's own change: the option
-            // follows the window (SDL sends window events once a full-screen change is done)
-            if (ev.type == SDL_WINDOWEVENT && isFullscreen(win) != options.fullscreen) {
-                options.fullscreen = !options.fullscreen;
-                SDL_RenderSetIntegerScale(ren, options.scale > 0 || options.fullscreen ? SDL_TRUE : SDL_FALSE);
-                shell.refreshValues();
-                redraw = true;
-            }
+            if (ev.type == SDL_WINDOWEVENT) windowEvent = true;
 #endif
             if (ev.type == SDL_TEXTINPUT && !shell.open())            // WM_CHAR: the typed cheat codes
                 for (const char* p = ev.text.text; *p; ++p) g->typeChar(uint8_t(*p));
@@ -624,6 +688,12 @@ int main(int argc, char** argv) {
                 if (sc == SDL_SCANCODE_F10 || (sc == SDL_SCANCODE_Y && alt)) g->specialKey();
             }
         }
+#ifdef __APPLE__
+        if (windowEvent || SDL_GetTicks64() - lastSettle >= 50) {
+            lastSettle = SDL_GetTicks64();
+            if (shell.settleFullscreen()) redraw = true;
+        }
+#endif
         const Uint64 now = SDL_GetPerformanceCounter();
         acc += double(now - last) / freq * (1000.0 / 17.0);    // the original's 17 ms timer
         last = now;
