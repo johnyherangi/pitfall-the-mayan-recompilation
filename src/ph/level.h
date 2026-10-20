@@ -101,5 +101,8 @@ struct AssetBank {
 
 // Loads INIT.PH the way FUN_004457d0 + FUN_0043ce10 do (with a load block, its records at its start).
 AssetBank loadInit(const std::string& dataDir, Palette& pal, Arena* arena = nullptr);
+// The folder the game's files are in: `dir` itself when INIT.PH is there, else its ASSETS folder
+// (the CD keeps them there, phimport copies the CD), else `dir` as given.
+std::string resolveDataDir(const std::string& dir);
 
 } // namespace ph

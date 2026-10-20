@@ -312,7 +312,10 @@ LRESULT CALLBACK hiddenProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     if (msg == WM_DESTROY) {
         PostQuitMessage(0);
     } else if (msg == kStart) {
-        const INT_PTR r = DialogBoxParamA(g_res, MAKEINTRESOURCEA(101), hwnd, mainProc, 0);
+        // (the CD's own PITSTART.EXE: dialog 101; the European pressing's launcher, in four
+        // languages behind a chooser, has the English one as 127)
+        const int mainDlg = FindResourceA(g_res, MAKEINTRESOURCEA(101), MAKEINTRESOURCEA(5)) ? 101 : 127;
+        const INT_PTR r = DialogBoxParamA(g_res, MAKEINTRESOURCEA(mainDlg), hwnd, mainProc, 0);
         if (r == 1) DialogBoxParamA(g_res, MAKEINTRESOURCEA(114), hwnd, introProc, 0);
         if (r != 0) {
             if (g_firstRun && !g_joystick) run("REGISTER.EXE", true);

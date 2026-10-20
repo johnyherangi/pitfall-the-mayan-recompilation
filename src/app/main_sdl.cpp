@@ -106,7 +106,8 @@ std::string findDataDir(const std::string& hint) {
     c.emplace_back("original");
     c.emplace_back(".");
     for (const auto& d : c)
-        if (!d.empty() && (fs::exists(d + "/INIT.PH") || fs::exists(d + "/init.ph"))) return d;
+        if (!d.empty() && (fs::exists(d + "/INIT.PH") || fs::exists(d + "/init.ph") ||
+                           fs::exists(d + "/ASSETS/INIT.PH") || fs::exists(d + "/ASSETS/init.ph"))) return d;   // (the CD's layout)
     return "";
 }
 

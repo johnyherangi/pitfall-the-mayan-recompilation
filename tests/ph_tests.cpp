@@ -21,7 +21,7 @@ int runGameplayTests(const std::string& dir);
 #define CHECK(cond) do { if (!(cond)) { std::printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); ++failures; } } while (0)
 
 int main(int argc, char** argv) {
-    const std::string dir = argc > 1 ? argv[1] : "original";
+    const std::string dir = ph::resolveDataDir(argc > 1 ? argv[1] : "original");
     // No CD music but the music test's own (the data folder may hold the disc's tracks, whose
     // fade at each load would put the transitions' timing off)
     const std::string noMusic = (std::filesystem::temp_directory_path() / "pitfall_no_music").string();

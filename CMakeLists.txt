@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(PitfallMayanRecompilation LANGUAGES CXX)
+project(PitfallMayanRecompilation LANGUAGES C CXX)
 
 # ---------------------------------------------------------------------------
 # Pitfall: The Mayan Adventure (Windows 95, Kinesoft/Activision 1995)
@@ -98,6 +98,29 @@ target_link_libraries(pitfall_game PUBLIC pitfall_engine)
 # ---- tools -----------------------------------------------------------------
 add_executable(phdump src/tools/phdump.cpp)
 target_link_libraries(phdump PRIVATE pitfall_game)
+
+# ---- the original's files from the disc ------------------------------------
+# phimport takes the game's files, music and intro out of the CD's folder, a .zip, an .iso or a
+# .cue / .img image.  Put what you have in assets-in/ (PITFALL_ASSETS_DIR): the build fills
+# original/ from it when INIT.PH is not there yet (the import_assets target does it again on demand).
+add_executable(phimport src/tools/phimport.cpp third_party/miniz/miniz.c)
+target_include_directories(phimport PRIVATE third_party/miniz)
+set_source_files_properties(third_party/miniz/miniz.c PROPERTIES COMPILE_OPTIONS "$<$<CXX_COMPILER_ID:MSVC>:/W3>")
+set(PITFALL_ASSETS_DIR "${CMAKE_SOURCE_DIR}/assets-in" CACHE PATH "Where the original's disc, image, zip or folder is dropped for phimport")
+set(PITFALL_DATA_DIR "${CMAKE_SOURCE_DIR}/original" CACHE PATH "Where the game's files go (and are run from)")
+add_custom_target(import_assets
+    COMMAND phimport "${PITFALL_ASSETS_DIR}" "${PITFALL_DATA_DIR}"
+    DEPENDS phimport
+    COMMENT "The original's files from ${PITFALL_ASSETS_DIR} into ${PITFALL_DATA_DIR}"
+    VERBATIM)
+file(GLOB _assets_in "${PITFALL_ASSETS_DIR}/*")
+if(_assets_in AND NOT EXISTS "${PITFALL_DATA_DIR}/INIT.PH" AND NOT EXISTS "${PITFALL_DATA_DIR}/init.ph")
+    set_target_properties(import_assets PROPERTIES EXCLUDE_FROM_ALL FALSE)
+    add_custom_command(TARGET import_assets POST_BUILD COMMAND ${CMAKE_COMMAND} -E echo "import_assets: done")
+    message(STATUS "assets-in/ has files and ${PITFALL_DATA_DIR} has no INIT.PH: the build will import them")
+else()
+    set_target_properties(import_assets PROPERTIES EXCLUDE_FROM_ALL TRUE)
+endif()
 
 # ---- the game executable ---------------------------------------------------
 if(PITFALL_SHELL STREQUAL "modern")

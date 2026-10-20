@@ -20,6 +20,7 @@ src/app/         Win32/GDI front end (default) and SDL2 front end (optional)
 src/tools/       phdump command-line tool
 tests/           asset round-trip and gameplay tests
 third_party/stb/ stb_vorbis (public domain / MIT), for Ogg rips of the CD's music
+third_party/miniz/ miniz (public domain / MIT), for the .zip files phimport reads
 ```
 
 ## Two shells
@@ -39,6 +40,21 @@ The game is one; it comes in two windows, chosen when building (`-DPITFALL_SHELL
   macOS it builds as `Pitfall.app`; the settings go to `~/Library/Application Support/Activision/Pitfall/`
   (Linux: `~/.local/share/Activision/Pitfall/`), the game's files are looked for in `original`
   next to the program (or inside the bundle's Resources, or given on the command line).
+
+## The original's files
+
+The game needs the original's files, which are not in this repository.  Put whatever you have
+of the disc into a folder named `assets-in` at the repository's root: the CD's folder (or any
+folder with `INIT.PH`), a `.zip` of it, an `.iso` (the data track alone: the game without its
+music), or a `.cue` with its `.img` / `.bin` (a CloneCD or CDRWIN image: the game and its
+music).  Configuring the project then adds an `import_assets` step to the build, which runs
+`phimport` to fill `original/` from it: the game's files as the disc lays them out (its
+`ASSETS\` folder is found), the audio tracks as `ASSETS\MUSIC\TrackNN.ogg` (through `ffmpeg`
+when it is on the path, else as WAV files), and, with `ffmpeg`, `INTRO.AVI` converted for the
+launcher (`intro.converted.avi`, Cinepak, which Windows still decodes where Indeo 3.2 is gone).
+Nothing already in `original/` is written again; `cmake --build build --target import_assets`
+runs it again, and `phimport --force <input> original` overwrites.  The European pressing's
+four-language launcher is understood too.
 
 ## Building
 
@@ -72,8 +88,9 @@ cmake -S . -B build-win -G Ninja -DCMAKE_SYSTEM_NAME=Windows ^
       -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-clang++ -DCMAKE_RC_COMPILER=x86_64-w64-mingw32-windres
 ```
 
-Run `pitfall.exe` from the repository root, or copy `original\*.PH` next to
-the executable, or pass the data directory:
+Run `pitfall.exe` from the repository root (it finds `original\`, with the files at its root
+or in its `ASSETS\` folder), or copy `original\*.PH` next to the executable, or pass the data
+directory:
 
 ```
 build\Release\pitfall.exe original

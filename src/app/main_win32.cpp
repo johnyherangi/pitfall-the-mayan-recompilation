@@ -61,8 +61,11 @@ bool fileExists(const std::string& p) { return GetFileAttributesA(p.c_str()) != 
 std::string findDataDir(const std::string& hint) {
     const std::string candidates[] = {hint, exeDir(), exeDir() + "\\original", exeDir() + "\\ASSETS",
                                       exeDir() + "\\..\\original", exeDir() + "\\..\\..\\original", "."};
-    for (const auto& c : candidates)
-        if (!c.empty() && (fileExists(c + "\\INIT.PH") || fileExists(c + "\\init.ph"))) return c;
+    for (const auto& c : candidates) {
+        if (c.empty()) continue;
+        if (fileExists(c + "\\INIT.PH") || fileExists(c + "\\init.ph")) return c;
+        if (fileExists(c + "\\ASSETS\\INIT.PH") || fileExists(c + "\\ASSETS\\init.ph")) return c;   // (the CD's layout)
+    }
     return "";
 }
 

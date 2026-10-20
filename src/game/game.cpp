@@ -96,7 +96,7 @@ private:
 } // namespace
 
 Game::Game(std::string dataDir, engine::Options& options)
-    : dataDir_(std::move(dataDir)), options_(options) {
+    : dataDir_(ph::resolveDataDir(dataDir)), options_(options) {
     palette_.setFreeRange(options_.staticColours, 256 - options_.staticColours);    // FUN_0043e1c0
     assets_ = std::make_unique<ph::AssetBank>(ph::loadInit(dataDir_, palette_, &arena_));   // FUN_004457d0
     fillSpriteSlots(false);

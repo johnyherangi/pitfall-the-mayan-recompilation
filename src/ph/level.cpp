@@ -2,7 +2,9 @@
 
 #include "ph/ph_stream.h"
 
+#include <cctype>
 #include <cstdio>
+#include <filesystem>
 
 namespace ph {
 
@@ -203,6 +205,27 @@ LevelData loadLevel(int level, const std::string& dataDir, Palette& pal, Arena* 
         if (b->level == level)
             if (Sprite* target = lv.sprite(b->sprite)) lv.spriteByName[b->slot] = target;
     return lv;
+}
+
+std::string resolveDataDir(const std::string& dir) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    auto hasInit = [&](const fs::path& d) {
+        for (const auto& e : fs::directory_iterator(d, ec)) {
+            std::string n = e.path().filename().string();
+            for (char& c : n) c = char(std::toupper(static_cast<unsigned char>(c)));
+            if (n == "INIT.PH" && e.is_regular_file(ec)) return true;
+        }
+        return false;
+    };
+    const fs::path base = dir.empty() ? fs::path(".") : fs::path(dir);
+    if (hasInit(base)) return dir;
+    for (const auto& e : fs::directory_iterator(base, ec)) {
+        std::string n = e.path().filename().string();
+        for (char& c : n) c = char(std::toupper(static_cast<unsigned char>(c)));
+        if (n == "ASSETS" && e.is_directory(ec) && hasInit(e.path())) return e.path().string();
+    }
+    return dir;
 }
 
 AssetBank loadInit(const std::string& dataDir, Palette& pal, Arena* arena) {
