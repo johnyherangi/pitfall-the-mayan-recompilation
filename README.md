@@ -1,289 +1,161 @@
 # Pitfall: The Mayan Adventure — recompilation
 
-A modern C++20 reconstruction of the Windows 95 release of *Pitfall: The
-Mayan Adventure* (Kinesoft Development / Activision, 1995), built from a
-static analysis of `PITFALL.EXE` and its `.PH` asset files with
-[REA (Reverse Engineer Anything)](https://github.com/morluto/rea) driving
-Ghidra 12.1.
+The 1995 Windows game *Pitfall: The Mayan Adventure* (Kinesoft / Activision), rebuilt as modern
+C++ that runs on Windows, macOS and Linux. It was reconstructed from the original `PITFALL.EXE`
+and its data files with [REA (Reverse Engineer Anything)](https://github.com/morluto/rea) and
+Ghidra, and checked frame by frame against the original.
+
+**You need your own copy of the game.** No game data is included.
 
 ## Quick start
 
-1. Install the tools: on Windows, Visual Studio 2022 or 2026 with *Desktop development with
-   C++* (it brings CMake); on macOS, Xcode's command-line tools and CMake 3.24 or newer
-   (`brew install cmake`); on Linux, CMake, a C++20 compiler and the SDL development packages
-   `build.sh` names.  `ffmpeg` on the path is optional (music as Ogg rather than WAV, and the
-   launcher's intro; `brew install ffmpeg` on macOS).
-2. Put what you have of the game's disc into a folder named `assets-in` here: the CD's folder, a
-   `.zip` of it, an `.iso`, or a `.cue` with its `.img` / `.bin` image (which also carries the
-   music).
-3. Run `build.bat` (Windows; `build.bat modern` for the modern window, `build.bat both run` to
-   build both and play) or `./build.sh` (macOS, Linux; `./build.sh run`, and `./build.sh test`
-   to run the tests against your files).  The script imports the game's files into `original/`,
-   builds, and leaves the game in `dist\classic\` or `dist\modern\`, ready to run from there.
-   `pack` as a further word copies `original/` in beside it, for a folder that can be moved to
-   another machine.
+1. **Install the tools**
+   - Windows: Visual Studio 2022 or 2026 with *Desktop development with C++*
+   - macOS: Xcode's command-line tools and CMake 3.24 or newer (`brew install cmake`)
+   - Linux: CMake, a C++20 compiler and SDL's development packages (`./build.sh` names them)
+   - Optional: `ffmpeg`, to save the music as Ogg rather than WAV (`brew install ffmpeg` on a Mac)
+2. **Add your game:** put your copy of the disc in a folder called `assets-in` here. It can be
+   the CD's files, a `.zip` of them, an `.iso`, or a `.cue` with its `.img` or `.bin`. Only a
+   full disc image (`.cue`) includes the music.
+3. **Build and play:**
+   - Windows: `build.bat run`
+   - macOS and Linux: `./build.sh run`
+
+The game ends up in `dist/`. Other options for the build scripts:
+
+| Option | What it does |
+|--------|--------------|
+| `test` | runs the tests against your game files (`build.sh` only) |
+| `pack` | copies your game files next to the build, so the folder can move to another computer |
+| `modern`, `both` | `build.bat` only: builds the modern version, or both versions |
+
+## Two versions
+
+**Classic** (Windows only): the game as it looked in 1995, in the original window with its menus,
+status bar, settings dialogs and CD launcher. It even shows the original's "256 color mode"
+warning; set `Shell_Warning256=0` in `pitfall.ini` to skip it.
+
+**Modern** (Windows, macOS and Linux): a resizable window with sharp, whole-pixel scaling, full
+screen, gamepad support, and an in-game menu (Esc, or Start on a gamepad) for a new game, level
+select, options and keys. On a Mac it is a single app for Apple silicon and Intel (macOS 10.15 or
+later).
+
+Settings are kept in `pitfall.ini`: next to the game on Windows, in
+`~/Library/Application Support/Activision/Pitfall/` on macOS, and in
+`~/.local/share/Activision/Pitfall/` on Linux.
+
+## Controls
+
+| Action | Keyboard | Gamepad |
+|--------|----------|---------|
+| Move | Arrow keys | D-pad or left stick |
+| Jump | W | A / Cross |
+| Sling | E | B / Circle |
+| Whip | Q | X / Square |
+| Switch weapon | Space | Y / Triangle |
+| Pause | Pause | |
+| Menu (modern) or quit (classic) | Esc | Start (modern) |
+| Full screen | Alt+Enter, or F11 in the modern version (Mac: Control-Command-F) | |
+| Help (classic) | F1 | |
+
+You can change the keys in the settings (classic) or the menu (modern). The original's cheat
+codes work too: type them while playing. `src/game/cheats.cpp` lists them.
+
+## Music
+
+The original plays its music from the CD's audio tracks. The build saves them as
+`original/ASSETS/MUSIC/TrackNN.ogg` (WAV files without ffmpeg), and the classic version can also
+play a real disc in the drive. If you have the tracks as separate files instead, name them by
+track number (`Track02.ogg`, `Track03.wav` and so on) and put them in that folder. Without music,
+the game is silent wherever the CD would play.
+
+If you install ffmpeg after building, run `phimport --force assets-in original` (it's built next
+to the game) to redo the import with Ogg files.
+
+## Your game files
+
+The build copies your game from `assets-in/` into `original/`, keeping the disc's own folders,
+and never overwrites what's already there. The game finds `original/` next to itself or a few
+folders up (so it runs straight from `dist/`), inside `Pitfall.app` after `pack`, or wherever you
+point it on the command line.
+
+The European CD has no `LEVEL24.PH`, Earthworm Jim's secret level. The tests skip it, and the
+cheat that leads there ends with "Could not find file", just as it does on that disc.
+
+## Building by hand
+
+Windows, classic version:
 
 ```
-original/        the shipped game files (PITFALL.EXE, INIT.PH, LEVEL00-24.PH, ...) -- not in git
-original_genesis/ optional: the Genesis ROM, a reading aid for the game logic -- not in git
-re/              reverse-engineering evidence: Ghidra decompile, symbol tables, per-handler
-                 disassembly listings (x86 and 68000), cross-references, debug drivers, renders
-tools/           phtool.py asset extractor, table generators, genesis_dis.py, Ghidra export scripts
-docs/            FORMATS.md, ENGINE_MAP.md, RECONSTRUCTION_LEDGER.md
-src/ph/          .PH parsers: sprites, backgrounds, levels, palette, sounds
-src/engine/      software renderer, input, options, audio mixer
-src/game/        game driver, camera/parallax, HUD, title, attract-mode demos, the game logic
-src/app/         Win32/GDI front end (default) and SDL2 front end (optional)
-src/tools/       phdump command-line tool
-tests/           asset round-trip and gameplay tests
-third_party/stb/ stb_vorbis (public domain / MIT), for Ogg rips of the CD's music
-third_party/miniz/ miniz (public domain / MIT), for the .zip files phimport reads
-```
-
-## Two shells
-
-The game is one; it comes in two windows, chosen when building (`-DPITFALL_SHELL=`):
-
-* **`classic`** (Windows, the default there): the original's window as Windows 95 showed it, its
-  menu bar with the levels, status bar, property sheet, dialogs, the CD's launcher and the
-  "256 color mode" warning.  The look of 1995, down to the warning (`Shell_Warning256=0` in
-  `pitfall.ini` leaves that out).
-* **`modern`** (Windows, macOS and Linux; the default off Windows): an SDL2 window of today, the
-  picture scaled by whole pixels (2x, 3x, 4x or fitted; `Shell_Scale`), full screen on F11 or
-  Alt+Enter, gamepads through SDL's mapping, and in place of the menu bar and the property sheet
-  an in-game menu on Esc (or a pad's Start), drawn in the game's own font over the paused picture:
-  resume, new game, the levels the original's File menu offered as they are unlocked, the options
-  (sound, music, ambient sounds, the volumes, the difficulty, the window, the keys) and quit.  On
-  macOS it builds as `Pitfall.app`, one app for Apple silicon and Intel Macs (macOS 10.15 and
-  later), sharp on Retina displays; full screen there is the Mac's own (Control-Command-F, the
-  window's green button, or Option-Return; F11 is macOS's Show Desktop unless that shortcut is
-  turned off).  The settings go to `~/Library/Application Support/Activision/Pitfall/`
-  (Linux: `~/.local/share/Activision/Pitfall/`), the game's files are looked for in `original`
-  next to the program (or inside the bundle's Resources, or given on the command line).
-
-## The original's files
-
-The game needs the original's files, which are not in this repository.  Put whatever you have
-of the disc into a folder named `assets-in` at the repository's root: the CD's folder (or any
-folder with `INIT.PH`), a `.zip` of it, an `.iso` (the data track alone: the game without its
-music), or a `.cue` with its `.img` / `.bin` (a CloneCD or CDRWIN image: the game and its
-music).  Configuring the project then adds an `import_assets` step to the build, which runs
-`phimport` to fill `original/` from it: the game's files as the disc lays them out (its
-`ASSETS\` folder is found), the audio tracks as `ASSETS\MUSIC\TrackNN.ogg` (through `ffmpeg`
-when it is on the path, else as WAV files), and, with `ffmpeg`, `INTRO.AVI` converted for the
-launcher (`intro.converted.avi`, Cinepak, which Windows still decodes where Indeo 3.2 is gone).
-Nothing already in `original/` is written again; `cmake --build build --target import_assets`
-runs it again, and `phimport --force <input> original` overwrites (with `ffmpeg` installed
-after an import without it, `phimport --force assets-in original` cuts the music again as Ogg
-and takes the WAV files away).  The European pressing's four-language launcher is understood too.
-That pressing has no `LEVEL24.PH`, the secret level Earthworm Jim's cheat sends `*50` to, though
-its `PITFALL.EXE` has the cheat: the tests then skip that level, and the cheat ends where the
-disc's own game ends, in the message "Could not find file ...level24.ph" and a clean exit.
-
-## Building
-
-Windows, the classic shell (Visual Studio 2022 or 2026):
-
-```
-cmake -S . -B build -G "Visual Studio 17 2022" -A x64      (or "Visual Studio 18 2026")
+cmake -S . -B build -A x64
 cmake --build build --config Release
 ctest --test-dir build -C Release
 ```
 
-This produces `build\Release\pitfall.exe` (the game), `pitstart.exe` (the CD's
-launcher), `phdump.exe` and `ph_tests.exe`.  The code builds with MSVC at `/W4 /permissive-` without a
-warning (checked with MSVC 14.50 and the Windows 10.0.26100 SDK, `ph_tests`
-giving the same results as the g++ build).  No third-party dependencies are needed for the classic shell
-beyond the vendored `third_party/stb/stb_vorbis.c`.
+This makes `pitfall.exe`, `pitstart.exe` (the CD's launcher), `phimport.exe`, `phdump.exe` and
+`ph_tests.exe` in `build\Release`.
 
-The modern shell, on any of the three (SDL 2.32 is fetched and built by CMake; on Linux the X11
-and ALSA development packages are wanted, on macOS Xcode's command-line tools and CMake 3.24 or
-newer):
+Modern version on macOS or Linux (on Windows, add `-A x64` and `--config Release`):
 
 ```
 cmake -S . -B build-modern -DCMAKE_BUILD_TYPE=Release -DPITFALL_SHELL=modern
 cmake --build build-modern
-ctest --test-dir build-modern --output-on-failure    (the tests, against original/)
-./build-modern/pitfall original                  (macOS: open build-modern/Pitfall.app)
+ctest --test-dir build-modern --output-on-failure
 ```
 
-On macOS the app is built for both Apple silicon and Intel (`CMAKE_OSX_ARCHITECTURES`,
-`arm64;x86_64` unless chosen otherwise), for macOS 10.15 and later (`CMAKE_OSX_DEPLOYMENT_TARGET`),
-and signed ad hoc as a whole, so it can be copied to another Mac.  It is not notarized: the
-first time it is opened there (from a download, AirDrop or a copy), macOS will not open it until
-*Open Anyway* is clicked in System Settings > Privacy & Security, or the quarantine is taken off
-with `xattr -dr com.apple.quarantine Pitfall.app`.
+Run it with `build-modern/pitfall original`, or `open build-modern/Pitfall.app` on a Mac. Add
+`-level N` to start on any level from 0 to 24.
 
-A MinGW / clang cross build of either shell works too (checked with llvm-mingw 20240619):
-
-```
-cmake -S . -B build-win -G Ninja -DCMAKE_SYSTEM_NAME=Windows ^
-      -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-clang++ -DCMAKE_RC_COMPILER=x86_64-w64-mingw32-windres
-```
-
-Run `pitfall.exe` from the repository root (it finds `original\`, with the files at its root
-or in its `ASSETS\` folder), or copy `original\*.PH` next to the executable, or pass the data
-directory:
-
-```
-build\Release\pitfall.exe original
-build\Release\pitfall.exe original -level 1     (a debugging start on a level)
-build\Release\pitfall.exe original J            (the original's "J": the joystick on)
-```
-
-`pitstart.exe` is the CD's launcher (`PITSTART.EXE`, which `AUTORUN.INF` starts):
-its window, pictures and icon are read from the CD's `PITSTART.EXE` and its
-music is `pitstart.wav`; Play runs the intro (`intro.avi`, through MCIWnd as
-the original does it: it plays where the system still decodes Indeo 3.2;
-elsewhere the launcher plays an `intro.converted.avi` beside it if there is
-one, the same film in a codec the system has, made with
-`ffmpeg -i INTRO.AVI -c:v cinepak -q:v 1 -c:a pcm_s16le intro.converted.avi`
-(Cinepak, which Windows still ships), and without that MCI says it cannot load
-the driver and the box stays black until a key, as the original's does) and
-then `pitfall.exe` from the launcher's folder; More...
-offers the CD's registration program, *Technical Help* (`tech.wri` in
-WordPad), the two About pictures and Uninstall (here: the port's
-`pitfall.ini`).  It looks for the CD's files as `pitfall.exe` looks for its data
-(`pitstart.exe original`, or `pitstart.exe original U` to uninstall, as
-`AUTORUN.INF`'s menu does).
-
-## The window
-
-The Win32 build is the original's window: its menu (*File*: New Game,
-Properties..., the levels, the Loltun vaults and the 2600 level, Exit; *Help*:
-the original's help file, About), the status bar with the level's name and the
-five icons that open the property sheet at their page, the "Loading..." box of
-a level load, Esc's "quit this adventure?" and the property sheet itself
-(System: the screen size, the game's priority; Sound; Difficulty; JoyStick;
-Keyboard: an action's box takes the key or button pressed in it).  A level
-comes on in the menu once it has been reached (outside the demos) and stays on
-from game to game; "Are you sure you want to give up the current game?" asks
-first when there are points to lose.  The pictures of the About box, the status
-bar, the property sheet and the cheats' dialogs come from `PITFALL.EXE` in the
-data directory (they are not in this repository); without it those places stay
-blank.  The settings are kept in `pitfall.ini` next to the executable, under the
-original's registry value names.
-
-## Controls (original defaults, changed in the Keyboard and JoyStick pages)
-
-| action | key   | joystick |
-|--------|-------|----------|
-| move   | arrow keys | axes |
-| jump   | W     | button 1 |
-| shoot  | E     | button 2 |
-| whip   | Q     | button 3 |
-| select | Space | button 4 |
-| pause  | Pause (any other key ends it) | |
-| help   | F1    |          |
-| quit   | Esc (the modern shell: Esc opens its menu, F11 full screen) |          |
-| Harry's special idle | F10 or Alt+Y |  |
-| full screen | Alt+Enter (an addition; the original has it in the System page); the modern shell on macOS also Control-Command-F or the green button | |
-
-A gamepad works alongside the keyboard without any setting (an addition: the
-original's JoyStick option is the joystick API's one stick and four buttons).
-In the classic shell an Xbox pad is read through XInput, a PlayStation (DualShock, DualSense) or
-other pad through the joystick API with its d-pad; the modern shell uses SDL's
-controller mapping, and its Start button opens the menu.  The d-pad or the left stick moves, A / cross jumps, B /
-circle shoots, X / square whips, Y / triangle (or Start, Back / Options,
-Create) selects; in the vaults the shoot, jump and whip buttons pull levers 1,
-2 and 3, and any button serves where "any key" does (the title, the scenes,
-ending a pause).
-
-The original's typed cheat codes work as they did (type them while playing),
-"vampire" and "hatman" among them; `game/cheats.cpp` lists them all.
-
-## Music
-
-The original plays the game CD's audio tracks (2 .. 23) as music and ambient
-sound.  The Win32 build plays the disc itself when it is in the drive (through
-MCI, as the original); otherwise rip the tracks to files named `TrackNN.wav` or `TrackNN.ogg` (`Track 02`,
-`02 - title.ogg` and the like work too) in `original\ASSETS\MUSIC` (or
-`original\MUSIC`, or any folder named by the `PITFALL_MUSIC_DIR` environment
-variable).  The Sound page's *CD Music* and *CD Ambient Sounds* are the
-original's two CD options (one at a time); without the files the game is
-silent where the CD would play, as the original is without its disc.
-
-The game starts as the original: the intro, the title, and while nobody
-presses a key the three attract demos and the intro again with the credits.
-`-level N` on the command line starts any of the 25 levels directly, the
-cutscenes (21 the intro, 22 the reunion, 23 the end and its credits) and
-Earthworm Jim's secret level 24 included.
+**Sharing the Mac app:** it isn't notarized, so another Mac blocks it the first time. Allow it in
+System Settings › Privacy & Security › Open Anyway, or run
+`xattr -dr com.apple.quarantine Pitfall.app`.
 
 ## Tools
 
+`phdump` is built next to the game.
+
 ```
-python tools\phtool.py original\INIT.PH out\init          # every sprite as PNG + JSON
-python tools\phtool.py original\LEVEL01.PH out\l1 --level 1   # background, parallax, sprites
-build\Release\phdump.exe info original                     # inventory of every file
-build\Release\phdump.exe frame original 1 300 1800 f.ppm   # render a game frame
-build\Release\phdump.exe sprite original hyirun harry.ppm
-build\Release\phdump.exe wav original 1 sound01.wav
-build\Release\phdump.exe objects original 2                  # .als object ids / types of a level
-tools\ghidra\export_decomp.bat                             # regenerate re\pitfall_decomp.c
-tools\ghidra\export_handlers.bat                           # (headless decompiler: currently every function times out; the port is read from disassembly)
-python tools\gen_tables.py && python tools\gen_anim_scripts.py && python tools\gen_slot_bindings.py && python tools\gen_arena_data.py   # regenerate the data tables from PITFALL.EXE / re\pitfall_decomp.c
-python re\pc_dis.py 0x412fc2 0x414100                       # annotated x86 listing of a handler (needs objdump)
-python tools\genesis_dis.py 66                               # the same handler in the Genesis ROM (needs capstone)
+phdump info original                         # list everything in the game's data files
+phdump frame original 1 300 1800 frame.ppm   # render a frame of level 1
+phdump sprite original hyirun harry.ppm      # save one of Harry's sprites
+python3 tools/phtool.py original/ASSETS/INIT.PH out/init   # every sprite as PNG + JSON
 ```
 
-`re/README.md` describes the evidence, `re/drivers/README.md` the headless
-debug drivers used to verify each object handler and `re/verify/README.md` the
-tools that run the original under Wine and compare it with the port.
+## What's where
 
-## Status
+| Folder | Contents |
+|--------|----------|
+| `src/ph` | readers for the game's data files: sprites, levels, sounds, palette |
+| `src/engine` | renderer, input, sound mixer and settings |
+| `src/game` | the game: Harry, the objects, the bosses, the levels, the menus and cutscenes |
+| `src/app` | the classic and modern windows, and the CD launcher |
+| `src/tools` | `phdump` and `phimport` |
+| `tests` | tests that play parts of the game (they need your game files) |
+| `docs` | the file formats, a map of the engine, and what differs from the original |
+| `tools`, `re` | scripts used in the reconstruction, and the checks against the original |
+| `third_party` | stb_vorbis and miniz |
 
-The engine half of the binary (assets, palette, renderer, input, options,
-sound, CD audio, the level transitions with their fades, the HUD, the
-attract-mode demos) and most of the Genesis-derived game logic are
-reconstructed: Harry's whole state machine, the object system with 140
-behaviour types, the camera and spawner, the triggers and level scripts, every
-boss, the Loltun vaults, the continue screen, the map screen, the Atari 2600
-level, the title, the intro, the reunion, the end and its credits, the
-typed cheat codes, the waterfalls and water effects, the original's
-window with its menu, status bar, dialogs and property sheet, and the CD's
-launcher.  Run side by
-side with the original (under Wine, captured frame by frame for five minutes),
-the whole attract run — the title, the three demos and the intro — matches it
-pixel for pixel but for the time the original's loads take (and the fades, which
-the original's screen does not show on today's displays), and so do 50-second
-runs of eighteen of the levels picked from the menu, with their deaths,
-restarts and continue screens.  Read while it runs, the original's memory (the
-logic's variables, the object records, the random generator) matches the
-port's byte for byte, tick by tick, on every one of those levels, through runs
-with the whip, the sling and the vaults' levers, kills, deaths and restarts
-(the pointers in it too, kept as the original's addresses), and through runs
-that play the original from its own memory: the four bosses' fights to their
-ends, sweeps over whole levels, the vaults' Simon games and random play, on
-past a level's end through the map screen into the next level, through the
-vortices into the vaults, the 2600 level and Earthworm Jim's level and back,
-through the continue screen's "yes" and "no" to the game over, the title and
-a demo, and from the Warrior Spirit's death through the reunion and the
-end's credits; on the hard difficulty too, and with Harry hurt and killed, the
-sound channels' state compared as well.  Nine of those runs were recorded on
-screen too (the Ceiba jaguar's fight on through the map screen into Xibalba
-Falls, random play, the continue screen, a vault, Earthworm Jim's level, the
-2600 level, the Warrior Spirit's fight, the reunion, the end and its credits):
-every one of their 24,114 pictures matches the port's of its tick pixel for
-pixel, but the original's load screens.  What still differs
-from the original is listed in `docs/RECONSTRUCTION_LEDGER.md` (the platform's
-parts: the mixer for Miles, the ini file for the registry, the full-screen
-modes, WinHelp).
+## How faithful is it?
 
-As the original, the Win32 build warns "Pitfall must be played in 256 color
-mode for optimum performance." on a display that is not a 256-colour one (every
-display now) and then uses the whole palette, as the original does there.
+Harry, all 140 kinds of object, every boss, the vaults, the map screen, the hidden Atari 2600
+level, the cutscenes, the cheats, and the original's window and launcher have all been rebuilt.
+
+It was checked against the original running under Wine:
+
+- The attract mode and 50-second runs of 18 levels match frame for frame, apart from the
+  original's loading pauses and fades.
+- The game's memory matches byte for byte, tick by tick. That covers boss fights, whole levels,
+  the vaults, the 2600 level and the ending, on both difficulties.
+- Nine long recorded runs, 24,114 frames in all, match pixel for pixel apart from loading
+  screens.
+
+The remaining differences come from the platform: a software sound mixer instead of Miles Sound
+System, an ini file instead of the registry, the full-screen modes, and the help files. They're
+listed in `docs/RECONSTRUCTION_LEDGER.md`.
 
 ## Legal
 
-This repository contains no original game data: `original/` and `assets-in/` must hold your
-own copy of the game (and `original_genesis/` your own ROM, if used); all are excluded by
-`.gitignore`.  The reconstruction is for preservation and study; its own code and documentation
-are under the MIT licence (`LICENSE`), which grants nothing concerning the game, Activision's.
-
-The work exists in two repositories.  The private one, `pitfall-the-mayan-decompilation`,
-holds the whole history, `re/`'s decompilation, disassembly listings, symbol dumps and
-screenshots of the original program included.  The public one,
-`pitfall-the-mayan-recompilation`, is the same history with those files taken out of every
-commit (`tools/publish.sh` makes it); it keeps the source, the tests, the tools, the
-documentation, the verification tools (`re/verify`) and the drivers.  Work goes into the
-private one and is published from there.
+This project contains no game data: `original/` and `assets-in/` are for your own copy and are
+ignored by git. It is made for preservation and study, and is not affiliated with Activision. The
+code and documentation are under the MIT licence (`LICENSE`), which covers nothing of the game
+itself.

@@ -7,12 +7,13 @@
 # again after new commits here; the public history is rewritten each time, so nobody should
 # commit to the public repository directly (changes go here).
 #
-# What the public repository does not get (kept here, see re/README.md):
+# What the public repository does not get (kept here, see re/EVIDENCE.md):
 #   re/pitfall_decomp.c and its .data.txt / .symbols.txt, re/pitfall_handlers.c   Ghidra's decompile
 #   re/listings/                                                                    annotated disassembly
 #   re/evidence1/                                                                   the REA evidence bundle
 #   re/index.tsv re/procs.* re/strings.* re/imports.txt re/sprite_slots*.txt       symbol and string dumps
 #   re/renders/                                                                     frames rendered during the work
+#   re/EVIDENCE.md                                                                  the index of the above
 # Everything else goes: the source, the tests, the tools, the docs, re/verify and re/drivers.
 set -eu
 URL=${1:?usage: publish.sh <public repository URL or path> [branch]}
@@ -29,12 +30,12 @@ git filter-branch -f --prune-empty --index-filter '
     re/pitfall_decomp.c re/pitfall_decomp.c.data.txt re/pitfall_decomp.c.symbols.txt re/pitfall_handlers.c \
     re/listings re/evidence1 re/renders \
     re/index.tsv re/procs.tsv re/procs.txt re/strings.tsv re/strings.txt re/imports.txt \
-    re/sprite_slots.txt re/sprite_slots2.txt re/sprite_slots_all.txt' -- "$BRANCH" > /dev/null
+    re/sprite_slots.txt re/sprite_slots2.txt re/sprite_slots_all.txt re/EVIDENCE.md' -- "$BRANCH" > /dev/null
 # the unfiltered history goes (the backup ref and the clone's remote branches), and the branch
 # that is pushed is checked once more
 git update-ref -d "refs/original/refs/heads/$BRANCH"
 git remote remove origin
-if git log "$BRANCH" --name-only --pretty=format: | sort -u | grep -q -E '^re/(listings|evidence1|renders)/|^re/pitfall_decomp|^re/pitfall_handlers|^re/strings|^re/procs|^re/index.tsv|^re/imports|^re/sprite_slots'; then
+if git log "$BRANCH" --name-only --pretty=format: | sort -u | grep -q -E '^re/(listings|evidence1|renders)/|^re/pitfall_decomp|^re/pitfall_handlers|^re/strings|^re/procs|^re/index.tsv|^re/imports|^re/sprite_slots|^re/EVIDENCE.md'; then
   echo "publish.sh: a removed path is still in the history" >&2; exit 1
 fi
 git reflog expire --expire=now --all && git gc -q --prune=now
