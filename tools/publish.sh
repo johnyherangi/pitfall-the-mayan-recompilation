@@ -30,11 +30,14 @@ git filter-branch -f --prune-empty --index-filter '
     re/listings re/evidence1 re/renders \
     re/index.tsv re/procs.tsv re/procs.txt re/strings.tsv re/strings.txt re/imports.txt \
     re/sprite_slots.txt re/sprite_slots2.txt re/sprite_slots_all.txt' -- "$BRANCH" > /dev/null
-# what is left of re/ in every commit, to be sure
-if git log --all --name-only --pretty=format: | sort -u | grep -q -E '^re/(listings|evidence1|renders)/|^re/pitfall_decomp|^re/pitfall_handlers|^re/strings|^re/procs|^re/index.tsv|^re/imports|^re/sprite_slots'; then
+# the unfiltered history goes (the backup ref and the clone's remote branches), and the branch
+# that is pushed is checked once more
+git update-ref -d "refs/original/refs/heads/$BRANCH"
+git remote remove origin
+if git log "$BRANCH" --name-only --pretty=format: | sort -u | grep -q -E '^re/(listings|evidence1|renders)/|^re/pitfall_decomp|^re/pitfall_handlers|^re/strings|^re/procs|^re/index.tsv|^re/imports|^re/sprite_slots'; then
   echo "publish.sh: a removed path is still in the history" >&2; exit 1
 fi
-echo "publish.sh: $(git rev-list --count "$BRANCH") commits, $(git ls-files | wc -l) files at the tip"
-git remote set-url origin "$URL"
-git push -q --force origin "$BRANCH"
+git reflog expire --expire=now --all && git gc -q --prune=now
+echo "publish.sh: $(git rev-list --count "$BRANCH") commits, $(git ls-files | wc -l) files at the tip, $(du -sh .git | cut -f1) of history"
+git push -q --force "$URL" "$BRANCH:$BRANCH"
 echo "publish.sh: pushed $BRANCH to $URL"
