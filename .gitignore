@@ -18,6 +18,10 @@ out/
 CMakeUserPresets.json
 *.user
 
+# macOS: Finder's folder settings, and the ._ files it leaves on other disks
+.DS_Store
+._*
+
 # Runtime / scratch files
 re/verify/memsample
 re/verify/xgrab

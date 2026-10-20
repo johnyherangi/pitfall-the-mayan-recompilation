@@ -7,7 +7,8 @@
 // the audio tracks, which are the game's music: each goes to ASSETS/MUSIC/TrackNN as an Ogg
 // Vorbis file when ffmpeg is on the path, else as a WAV).  With ffmpeg the Indeo 3.2 INTRO.AVI is
 // also converted to ASSETS/intro.converted.avi (Cinepak), which the launcher plays where Indeo
-// cannot be decoded.  Nothing already in the output folder is written again (--force does).
+// cannot be decoded.  Nothing already in the output folder is written again (--force does: the
+// tracks cut again replace what was there, an Ogg the WAV of an import without ffmpeg).
 //
 //   phimport assets-in original          (a folder of inputs: each is taken in turn)
 //   phimport Pitfall.cue original
@@ -160,7 +161,8 @@ void writeWavHeader(std::ofstream& f, uint32_t dataBytes) {
     f.write(reinterpret_cast<const char*>(h), 44);
 }
 
-// An audio track's frames, through ffmpeg to Ogg (ASSETS/MUSIC/TrackNN.ogg) or as a WAV.
+// An audio track's frames, through ffmpeg to Ogg (ASSETS/MUSIC/TrackNN.ogg) or as a WAV.  The
+// track's other file goes (with --force): the game would take a WAV left there over the new Ogg.
 void audioTrack(std::ifstream& img, int n, long long from, long long to, const fs::path& musicDir) {
     char name[32];
     std::snprintf(name, sizeof name, "Track%02d", n);
@@ -179,12 +181,14 @@ void audioTrack(std::ifstream& img, int n, long long from, long long to, const f
                                 " -c:a libvorbis -q:a 6 " + shq(ogg.string());
         const int rc = std::system(cmd.c_str());
         fs::remove(raw, ec);
-        if (rc == 0 && there(ogg)) { ++g_tracks; return; }
+        if (rc == 0 && there(ogg)) { fs::remove(wav, ec); ++g_tracks; return; }
         std::fprintf(stderr, "phimport: ffmpeg could not encode track %d; a WAV instead\n", n);
     }
     std::ofstream w(wav, std::ios::binary);
     writeWavHeader(w, uint32_t(bytes));
     w.write(buf.data(), bytes);
+    w.close();
+    if (w) fs::remove(ogg, ec);
     ++g_tracks;
 }
 
@@ -341,7 +345,9 @@ int main(int argc, char** argv) {
     const fs::path out = inputs.back();
     inputs.pop_back();
     if (g_ffmpeg == "-") g_ffmpeg.clear(); else g_ffmpeg = findFfmpeg();
-    if (g_ffmpeg.empty()) std::printf("phimport: no ffmpeg on the path: the music as WAV files, the intro left as it is\n");
+    if (g_ffmpeg.empty())
+        std::printf("phimport: no ffmpeg on the path: the music as WAV files, the intro left as it is "
+                    "(with ffmpeg installed, phimport --force cuts the tracks again as Ogg)\n");
     std::error_code ec;
     fs::create_directories(out, ec);
     bool any = false;

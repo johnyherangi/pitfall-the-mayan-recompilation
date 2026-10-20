@@ -3,16 +3,22 @@
 // The same game as the classic shell's, run the same way (a logic tick every 17 ms, the 320x224
 // view through the palette into a texture, the sound mixed in the audio callback, the keys as the
 // Windows virtual-key codes the engine's bindings use), in a window of today: the picture scaled
-// by whole numbers (crisp), full screen on F11 or Alt+Enter, gamepads through SDL's mapping, and
-// in place of the original's menu bar and property sheet an in-game menu on Esc (or a pad's
-// Start) drawn in the game's own 8x8 font over the paused picture: resume, new game, the levels
-// the original's File menu offered (as they are unlocked), the options and quit.  The settings
-// are the same pitfall.ini (in the user's configuration folder on macOS and Linux).
+// by whole numbers (crisp), full screen on F11 or Alt+Enter (on macOS also Ctrl+Cmd+F and the
+// green button, the Mac's own), gamepads through SDL's mapping, and in place of the original's
+// menu bar and property sheet an in-game menu on Esc (or a pad's Start) drawn in the game's own
+// 8x8 font over the paused picture: resume, new game, the levels the original's File menu offered
+// (as they are unlocked), the options and quit.  The settings are the same pitfall.ini (in the
+// user's configuration folder on macOS and Linux).
 #include "engine/framebuffer.h"
 #include "engine/options.h"
 #include "game/game.h"
 
 #include <SDL.h>
+#ifdef __APPLE__
+#include <SDL_syswm.h>
+#include <objc/message.h>
+#include <objc/runtime.h>
+#endif
 
 #include <algorithm>
 #include <cstdio>
@@ -74,6 +80,48 @@ std::string keyName(int code) {
 void audioCallback(void* userdata, Uint8* stream, int len) {
     auto* g = static_cast<game::Game*>(userdata);
     g->mixer().render(reinterpret_cast<int16_t*>(stream), len / 4);
+}
+
+// ----------------------------------------------------------- full screen --
+// SDL's full-screen desktop, except on macOS: there the window's own full screen (a Space of its
+// own, clear of a MacBook's camera notch), which the title bar's green button and SDL's Window menu
+// (Toggle Full Screen, Ctrl+Cmd+F, as in any Mac application; F11 is the system's Show Desktop)
+// give too, and which SDL does not count as full screen.  So it is asked of the NSWindow and
+// toggled on it, through the Objective-C runtime, and all of these and the option agree.
+#ifdef __APPLE__
+void* nsWindow(SDL_Window* win) {
+    SDL_SysWMinfo info;
+    SDL_VERSION(&info.version);
+    if (!SDL_GetWindowWMInfo(win, &info) || info.subsystem != SDL_SYSWM_COCOA) return nullptr;
+    return info.info.cocoa.window;
+}
+// objc_msgSend as the type of the message sent (through void (*)(), which any function type takes)
+template <typename Fn> Fn objcSend() { return reinterpret_cast<Fn>(reinterpret_cast<void (*)()>(objc_msgSend)); }
+#endif
+
+bool isFullscreen(SDL_Window* win) {
+#ifdef __APPLE__
+    void* w = nsWindow(win);
+    if (!w) return false;
+    constexpr unsigned long kStyleMaskFullScreen = 1ul << 14;                  // NSWindowStyleMaskFullScreen
+    return (objcSend<unsigned long (*)(void*, SEL)>()(w, sel_registerName("styleMask")) & kStyleMaskFullScreen) != 0;
+#else
+    return (SDL_GetWindowFlags(win) & SDL_WINDOW_FULLSCREEN) != 0;
+#endif
+}
+
+void setFullscreen(SDL_Window* win, bool on) {
+#ifdef __APPLE__
+    if (on == isFullscreen(win)) return;
+    // as SDL itself does it: toggleFullScreen: on the main thread's next turn (the window is then
+    // surely on the screen, at the start too); the change comes back as SDL window events
+    void* w = nsWindow(win);
+    if (!w) return;
+    objcSend<void (*)(void*, SEL, SEL, void*, BOOL)>()(w, sel_registerName("performSelectorOnMainThread:withObject:waitUntilDone:"),
+                                                      sel_registerName("toggleFullScreen:"), nullptr, BOOL(0));
+#else
+    SDL_SetWindowFullscreen(win, on ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
+#endif
 }
 
 // ----------------------------------------------------------------- files --
@@ -452,8 +500,15 @@ struct Shell {
 };
 
 void Shell::applyWindow() {
-    SDL_SetWindowFullscreen(win, options.fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
-    if (!options.fullscreen && options.scale > 0) {
+#ifdef __APPLE__
+    // (a window leaving the Mac's full screen takes back its own size at the animation's end, which
+    // a size set now would not survive: the scale's size is for a window that stays a window)
+    const bool sized = !options.fullscreen && !isFullscreen(win);
+#else
+    const bool sized = !options.fullscreen;
+#endif
+    setFullscreen(win, options.fullscreen);
+    if (sized && options.scale > 0) {
         SDL_SetWindowSize(win, engine::kViewW * options.scale, engine::kViewH * options.scale);
         SDL_SetWindowPosition(win, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
     }
@@ -495,14 +550,22 @@ int main(int argc, char** argv) {
     options.scale = scale;
     const int winW = scale ? engine::kViewW * scale : std::max(options.windowSizeX, engine::kViewW);
     const int winH = scale ? engine::kViewH * scale : std::max(options.windowSizeY, engine::kViewH);
+#ifdef __APPLE__
+    const Uint32 fullscreenFlag = 0;                       // (the Mac's own full screen: after the window opens)
+#else
+    const Uint32 fullscreenFlag = options.fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0;
+#endif
     SDL_Window* win = SDL_CreateWindow("Pitfall: The Mayan Adventure", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, winW, winH,
-                                       SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI | (options.fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0));
+                                       SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI | fullscreenFlag);
     SDL_Renderer* ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
     if (!ren) ren = SDL_CreateRenderer(win, -1, 0);
     SDL_RenderSetLogicalSize(ren, engine::kViewW, engine::kViewH);
     SDL_RenderSetIntegerScale(ren, scale > 0 || options.fullscreen ? SDL_TRUE : SDL_FALSE);
     SDL_SetRenderDrawColor(ren, 0, 0, 0, 255);
     SDL_Texture* tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, engine::kViewW, engine::kViewH);
+#ifdef __APPLE__
+    if (options.fullscreen) setFullscreen(win, true);
+#endif
 
     SDL_AudioSpec want{}, have{};
     want.freq = engine::Mixer::kOutputRate; want.format = AUDIO_S16SYS; want.channels = 2; want.samples = 1024;
@@ -535,6 +598,16 @@ int main(int argc, char** argv) {
         while (SDL_PollEvent(&ev)) {
             if (ev.type == SDL_QUIT) running = false;
             if (ev.type == SDL_CONTROLLERDEVICEADDED || ev.type == SDL_CONTROLLERDEVICEREMOVED) openPads();
+#ifdef __APPLE__
+            // the green button, Ctrl+Cmd+F or the end of the option's own change: the option
+            // follows the window (SDL sends window events once a full-screen change is done)
+            if (ev.type == SDL_WINDOWEVENT && isFullscreen(win) != options.fullscreen) {
+                options.fullscreen = !options.fullscreen;
+                SDL_RenderSetIntegerScale(ren, options.scale > 0 || options.fullscreen ? SDL_TRUE : SDL_FALSE);
+                shell.refreshValues();
+                redraw = true;
+            }
+#endif
             if (ev.type == SDL_TEXTINPUT && !shell.open())            // WM_CHAR: the typed cheat codes
                 for (const char* p = ev.text.text; *p; ++p) g->typeChar(uint8_t(*p));
             if (ev.type == SDL_KEYDOWN) {
@@ -640,7 +713,7 @@ int main(int argc, char** argv) {
     if (dev) SDL_CloseAudioDevice(dev);
     if (joy) SDL_JoystickClose(joy);
     for (SDL_GameController* c : pads) SDL_GameControllerClose(c);
-    if (!(SDL_GetWindowFlags(win) & SDL_WINDOW_FULLSCREEN_DESKTOP)) SDL_GetWindowSize(win, &options.windowSizeX, &options.windowSizeY);
+    if (!isFullscreen(win)) SDL_GetWindowSize(win, &options.windowSizeX, &options.windowSizeY);
     options.save(ini);
     SDL_DestroyTexture(tex); SDL_DestroyRenderer(ren); SDL_DestroyWindow(win);
     SDL_Quit();

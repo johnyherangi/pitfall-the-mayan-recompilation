@@ -1,4 +1,17 @@
 cmake_minimum_required(VERSION 3.21)
+
+# macOS: one app for Apple silicon and Intel Macs (both architectures), running on macOS 10.15 and
+# later (std::filesystem's first), unless the configure line or the environment chooses.  An empty
+# value (CMake's own, from an earlier configure) counts as unchosen.  These go before project().
+if(CMAKE_HOST_APPLE)
+    if(NOT CMAKE_OSX_DEPLOYMENT_TARGET AND NOT DEFINED ENV{MACOSX_DEPLOYMENT_TARGET})
+        set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15" CACHE STRING "The oldest macOS the build runs on" FORCE)
+    endif()
+    if(NOT CMAKE_OSX_ARCHITECTURES AND NOT DEFINED ENV{CMAKE_OSX_ARCHITECTURES})
+        set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "The macOS architectures built (both: a universal app)" FORCE)
+    endif()
+endif()
+
 project(PitfallMayanRecompilation LANGUAGES C CXX)
 
 # ---------------------------------------------------------------------------
@@ -120,7 +133,14 @@ add_custom_target(import_assets
     COMMENT "The original's files from ${PITFALL_ASSETS_DIR} into ${PITFALL_DATA_DIR}"
     VERBATIM)
 file(GLOB _assets_in "${PITFALL_ASSETS_DIR}/*")
-if(_assets_in AND NOT EXISTS "${PITFALL_DATA_DIR}/INIT.PH" AND NOT EXISTS "${PITFALL_DATA_DIR}/init.ph")
+list(FILTER _assets_in EXCLUDE REGEX "/\\.[^/]*$")      # (hidden files, as Finder's .DS_Store, are not a disc)
+set(_have_data FALSE)
+foreach(_init INIT.PH init.ph ASSETS/INIT.PH ASSETS/init.ph)   # (the files at the folder's root, or the disc's layout)
+    if(EXISTS "${PITFALL_DATA_DIR}/${_init}")
+        set(_have_data TRUE)
+    endif()
+endforeach()
+if(_assets_in AND NOT _have_data)
     set_target_properties(import_assets PROPERTIES EXCLUDE_FROM_ALL FALSE)
     add_custom_command(TARGET import_assets POST_BUILD COMMAND ${CMAKE_COMMAND} -E echo "import_assets: done")
     message(STATUS "assets-in/ has files and ${PITFALL_DATA_DIR} has no INIT.PH: the build will import them")
@@ -130,14 +150,18 @@ endif()
 
 # ---- the game executable ---------------------------------------------------
 if(PITFALL_SHELL STREQUAL "modern")
+    if(APPLE AND CMAKE_VERSION VERSION_LESS 3.24)
+        message(FATAL_ERROR "The modern shell on macOS needs CMake 3.24 or newer (SDL's build asks for it): brew install cmake")
+    endif()
     include(FetchContent)
     FetchContent_Declare(SDL2
         GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
-        GIT_TAG        release-2.30.9
+        GIT_TAG        release-2.32.10
         GIT_SHALLOW    TRUE)
     set(SDL_TEST OFF CACHE BOOL "" FORCE)
     set(SDL_SHARED OFF CACHE BOOL "" FORCE)
     set(SDL_STATIC ON CACHE BOOL "" FORCE)
+    set(SDL_CCACHE OFF CACHE BOOL "" FORCE)    # (SDL's ccache step declares CMake 3.4...3.5, which CMake 3.31+ warns of)
     FetchContent_MakeAvailable(SDL2)
     add_executable(pitfall WIN32 MACOSX_BUNDLE src/app/main_sdl.cpp)
     target_link_libraries(pitfall PRIVATE pitfall_game SDL2::SDL2-static SDL2::SDL2main)
@@ -146,8 +170,16 @@ if(PITFALL_SHELL STREQUAL "modern")
         target_link_options(pitfall PRIVATE -static)   # (no MinGW DLLs to ship)
     endif()
     if(APPLE)
+        # The bundle's Info.plist: CMake's keys and NSHighResolutionCapable (without it macOS draws
+        # the window at half resolution on a Retina display and scales it up, soft), with the
+        # oldest macOS the build targets.
+        set(PITFALL_MACOS_MINIMUM "${CMAKE_OSX_DEPLOYMENT_TARGET}")
+        if(NOT PITFALL_MACOS_MINIMUM)
+            set(PITFALL_MACOS_MINIMUM "10.15")
+        endif()
         set_target_properties(pitfall PROPERTIES
             OUTPUT_NAME "Pitfall"
+            MACOSX_BUNDLE_INFO_PLIST "${CMAKE_SOURCE_DIR}/src/app/Info.plist.in"
             MACOSX_BUNDLE_BUNDLE_NAME "Pitfall: The Mayan Adventure"
             MACOSX_BUNDLE_GUI_IDENTIFIER "com.activision.pitfall.recompilation"
             MACOSX_BUNDLE_BUNDLE_VERSION "1.0"
@@ -155,6 +187,12 @@ if(PITFALL_SHELL STREQUAL "modern")
             MACOSX_BUNDLE_ICON_FILE "pitfall.icns")
         target_sources(pitfall PRIVATE src/app/pitfall.icns)
         set_source_files_properties(src/app/pitfall.icns PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+        # An ad-hoc signature over the whole bundle (the linker's covers the executable alone), so
+        # that the app checks out as one on another Mac; build.sh signs it again when "pack" adds
+        # the game's files.
+        add_custom_command(TARGET pitfall POST_BUILD
+            COMMAND codesign --force --sign - "$<TARGET_BUNDLE_DIR:pitfall>"
+            VERBATIM)
     endif()
 elseif(PITFALL_SHELL STREQUAL "classic")
     add_executable(pitfall WIN32 src/app/main_win32.cpp src/app/win32_sheet.cpp src/app/win32_cd.cpp src/app/win32_gamepad.cpp src/app/pitfall.rc)

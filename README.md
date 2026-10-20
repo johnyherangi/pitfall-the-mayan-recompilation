@@ -9,17 +9,19 @@ Ghidra 12.1.
 ## Quick start
 
 1. Install the tools: on Windows, Visual Studio 2022 or 2026 with *Desktop development with
-   C++* (it brings CMake); on macOS, Xcode's command-line tools and CMake; on Linux, CMake, a
-   C++20 compiler and the SDL development packages `build.sh` names.  `ffmpeg` on the path is
-   optional (music as Ogg rather than WAV, and the launcher's intro).
+   C++* (it brings CMake); on macOS, Xcode's command-line tools and CMake 3.24 or newer
+   (`brew install cmake`); on Linux, CMake, a C++20 compiler and the SDL development packages
+   `build.sh` names.  `ffmpeg` on the path is optional (music as Ogg rather than WAV, and the
+   launcher's intro; `brew install ffmpeg` on macOS).
 2. Put what you have of the game's disc into a folder named `assets-in` here: the CD's folder, a
    `.zip` of it, an `.iso`, or a `.cue` with its `.img` / `.bin` image (which also carries the
    music).
 3. Run `build.bat` (Windows; `build.bat modern` for the modern window, `build.bat both run` to
-   build both and play) or `./build.sh` (macOS, Linux; `./build.sh run`).  The script imports the
-   game's files into `original/`, builds, and leaves the game in `dist\classic\` or
-   `dist\modern\`, ready to run from there.  `pack` as a further word copies `original/` in
-   beside it, for a folder that can be moved to another machine.
+   build both and play) or `./build.sh` (macOS, Linux; `./build.sh run`, and `./build.sh test`
+   to run the tests against your files).  The script imports the game's files into `original/`,
+   builds, and leaves the game in `dist\classic\` or `dist\modern\`, ready to run from there.
+   `pack` as a further word copies `original/` in beside it, for a folder that can be moved to
+   another machine.
 
 ```
 original/        the shipped game files (PITFALL.EXE, INIT.PH, LEVEL00-24.PH, ...) -- not in git
@@ -52,7 +54,10 @@ The game is one; it comes in two windows, chosen when building (`-DPITFALL_SHELL
   an in-game menu on Esc (or a pad's Start), drawn in the game's own font over the paused picture:
   resume, new game, the levels the original's File menu offered as they are unlocked, the options
   (sound, music, ambient sounds, the volumes, the difficulty, the window, the keys) and quit.  On
-  macOS it builds as `Pitfall.app`; the settings go to `~/Library/Application Support/Activision/Pitfall/`
+  macOS it builds as `Pitfall.app`, one app for Apple silicon and Intel Macs (macOS 10.15 and
+  later), sharp on Retina displays; full screen there is the Mac's own (Control-Command-F, the
+  window's green button, or Option-Return; F11 is macOS's Show Desktop unless that shortcut is
+  turned off).  The settings go to `~/Library/Application Support/Activision/Pitfall/`
   (Linux: `~/.local/share/Activision/Pitfall/`), the game's files are looked for in `original`
   next to the program (or inside the bundle's Resources, or given on the command line).
 
@@ -68,8 +73,9 @@ music).  Configuring the project then adds an `import_assets` step to the build,
 when it is on the path, else as WAV files), and, with `ffmpeg`, `INTRO.AVI` converted for the
 launcher (`intro.converted.avi`, Cinepak, which Windows still decodes where Indeo 3.2 is gone).
 Nothing already in `original/` is written again; `cmake --build build --target import_assets`
-runs it again, and `phimport --force <input> original` overwrites.  The European pressing's
-four-language launcher is understood too.
+runs it again, and `phimport --force <input> original` overwrites (with `ffmpeg` installed
+after an import without it, `phimport --force assets-in original` cuts the music again as Ogg
+and takes the WAV files away).  The European pressing's four-language launcher is understood too.
 
 ## Building
 
@@ -87,14 +93,23 @@ warning (checked with MSVC 14.50 and the Windows 10.0.26100 SDK, `ph_tests`
 giving the same results as the g++ build).  No third-party dependencies are needed for the classic shell
 beyond the vendored `third_party/stb/stb_vorbis.c`.
 
-The modern shell, on any of the three (SDL 2.30 is fetched and built by CMake; on Linux the X11
-and ALSA development packages are wanted, on macOS Xcode's command-line tools):
+The modern shell, on any of the three (SDL 2.32 is fetched and built by CMake; on Linux the X11
+and ALSA development packages are wanted, on macOS Xcode's command-line tools and CMake 3.24 or
+newer):
 
 ```
 cmake -S . -B build-modern -DCMAKE_BUILD_TYPE=Release -DPITFALL_SHELL=modern
 cmake --build build-modern
+ctest --test-dir build-modern --output-on-failure    (the tests, against original/)
 ./build-modern/pitfall original                  (macOS: open build-modern/Pitfall.app)
 ```
+
+On macOS the app is built for both Apple silicon and Intel (`CMAKE_OSX_ARCHITECTURES`,
+`arm64;x86_64` unless chosen otherwise), for macOS 10.15 and later (`CMAKE_OSX_DEPLOYMENT_TARGET`),
+and signed ad hoc as a whole, so it can be copied to another Mac.  It is not notarized: the
+first time it is opened there (from a download, AirDrop or a copy), macOS will not open it until
+*Open Anyway* is clicked in System Settings > Privacy & Security, or the quarantine is taken off
+with `xattr -dr com.apple.quarantine Pitfall.app`.
 
 A MinGW / clang cross build of either shell works too (checked with llvm-mingw 20240619):
 
@@ -159,7 +174,7 @@ original's registry value names.
 | help   | F1    |          |
 | quit   | Esc (the modern shell: Esc opens its menu, F11 full screen) |          |
 | Harry's special idle | F10 or Alt+Y |  |
-| full screen | Alt+Enter (an addition; the original has it in the System page) | |
+| full screen | Alt+Enter (an addition; the original has it in the System page); the modern shell on macOS also Control-Command-F or the green button | |
 
 A gamepad works alongside the keyboard without any setting (an addition: the
 original's JoyStick option is the joystick API's one stick and four buttons).

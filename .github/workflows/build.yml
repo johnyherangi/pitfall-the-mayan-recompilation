@@ -24,7 +24,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DPITFALL_SHELL=modern
-      - run: cmake --build build
+      - run: cmake --build build --parallel
+      # the app as built: both architectures, macOS 10.15 and later (11.0 for Apple silicon, its
+      # first), the Retina key in its Info.plist, and a signature over the whole bundle
+      - name: check the app
+        run: |
+          set -e
+          app=build/Pitfall.app
+          lipo "$app/Contents/MacOS/Pitfall" -verify_arch arm64 x86_64
+          vtool -show-build "$app/Contents/MacOS/Pitfall" | tee build-versions.txt
+          grep -q 'minos 10.15' build-versions.txt
+          plutil -lint "$app/Contents/Info.plist"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :NSHighResolutionCapable' "$app/Contents/Info.plist")" = true
+          codesign --verify --strict --verbose=2 "$app"
       - run: ditto -c -k --keepParent build/Pitfall.app Pitfall-macOS.zip
       - uses: actions/upload-artifact@v4
         with: { name: pitfall-macos, path: Pitfall-macOS.zip }
