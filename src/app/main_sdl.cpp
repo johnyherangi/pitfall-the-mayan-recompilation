@@ -745,9 +745,19 @@ int main(int argc, char** argv) {
             host.padBits = padBits & ~uint32_t(engine::kJoyDebug);
             const uint32_t padButtons = engine::kJoyJump | engine::kJoyShoot | engine::kJoyWhip | engine::kJoySelect;
             host.padPressed = (pressedBits & padButtons) != 0;
-            g->tick(host);
+            try {
+                g->tick(host);
+            } catch (const std::exception& e) {
+                // a file the game needs is not there (the European CD has no LEVEL24.PH, where the
+                // Earthworm Jim cheat sends "*50"): the original's message box (string 9, "Could not
+                // find file %s") and its way out (FUN_0043c820), not a crash
+                SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Pitfall", e.what(), win);
+                running = false;
+                break;
+            }
             ticked = true;
         }
+        if (!running) break;                               // (nothing drawn of a level half loaded)
         if (ticked || redraw) {
             if (ticked) g->render();
             shell.draw();

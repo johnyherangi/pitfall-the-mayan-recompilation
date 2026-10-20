@@ -779,7 +779,7 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, PWSTR, int) {
     double acc = 0;
     engine::HostInput host;
     MSG msg;
-    bool running = true, quitting = false;
+    bool running = true, quitting = false, failed = false;
     while (running) {
         while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
             if (msg.message == WM_QUIT) { running = false; break; }
@@ -787,12 +787,30 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, PWSTR, int) {
             DispatchMessageW(&msg);
         }
         if (!running) break;
+        if (failed) { Sleep(1); continue; }                        // (closing: nothing more of a level half loaded)
         const DWORD now = timeGetTime();
         acc += double(now - last) / 17.0;
         last = now;
         if (acc > 6) acc = 6;                                      // don't spiral after a stall
         bool ticked = false;
-        while (acc >= 1.0) { hostKeys(host); g_app.game->tick(host); acc -= 1.0; ticked = true; }
+        while (acc >= 1.0) {
+            hostKeys(host);
+            try {
+                g_app.game->tick(host);
+            } catch (const std::exception& e) {
+                // a file the game needs is not there (the European CD has no LEVEL24.PH, where the
+                // Earthworm Jim cheat sends "*50"): as the original, string 9's message box ("Could
+                // not find file %s") and the way out (FUN_0043c820), here through WM_CLOSE (which
+                // saves the options), not a crash
+                MessageBoxA(g_app.hwnd, e.what(), "Pitfall", MB_OK | MB_ICONHAND);
+                failed = true;
+                PostMessageW(g_app.hwnd, WM_CLOSE, 0, 0);
+                break;
+            }
+            acc -= 1.0;
+            ticked = true;
+        }
+        if (failed) continue;
         if (ticked) {
             g_app.game->render();
             present();

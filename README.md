@@ -76,6 +76,9 @@ Nothing already in `original/` is written again; `cmake --build build --target i
 runs it again, and `phimport --force <input> original` overwrites (with `ffmpeg` installed
 after an import without it, `phimport --force assets-in original` cuts the music again as Ogg
 and takes the WAV files away).  The European pressing's four-language launcher is understood too.
+That pressing has no `LEVEL24.PH`, the secret level Earthworm Jim's cheat sends `*50` to, though
+its `PITFALL.EXE` has the cheat: the tests then skip that level, and the cheat ends where the
+disc's own game ends, in the message "Could not find file ...level24.ph" and a clean exit.
 
 ## Building
 

@@ -7,6 +7,7 @@
 #include "ph/manifests.h"
 
 #include <array>
+#include <cctype>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -19,6 +20,21 @@
 static int failures = 0;
 int runGameplayTests(const std::string& dir);
 #define CHECK(cond) do { if (!(cond)) { std::printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); ++failures; } } while (0)
+
+// A level's file in the data folder, in any case.  LEVEL24.PH, the level Earthworm Jim's cheat
+// sends "*50" to, is not on every pressing: the European CD has LEVEL00 .. LEVEL23 only, though
+// its PITFALL.EXE has the cheat all the same.
+static bool hasLevelFile(const std::string& dir, int level) {
+    char name[16];
+    std::snprintf(name, sizeof name, "level%02d.ph", level);
+    std::error_code ec;
+    for (const auto& e : std::filesystem::directory_iterator(dir, ec)) {
+        std::string n = e.path().filename().string();
+        for (char& c : n) c = char(std::tolower(static_cast<unsigned char>(c)));
+        if (n == name) return true;
+    }
+    return false;
+}
 
 int main(int argc, char** argv) {
     const std::string dir = ph::resolveDataDir(argc > 1 ? argv[1] : "original");
@@ -58,6 +74,10 @@ int main(int argc, char** argv) {
 
     // Every level loads and consumes exactly the manifest's records.
     for (int lv = 0; lv < ph::kLevelCount; ++lv) {
+        if (lv == game::kEnding && !hasLevelFile(dir, lv)) {
+            std::printf("level %d: not on this disc (Earthworm Jim's, which some pressings lack): skipped\n", lv);
+            continue;
+        }
         ph::Palette p2 = pal;
         try {
             ph::LevelData l = ph::loadLevel(lv, dir, p2);
@@ -1269,6 +1289,26 @@ int titleTest(const std::string& dir) {
 // still on the ledge) and 200 ticks later FUN_0043628c leaves with "*6": back to the Lost City
 // of Copan as from the 2600 level.
 int earthwormTest(const std::string& dir) {
+    if (!hasLevelFile(dir, game::kEnding)) {
+        // (a pressing without LEVEL24.PH: with the cheat on, "*50" ends in the load's "Could not
+        // find file", which the original shows in its message box before it closes, as the shells do)
+        engine::Options opts;
+        game::Game g(dir, opts);
+        g.setMode(game::Mode::Playing);
+        g.newGame();
+        g.startLevel(3);
+        settle(g);
+        g.warp().cheat = true;
+        g.command("*50");
+        std::string error;
+        try { settle(g); } catch (const std::exception& e) { error = e.what(); }
+        if (error.find("Could not find file") == std::string::npos || error.find("24") == std::string::npos) {
+            std::printf("FAIL: earthworm: no LEVEL24.PH, and \"*50\" with the cheat gave \"%s\"\n", error.c_str());
+            return 1;
+        }
+        std::printf("earthworm: no LEVEL24.PH on this disc: \"*50\" with the cheat stops at \"Could not find file\"\n");
+        return 0;
+    }
     int fails = 0;
     engine::Options opts; opts.allowCheat = true;
     game::Game g(dir, opts);
