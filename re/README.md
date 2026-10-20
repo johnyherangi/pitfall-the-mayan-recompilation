@@ -4,7 +4,9 @@ What the reconstruction in `src/` was derived from and how it was checked.  Noth
 needed to build or run the game.  The original game files (`original/`, the contents of the
 Windows CD) and the Genesis ROM (`original_genesis/`) are not part of the repository — supply
 your own copies.  The files below are disassembly, decompilation and screenshots of that
-copyrighted software: fine for a private working repository, not for publishing.
+copyrighted software: they are in the private repository (`pitfall-the-mayan-decompilation`)
+and not in the public one (`pitfall-the-mayan-recompilation`, made by `tools/publish.sh`),
+which keeps the scripts, the JSON maps, `drivers/` and `verify/`.
 
 | path | contents |
 |------|----------|

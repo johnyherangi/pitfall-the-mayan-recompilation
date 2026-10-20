@@ -242,8 +242,15 @@ display now) and then uses the whole palette, as the original does there.
 
 ## Legal
 
-This repository contains no original game data: `original/` must hold your
-own copy of the game (and `original_genesis/` your own ROM, if used); both are
-excluded by `.gitignore`.  `re/` holds disassembly, decompilation and
-screenshots of the original program, so keep the repository private.  The
-reconstruction is for preservation and study.
+This repository contains no original game data: `original/` and `assets-in/` must hold your
+own copy of the game (and `original_genesis/` your own ROM, if used); all are excluded by
+`.gitignore`.  The reconstruction is for preservation and study; its own code and documentation
+are under the MIT licence (`LICENSE`), which grants nothing concerning the game, Activision's.
+
+The work exists in two repositories.  The private one, `pitfall-the-mayan-decompilation`,
+holds the whole history, `re/`'s decompilation, disassembly listings, symbol dumps and
+screenshots of the original program included.  The public one,
+`pitfall-the-mayan-recompilation`, is the same history with those files taken out of every
+commit (`tools/publish.sh` makes it); it keeps the source, the tests, the tools, the
+documentation, the verification tools (`re/verify`) and the drivers.  Work goes into the
+private one and is published from there.
