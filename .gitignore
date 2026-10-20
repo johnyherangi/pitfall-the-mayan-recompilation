@@ -12,6 +12,7 @@ assets-in/
 # Build output
 build/
 build-*/
+dist/
 out/
 .vs/
 CMakeUserPresets.json

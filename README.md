@@ -6,6 +6,21 @@ static analysis of `PITFALL.EXE` and its `.PH` asset files with
 [REA (Reverse Engineer Anything)](https://github.com/morluto/rea) driving
 Ghidra 12.1.
 
+## Quick start
+
+1. Install the tools: on Windows, Visual Studio 2022 or 2026 with *Desktop development with
+   C++* (it brings CMake); on macOS, Xcode's command-line tools and CMake; on Linux, CMake, a
+   C++20 compiler and the SDL development packages `build.sh` names.  `ffmpeg` on the path is
+   optional (music as Ogg rather than WAV, and the launcher's intro).
+2. Put what you have of the game's disc into a folder named `assets-in` here: the CD's folder, a
+   `.zip` of it, an `.iso`, or a `.cue` with its `.img` / `.bin` image (which also carries the
+   music).
+3. Run `build.bat` (Windows; `build.bat modern` for the modern window, `build.bat both run` to
+   build both and play) or `./build.sh` (macOS, Linux; `./build.sh run`).  The script imports the
+   game's files into `original/`, builds, and leaves the game in `dist\classic\` or
+   `dist\modern\`, ready to run from there.  `pack` as a further word copies `original/` in
+   beside it, for a folder that can be moved to another machine.
+
 ```
 original/        the shipped game files (PITFALL.EXE, INIT.PH, LEVEL00-24.PH, ...) -- not in git
 original_genesis/ optional: the Genesis ROM, a reading aid for the game logic -- not in git

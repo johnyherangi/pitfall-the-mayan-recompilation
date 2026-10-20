@@ -99,7 +99,7 @@ std::string findDataDir(const std::string& hint) {
     if (!hint.empty()) c.push_back(hint);
     std::string base;
     if (char* b = SDL_GetBasePath()) { base = b; SDL_free(b); }
-    for (const char* sub : {"original", "ASSETS", "", "../original", "../../original", "../../../original", "../../../../original"})
+    for (const char* sub : {"original", "ASSETS", "", "../original", "../../original", "../../../original", "../../../../original", "../../../../../original"})   // (an .app: Resources, Contents, the app, dist/modern, dist)
         if (!base.empty()) c.push_back(base + sub);
     const std::string pref = settingsPath();
     c.push_back(fs::path(pref).parent_path().string() + "/original");
